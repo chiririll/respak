@@ -1,5 +1,5 @@
 # 03 · Core: values, formats, keys
-**Status:** todo · **Depends on:** 02 · **See:** PROJECT.md §5.1
+**Status:** done · **Depends on:** 02 · **See:** PROJECT.md §5.1
 
 ## Goal
 The value model: everything is a value tagged with a format.
