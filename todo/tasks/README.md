@@ -10,7 +10,7 @@ Status values: `todo` · `in-progress` · `blocked` (waiting on the user or anot
 | 01 | [Workspace setup](01-workspace-setup.md) | — | done |
 | 02 | [Core: errors](02-core-errors.md) | 01 | done |
 | 03 | [Core: values, formats, keys](03-core-values.md) | 02 | done |
-| 04 | [Core: capabilities](04-core-capabilities.md) | 03 | todo |
+| 04 | [Core: capabilities](04-core-capabilities.md) | 03 | done |
 | 05 | [Core: events](05-core-events.md) | 03 | todo |
 | 06 | [Core: plugins, registry, detection, path search](06-core-registry-detection.md) | 03, 04 | todo |
 | 07 | [Core: mediator, Cx, output writing](07-core-mediator.md) | 05, 06 | todo |

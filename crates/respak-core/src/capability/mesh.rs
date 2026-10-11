@@ -1,6 +1,6 @@
 //! The [`Mesh`] capability.
 
-/// Geometry.
+/// Geometry: vertex streams, indices, materials.
 ///
-/// Skeleton for now: the methods are defined in task 04.
+/// **To be refined** with the first real converter that needs it; deliberately empty for now.
 pub trait Mesh: Send + Sync {}

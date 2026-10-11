@@ -1,5 +1,5 @@
 # 04 · Core: capabilities
-**Status:** todo · **Depends on:** 03 · **See:** PROJECT.md §5.4
+**Status:** done · **Depends on:** 03 · **See:** PROJECT.md §5.4
 
 ## Goal
 The core traits through which formats of different crates talk to each other.

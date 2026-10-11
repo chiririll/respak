@@ -14,10 +14,25 @@ mod table;
 
 pub use animation::Animation;
 pub use audio::Audio;
-pub use bitmap::Bitmap;
+pub use bitmap::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 pub use blob::Blob;
 pub use container::Container;
 pub use mesh::Mesh;
-pub use metadata::Metadata;
+pub use metadata::{Dependency, Metadata};
 pub use skeleton::Skeleton;
 pub use table::Table;
+
+// Compile-time check that every capability is object-safe.
+#[allow(dead_code)]
+fn _object_safe(
+    _: &dyn Blob,
+    _: &dyn Container,
+    _: &dyn Metadata,
+    _: &dyn Bitmap,
+    _: &dyn Mesh,
+    _: &dyn Skeleton,
+    _: &dyn Animation,
+    _: &dyn Table,
+    _: &dyn Audio,
+) {
+}

@@ -2,5 +2,5 @@
 
 /// Animated bone data.
 ///
-/// Skeleton for now: the methods are defined in task 04.
+/// **To be refined** with the first real converter that needs it; deliberately empty for now.
 pub trait Animation: Send + Sync {}

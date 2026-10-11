@@ -91,7 +91,11 @@ impl BlobData {
     }
 }
 
-impl Blob for BlobData {}
+impl Blob for BlobData {
+    fn bytes(&self) -> &Bytes {
+        &self.bytes
+    }
+}
 
 impl Data for BlobData {
     fn format(&self) -> &FormatId {

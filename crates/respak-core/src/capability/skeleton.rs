@@ -1,6 +1,6 @@
 //! The [`Skeleton`] capability.
 
-/// Bones.
+/// A bone hierarchy.
 ///
-/// Skeleton for now: the methods are defined in task 04.
+/// **To be refined** with the first real converter that needs it; deliberately empty for now.
 pub trait Skeleton: Send + Sync {}
