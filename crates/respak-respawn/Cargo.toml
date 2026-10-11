@@ -10,3 +10,11 @@ workspace = true
 
 [dependencies]
 respak-core.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+opendal.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

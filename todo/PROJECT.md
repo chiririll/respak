@@ -2,7 +2,7 @@
 
 respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts their contents into usable formats (e.g. an `.rpak` texture to PNG/DDS, a model to Cast), and later back into Respawn formats. Its architecture is designed from scratch. Format code (pak loading, codecs, asset parsing) is **ported from the C++ tool rsx** (`C:\Users\chiririll\Projects\rsx`) and fitted into that architecture; rsx's own architecture is not carried over (§12). Version coverage = whatever rsx supports.
 
-**Status:** foundation done (workspace, errors, values, capabilities); slices 05 (PNG ↔ DDS) and 06 (`formats`, `discover`) done; now building vertical slices. The task list is in [`tasks/`](tasks/README.md).
+**Status:** foundation done (workspace, errors, values, capabilities); slices 05 (PNG ↔ DDS), 06 (`formats`, `discover`) and 07 (rpak listing) done; now building vertical slices. The task list is in [`tasks/`](tasks/README.md).
 
 ---
 
@@ -265,11 +265,12 @@ impl Mediator {
 - `formats` · `discover <path>... [--depth N]` · `run <request.json | ->` · `convert <path|glob> --to '<json>' [--path P]`. Non-zero exit if any output failed.
 
 ## 11. Open questions (decide with the user)
-- **License (blocks the first ported code, slice 07):** rsx is AGPL-3.0; respak declares `MIT OR Apache-2.0` (root `Cargo.toml`). Porting rsx code makes respak a derivative work, so respak must become AGPL-3.0 unless the rsx authors grant otherwise.
+- ~~License~~ decided (the user delegated all remaining decisions): respak is **AGPL-3.0-only**, because it ports AGPL-3.0 rsx code. `LICENSE` and the workspace `license` field say so. Reversible only if the rsx authors grant otherwise.
 - ~~First milestone~~ decided: port rsx, covering every game and pak version it supports; first formats txtr → png/dds.
 - **rpak patches** (`common(01).rpak`, …, `patch_master.rpak`): out of scope for v1. Later the base pak's volume probably applies the latest patch transparently.
 - Raw-byte / chunk caching of the input operator (the user asked to revisit; matters for remote inputs).
 - In-memory cache design (§7).
+- Slice 07 findings: the `VolumeSource` -> `Operator` adapter is ~150 lines (`Operator::from_parts(OperationContext::default(), Arc::new(service))`; a lister, a `StreamRead` reader, rest `()`). OpenDAL rejects an explicit range past the end (`RangeNotSatisfied`), so callers clamp. A compressed rpak is one RTech stream: it is decompressed whole into memory on first use (backlog: bounded streaming decoder).
 - OpenDAL pin (`=0.59.4`, API names verified from source in task 01). Still open: size of the generic service adapter; is a host ranged-read backend (e.g. Steam depot) practical? Verified API, and where it differs from older docs:
   - Present: `Operator`, `stat`, `exists`, `read`, `read_with(p).range(..)`, `reader`/`reader_with` (`Reader::read(range)`, `fetch(Vec<Range>)`), `list`/`lister`, `write` (returns `Metadata`, not `()`), `services::Fs` (feature `services-fs`, needs tokio), `services::Memory` (always available).
   - `opendal` is a facade over `opendal-core` and per-service crates; custom-service API is under `opendal::raw`.
@@ -277,7 +278,7 @@ impl Mediator {
   - Read-only service (slice 07): implement `raw::Service` with `Reader = oio::StreamReader<R>` where `R: oio::StreamRead` (one method, `open(range)`), `Lister: oio::List` (`next() -> Option<Entry>`), the rest `()`; report only `stat`/`read`/`list` in `capability()` (use `..Default::default()`); return `ErrorKind::Unsupported` otherwise. Template: `MemoryBackend` in `opendal-core`. Build with `Operator::new(Builder)` (needs `Builder` + `Configurator`) or `Operator::from_inner(Arc<dyn ServiceDyn>)`.
   - `Layer` has a new shape (`apply_service`, `apply_context`); `Operator::new` has no `.finish()`; `Scheme` enum is replaced by string schemes; option structs grow fields, never use exhaustive literals.
   - Not verified: running with `default-features = false` and no executor feature; we enable `executors-tokio`.
-- rpak volume layout (§6 proposal): file names, the `.mem` pointer-relocation scheme.
+- rpak volume layout (§6 proposal): slice 07 built the file names (`0x<GUID>.<kind>`, names hashed to GUIDs); `.mem` and relocation come in slice 08. Pages of unpatched paks are concatenated, so `.mem` offset = `page_base[page] + offset`.
 - Exact capability methods; option schemas for targets (`schemars`?).
 - FFI shape for the async API ("JSON in/out + event callback").
 - zstd-compressed paks (flagged, unsupported by rsx). Codec licensing (Oodle).

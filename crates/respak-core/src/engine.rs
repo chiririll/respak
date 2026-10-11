@@ -1,7 +1,5 @@
 //! The public entry point (PROJECT.md §8). Slice 05: single-path `convert` only.
 
-use std::sync::Arc;
-
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +8,7 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::graph::FormatGraph;
 use crate::mediator::{Cx, Mediator, Target};
 use crate::plugin::{Plugin, Registry};
-use crate::value::{FileData, FormatId, Value};
+use crate::value::{FormatId, Value, FILE};
 
 /// `{ "version": 1, "outputs": [...] }`
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -148,19 +146,28 @@ impl Engine {
 
     /// Detects what `path` is and which formats it can be converted to, without decoding.
     /// `NotFound` if the path does not exist; an unrecognised file is an entry with no format.
-    /// `options.depth` must be 0 until slice 07 (`InvalidRequest` otherwise).
+    ///
+    /// `depth` is how many container levels to open: 0 describes the item itself; 1 lists the
+    /// contents of a container (one entry per item, instead of the container's own entry); and so on.
     pub async fn discover(&self, path: &str, options: &DiscoverOptions) -> Result<Discovery> {
-        if options.depth > 0 {
-            return Err(Error::new(ErrorKind::InvalidRequest {
-                message: "discover depth > 0 needs container support, which is not implemented yet".into(),
-            }));
-        }
-        self.input.stat(path).await?;
-        let cx = Cx { mediator: self.mediator.clone(), input: self.input.clone(), output: self.output.clone() };
-        let source: Value = Arc::new(FileData::new(self.input.clone(), path, path, None));
-        let mut hits = self.mediator.detect(&source, &cx).await?.into_iter();
+        let cx = self.cx();
+        let value = self.mediator.open(path, &cx).await?;
+        let mut entries = Vec::new();
+        self.describe(&value, path.trim_matches('/'), options.depth, &cx, &mut entries).await?;
+        Ok(Discovery { path: path.to_owned(), entries })
+    }
+
+    async fn describe(
+        &self,
+        value: &Value,
+        path: &str,
+        depth: u32,
+        cx: &Cx,
+        out: &mut Vec<DiscoveryEntry>,
+    ) -> Result<()> {
         let version = |f: &FormatId| f.version().map(|v| v.to_string());
-        let entry = match hits.next() {
+        let mut hits = self.mediator.detect(value, cx).await?.into_iter();
+        let mut entry = match hits.next() {
             Some(winner) => DiscoveryEntry {
                 path: path.to_owned(),
                 format: Some(winner.format.name().to_owned()),
@@ -174,19 +181,50 @@ impl Engine {
                     })
                     .collect(),
                 name: None,
+                kind: None,
                 targets: self.mediator.targets_from(winner.format.name()),
             },
-            None => DiscoveryEntry {
+            // A typed entry handed out by a container carries its own format.
+            None if value.format().name() != FILE => DiscoveryEntry {
                 path: path.to_owned(),
-                format: None,
-                version: None,
-                score: 0,
+                format: Some(value.format().name().to_owned()),
+                version: version(value.format()),
+                score: 10,
                 alternatives: Vec::new(),
                 name: None,
-                targets: Vec::new(),
+                kind: None,
+                targets: self.mediator.targets_from(value.format().name()),
             },
+            None => unrecognised(path),
         };
-        Ok(Discovery { path: path.to_owned(), entries: vec![entry] })
+        if let Some(meta) = value.as_metadata() {
+            entry.name = meta.name().map(str::to_owned);
+            entry.kind = meta.kind().map(str::to_owned);
+        }
+
+        let opens = depth > 0 && entry.format.as_deref().is_some_and(|f| self.mediator.provides_container(f));
+        if !opens {
+            out.push(entry);
+            return Ok(());
+        }
+        let container = self.mediator.mount(value.clone(), cx).await?;
+        let c = container.as_container().expect("mount checks this");
+        let mount_path = c.mount_path().to_owned();
+        for rel in list_volume(&c.volume()).await? {
+            let child_path = format!("{}/{rel}", mount_path.trim_end_matches('/'));
+            match c.entry(&rel).await {
+                Ok(child) => Box::pin(self.describe(&child, &child_path, depth - 1, cx, out)).await?,
+                Err(error) => {
+                    tracing::warn!("cannot describe {child_path}: {error}");
+                    out.push(unrecognised(&child_path));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn cx(&self) -> Cx {
+        Cx::new(self.mediator.clone(), self.input.clone(), self.output.clone())
     }
 
     /// Runs every output; one failing output does not stop the others.
@@ -197,9 +235,10 @@ impl Engine {
                 message: format!("unknown request version {}", request.version),
             }));
         }
+        let cx = self.cx();
         let mut outputs = Vec::with_capacity(request.outputs.len());
         for out in &request.outputs {
-            let result = match self.convert_one(out).await {
+            let result = match self.convert_one(out, &cx).await {
                 Ok(files) => OutputResult::Ok { files },
                 Err(error) => OutputResult::Err { error },
             };
@@ -208,17 +247,15 @@ impl Engine {
         Ok(ConvertReport { outputs })
     }
 
-    async fn convert_one(&self, out: &OutputRequest) -> Result<Vec<String>> {
-        self.input.stat(&out.from).await?;
-        let cx = Cx { mediator: self.mediator.clone(), input: self.input.clone(), output: self.output.clone() };
-        let source: Value = Arc::new(FileData::new(self.input.clone(), out.from.clone(), out.from.clone(), None));
+    async fn convert_one(&self, out: &OutputRequest, cx: &Cx) -> Result<Vec<String>> {
+        let source = self.mediator.open(&out.from, cx).await?;
         let options = if out.to.options.is_empty() {
             serde_json::Value::Null
         } else {
             serde_json::Value::Object(out.to.options.clone())
         };
         let target = Target { format: out.to.format.clone(), options, via: out.to.via.clone() };
-        let result = self.mediator.convert(source, target, &cx).await?;
+        let result = self.mediator.convert(source, target, cx).await?;
         let blob = result.as_blob().ok_or_else(|| {
             Error::new(ErrorKind::Custom {
                 source: None,
@@ -235,4 +272,37 @@ impl Engine {
         self.output.write(&path, blob.bytes().clone()).await?;
         Ok(vec![path])
     }
+}
+
+fn unrecognised(path: &str) -> DiscoveryEntry {
+    DiscoveryEntry {
+        path: path.to_owned(),
+        format: None,
+        version: None,
+        score: 0,
+        alternatives: Vec::new(),
+        name: None,
+        kind: None,
+        targets: Vec::new(),
+    }
+}
+
+/// Every file in a volume, as paths relative to it, sorted.
+async fn list_volume(op: &Operator) -> Result<Vec<String>> {
+    let mut files = Vec::new();
+    let mut dirs = vec!["/".to_owned()];
+    while let Some(dir) = dirs.pop() {
+        for e in op.list(&dir).await? {
+            if e.path() == dir {
+                continue;
+            }
+            if e.metadata().is_dir() {
+                dirs.push(e.path().to_owned());
+            } else {
+                files.push(e.path().trim_start_matches('/').to_owned());
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
 }

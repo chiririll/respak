@@ -7,7 +7,7 @@ use crate::graph::TargetInfo;
 /// Options for [`Engine::discover`](crate::Engine::discover).
 #[derive(Debug, Clone, Default)]
 pub struct DiscoverOptions {
-    /// How many container levels to open. Only 0 is supported until slice 07.
+    /// How many container levels to open: 0 describes the item itself, 1 lists a container's items.
     pub depth: u32,
 }
 
@@ -38,6 +38,9 @@ pub struct DiscoveryEntry {
     /// Name from the item's metadata, if it has one without decoding.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Kind from the item's metadata (e.g. an asset kind), if known without decoding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     /// Formats it can be converted to, found without decoding.
     pub targets: Vec<TargetInfo>,
 }

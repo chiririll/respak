@@ -176,6 +176,12 @@ impl Mediator {
         graph::targets_from(&self.registry, from)
     }
 
+    /// Whether values of `format` provide the [`Container`](crate::capability::Container) capability.
+    pub fn provides_container(&self, format: &str) -> bool {
+        let id = crate::plugin::CapId::of::<dyn crate::capability::Container>();
+        self.registry.formats.iter().any(|f| f.name == format && f.provides.contains(&id))
+    }
+
     /// The whole graph as data.
     pub fn formats(&self) -> FormatGraph {
         graph::format_graph(&self.registry)
@@ -238,4 +244,13 @@ pub struct Cx {
     pub input: Operator,
     /// Where outputs go.
     pub output: Operator,
+    /// Containers mounted so far in this call.
+    pub mounts: Arc<crate::resolve::Mounts>,
+}
+
+impl Cx {
+    /// A context with nothing mounted yet. One context serves one `Engine` call.
+    pub fn new(mediator: Mediator, input: Operator, output: Operator) -> Self {
+        Self { mediator, input, output, mounts: Arc::default() }
+    }
 }

@@ -1,0 +1,242 @@
+//! The rpak container on synthetic paks (versions 6, 7, 8).
+
+mod common;
+
+use common::*;
+use respak_core::{DiscoverOptions, ErrorKind};
+use respak_respawn::{string_to_guid, PakHeader, Tables};
+
+fn assets() -> Vec<TestAsset> {
+    vec![
+        TestAsset::new(0x1111_2222_3333_4444, b"txtr", 10, b"TEXTURE-HEADER-BYTES"),
+        TestAsset::new(0xAAAA_BBBB_CCCC_DDDD, b"matl", 15, b"material header"),
+        TestAsset::new(0x0000_0000_0000_00FF, b"ui\0\0", 2, b"ui!"),
+    ]
+}
+
+fn depth(n: u32) -> DiscoverOptions {
+    DiscoverOptions { depth: n }
+}
+
+#[tokio::test]
+async fn every_version_is_detected_and_listed() {
+    for version in [6u16, 7, 8] {
+        let env = env();
+        env.input.write("common.rpak", build_pak(version, &assets())).await.unwrap();
+
+        let d0 = env.engine.discover("common.rpak", &depth(0)).await.unwrap();
+        let e = &d0.entries[0];
+        assert_eq!((e.format.as_deref(), e.score), (Some("rpak"), 13), "v{version}");
+        assert_eq!(e.version.as_deref(), Some(version.to_string().as_str()));
+
+        let d1 = env.engine.discover("common.rpak", &depth(1)).await.unwrap();
+        let listed: Vec<_> = d1
+            .entries
+            .iter()
+            .map(|e| (e.path.as_str(), e.format.as_deref(), e.version.as_deref(), e.kind.as_deref()))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("common.rpak/0x00000000000000FF.ui", Some("rpak.asset"), Some("2"), Some("ui")),
+                ("common.rpak/0x1111222233334444.txtr", Some("rpak.asset"), Some("10"), Some("txtr")),
+                ("common.rpak/0xAAAABBBBCCCCDDDD.matl", Some("rpak.asset"), Some("15"), Some("matl")),
+            ],
+            "v{version}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_asset_path_resolves_and_its_header_is_served_with_ranged_reads() {
+    let env = env();
+    env.input.write("p/common.rpak", build_pak(8, &assets())).await.unwrap();
+
+    let d = env.engine.discover("p/common.rpak/0x1111222233334444.txtr", &depth(0)).await.unwrap();
+    assert_eq!(d.entries[0].format.as_deref(), Some("rpak.asset"));
+    assert_eq!(d.entries[0].version.as_deref(), Some("10"));
+
+    // The volume itself: header bytes of the asset, whole and in a range.
+    let cx = respak_core::Cx::new(
+        {
+            let mut r = respak_core::Registry::new();
+            r.add(&respak_respawn::RespawnPlugin::new());
+            respak_core::Mediator::new(r)
+        },
+        env.input.clone(),
+        env.input.clone(),
+    );
+    let pak = cx.mediator.open("p/common.rpak", &cx).await.unwrap();
+    assert!(pak.as_container().is_none(), "a plain file until it is mounted");
+    let pak = cx.mediator.mount(pak, &cx).await.unwrap();
+    let volume = pak.as_container().unwrap().volume();
+    assert_eq!(volume.read("0x1111222233334444.txtr").await.unwrap().to_vec(), b"TEXTURE-HEADER-BYTES");
+    assert_eq!(volume.read_with("0x1111222233334444.txtr").range(8..14).await.unwrap().to_vec(), b"HEADER");
+    assert_eq!(volume.stat("0xAAAABBBBCCCCDDDD.matl").await.unwrap().content_length(), 15);
+}
+
+#[tokio::test]
+async fn a_name_resolves_through_its_hashed_guid() {
+    let env = env();
+    let guid = string_to_guid("texture/foo");
+    env.input.write("c.rpak", build_pak(8, &[TestAsset::new(guid, b"txtr", 8, b"named")])).await.unwrap();
+
+    let d = env.engine.discover("c.rpak/texture/foo.txtr", &depth(0)).await.unwrap();
+    assert_eq!(d.entries[0].format.as_deref(), Some("rpak.asset"));
+    // Case and slash direction do not matter to the hash.
+    env.engine.discover("c.rpak/Texture\\Foo.txtr", &depth(0)).await.unwrap();
+    env.engine.discover("c.rpak/TEXTURE/FOO.TXTR", &depth(0)).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_wrong_kind_or_missing_asset_is_not_found() {
+    let env = env();
+    env.input.write("c.rpak", build_pak(8, &assets())).await.unwrap();
+    for path in ["c.rpak/0x1111222233334444.matl", "c.rpak/0x1.txtr", "c.rpak/nothing", "c.rpak/0x1111222233334444"] {
+        let err = env.engine.discover(path, &depth(0)).await.unwrap_err();
+        assert!(matches!(err.kind(), ErrorKind::NotFound { .. }), "{path}: {err}");
+    }
+}
+
+#[tokio::test]
+async fn duplicate_guids_are_listed_once() {
+    let env = env();
+    let twice = [TestAsset::new(7, b"txtr", 8, b"first"), TestAsset::new(7, b"txtr", 8, b"second")];
+    env.input.write("c.rpak", build_pak(7, &twice)).await.unwrap();
+    let d = env.engine.discover("c.rpak", &depth(1)).await.unwrap();
+    assert_eq!(d.entries.len(), 1);
+}
+
+#[tokio::test]
+async fn unsupported_paks_say_why() {
+    let env = env();
+    let cases: Vec<(&str, Vec<u8>, &str)> = vec![
+        ("v9.rpak", {
+            let mut b = build_pak(8, &assets());
+            b[4] = 9;
+            b
+        }, "9"),
+        ("patch.rpak", build_pak_with(8, &assets(), &Options { patch_count: 1, ..Default::default() }), "patch"),
+        ("oodle.rpak", build_pak_with(8, &assets(), &Options { flags: 1 << 9, ..Default::default() }), "Oodle"),
+        ("zstd.rpak", build_pak_with(7, &assets(), &Options { flags: 1 << 15, ..Default::default() }), "zstd"),
+    ];
+    for (name, bytes, why) in cases {
+        env.input.write(name, bytes).await.unwrap();
+        let err = env.engine.discover(name, &depth(1)).await.unwrap_err();
+        match err.kind() {
+            ErrorKind::UnsupportedVersion { format, version } => {
+                assert_eq!(format, "rpak", "{name}");
+                assert!(version.contains(why), "{name}: {version}");
+            }
+            other => panic!("{name}: {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn broken_paks_are_corrupt_not_a_panic() {
+    let env = env();
+    let good = build_pak(8, &assets());
+    let mut huge = good.clone();
+    huge[0x58..0x5C].copy_from_slice(&i32::MAX.to_le_bytes()); // numAssets
+    let mut negative = good.clone();
+    negative[0x58..0x5C].copy_from_slice(&(-5i32).to_le_bytes());
+    let cases = [
+        ("cut-header.rpak", good[..0x40].to_vec()),
+        ("cut-body.rpak", good[..good.len() - 10].to_vec()),
+        ("huge.rpak", huge),
+        ("negative.rpak", negative),
+    ];
+    for (name, bytes) in cases {
+        env.input.write(name, bytes).await.unwrap();
+        let err = env.engine.discover(name, &depth(1)).await.unwrap_err();
+        assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{name}: {err}");
+    }
+}
+
+#[tokio::test]
+async fn a_header_that_does_not_fit_its_page_is_corrupt_when_read() {
+    let env = env();
+    let bad = build_pak_with(8, &assets(), &Options { header_size_extra: 1000, ..Default::default() });
+    env.input.write("c.rpak", bad).await.unwrap();
+    let cx = respak_core::Cx::new(
+        {
+            let mut r = respak_core::Registry::new();
+            r.add(&respak_respawn::RespawnPlugin::new());
+            respak_core::Mediator::new(r)
+        },
+        env.input.clone(),
+        env.input.clone(),
+    );
+    let pak = cx.mediator.open("c.rpak", &cx).await.unwrap();
+    let pak = cx.mediator.mount(pak, &cx).await.unwrap();
+    let err = pak.as_container().unwrap().volume().read("0x1111222233334444.txtr").await.unwrap_err();
+    assert!(err.to_string().contains("does not fit"), "{err}");
+}
+
+#[test]
+fn tables_expose_starpaks_pages_and_asset_fields() {
+    let opts = Options { starpaks: vec!["paks\\Win64\\a.starpak".into(), "b.starpak".into()], ..Default::default() };
+    let file = build_pak_with(8, &assets(), &opts);
+    let header = PakHeader::parse(&file).unwrap();
+    assert_eq!((header.version, header.header_len, header.num_assets), (8, 0x80, 3));
+    let tables = Tables::parse(&header, &file[header.header_len..]).unwrap();
+    assert_eq!(tables.starpaks, ["paks\\Win64\\a.starpak", "b.starpak"]);
+    assert_eq!(tables.pages.len(), 1);
+    let a = &tables.assets[1];
+    assert_eq!((a.guid, a.version, a.header_size, a.kind_string().as_str()), (0xAAAA_BBBB_CCCC_DDDD, 15, 15, "matl"));
+    assert_eq!(a.starpak, -1);
+    assert!(a.data.is_null());
+    assert_eq!(tables.header_range(a).map(|r| r.end - r.start), Some(15));
+}
+
+#[test]
+fn not_an_rpak_is_unknown_format() {
+    let err = PakHeader::parse(b"nope, not a pak at all").unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::UnknownFormat));
+}
+
+/// Local-only checks against real paks from rsx's cache. Skipped when the files are missing.
+mod real {
+    use super::*;
+    use std::path::Path;
+
+    const UI_MAIN_MENU: &str =
+        r"C:\Users\chiririll\Projects\rsx\rsx_steam_cache\rpak\1172471_6021239266545804912\paks\win64\ui_main_menu.rpak";
+
+    #[tokio::test]
+    async fn ui_main_menu_has_one_uiia_asset() {
+        if !Path::new(UI_MAIN_MENU).exists() {
+            return;
+        }
+        let env = env();
+        env.input.write("ui_main_menu.rpak", std::fs::read(UI_MAIN_MENU).unwrap()).await.unwrap();
+        let d = env.engine.discover("ui_main_menu.rpak", &depth(1)).await.unwrap();
+        assert_eq!(d.entries.len(), 1);
+        let e = &d.entries[0];
+        assert_eq!(e.path, "ui_main_menu.rpak/0x35492C0539B480BC.uiia");
+        assert_eq!((e.version.as_deref(), e.kind.as_deref()), (Some("2"), Some("uiia")));
+    }
+
+    const UI: &str =
+        r"C:\Users\chiririll\Projects\rsx\rsx_steam_cache\rpak\1172471_6197768190074397522\paks\win64\ui.rpak";
+
+    /// Slow (decompresses 268 MB): `cargo test -p respak-respawn -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn ui_rpak_is_decompressed_and_listed() {
+        if !Path::new(UI).exists() {
+            return;
+        }
+        let env = env();
+        env.input.write("ui.rpak", std::fs::read(UI).unwrap()).await.unwrap();
+        let d = env.engine.discover("ui.rpak", &depth(1)).await.unwrap();
+        assert_eq!(d.entries.len(), 1665);
+        assert!(d.entries.iter().all(|e| e.format.as_deref() == Some("rpak.asset")));
+        let mut kinds: std::collections::BTreeMap<&str, usize> = Default::default();
+        for e in &d.entries {
+            *kinds.entry(e.kind.as_deref().unwrap()).or_default() += 1;
+        }
+        eprintln!("{kinds:?}");
+    }
+}

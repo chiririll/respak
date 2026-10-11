@@ -16,6 +16,10 @@ pub struct Dependency {
 pub trait Metadata: Send + Sync {
     /// The asset's name, if known.
     fn name(&self) -> Option<&str>;
+    /// The asset's kind (e.g. `txtr`), if it is known without decoding.
+    fn kind(&self) -> Option<&str> {
+        None
+    }
     /// The asset's guid, if it has one.
     fn guid(&self) -> Option<u64>;
     /// Assets this one refers to.

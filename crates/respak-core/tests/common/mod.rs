@@ -165,7 +165,7 @@ pub fn error_kind(result: &OutputResult) -> &ErrorKind {
 
 pub fn cx_for(registry: Registry) -> (Mediator, Cx) {
     let mediator = Mediator::new(registry);
-    let cx = Cx { mediator: mediator.clone(), input: mem(), output: mem() };
+    let cx = Cx::new(mediator.clone(), mem(), mem());
     (mediator, cx)
 }
 

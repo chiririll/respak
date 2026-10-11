@@ -879,7 +879,13 @@ dependencies = [
 name = "respak-respawn"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "bytes",
+ "opendal",
  "respak-core",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

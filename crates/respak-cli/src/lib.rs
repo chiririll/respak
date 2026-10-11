@@ -30,6 +30,9 @@ pub enum Command {
         /// Paths relative to `--root`.
         #[arg(required = true)]
         paths: Vec<String>,
+        /// How many container levels to open (1 lists a pak's assets).
+        #[arg(long, default_value_t = 0)]
+        depth: u32,
     },
     /// Convert one file.
     Convert {
@@ -58,8 +61,8 @@ pub async fn run(
             writeln!(out)?;
             Ok(ExitCode::SUCCESS)
         }
-        Command::Discover { paths } => {
-            let options = DiscoverOptions::default();
+        Command::Discover { paths, depth } => {
+            let options = DiscoverOptions { depth };
             let mut found = Vec::new();
             let mut failed = false;
             for path in &paths {

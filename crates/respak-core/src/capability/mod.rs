@@ -52,3 +52,11 @@ impl Cap for dyn Bitmap {
 impl Cap for dyn Blob {
     const NAME: &'static str = "Blob";
 }
+
+impl Cap for dyn Container {
+    const NAME: &'static str = "Container";
+}
+
+impl Cap for dyn Metadata {
+    const NAME: &'static str = "Metadata";
+}

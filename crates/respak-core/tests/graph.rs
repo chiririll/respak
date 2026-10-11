@@ -268,13 +268,14 @@ async fn discover_reports_winner_alternatives_and_targets() {
 }
 
 #[tokio::test]
-async fn discover_errors_for_a_missing_path_and_for_depth() {
+async fn discover_errors_for_a_missing_path_and_ignores_depth_on_plain_files() {
     let env = env_with(register_scored);
     let err = env.engine.discover("nope.bin", &DiscoverOptions::default()).await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::NotFound { .. }), "{err}");
     env.input.write("f.bin", "AAAA").await.unwrap();
-    let err = env.engine.discover("f.bin", &DiscoverOptions { depth: 1 }).await.unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::InvalidRequest { .. }), "{err}");
+    // A file that is not a container is described as itself, whatever the depth.
+    let d = env.engine.discover("f.bin", &DiscoverOptions { depth: 3 }).await.unwrap();
+    assert_eq!(d.entries.len(), 1);
 }
 
 #[allow(dead_code)]
