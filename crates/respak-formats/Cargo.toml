@@ -10,3 +10,10 @@ workspace = true
 
 [dependencies]
 respak-core.workspace = true
+png = "0.18"
+ddsfile = "0.6"
+bytes.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

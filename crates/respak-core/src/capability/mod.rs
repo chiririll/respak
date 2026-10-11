@@ -22,6 +22,14 @@ pub use metadata::{Dependency, Metadata};
 pub use skeleton::Skeleton;
 pub use table::Table;
 
+/// Names a capability trait object type (`dyn Bitmap`, ...) so registration can say
+/// `provides::<dyn Bitmap>()` and `from_cap::<dyn Bitmap>(..)`. Handlers get the capability
+/// from the value itself (`value.as_bitmap()`).
+pub trait Cap {
+    /// Unique name; identifies the capability in the registry, e.g. `Bitmap`.
+    const NAME: &'static str;
+}
+
 // Compile-time check that every capability is object-safe.
 #[allow(dead_code)]
 fn _object_safe(
@@ -35,4 +43,12 @@ fn _object_safe(
     _: &dyn Table,
     _: &dyn Audio,
 ) {
+}
+
+impl Cap for dyn Bitmap {
+    const NAME: &'static str = "Bitmap";
+}
+
+impl Cap for dyn Blob {
+    const NAME: &'static str = "Blob";
 }

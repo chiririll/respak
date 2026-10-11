@@ -31,7 +31,7 @@ Every slice ends with:
 ## Slices
 | # | Task | Demo | Depends on | Status |
 |---|---|---|---|---|
-| 05 | [Walking skeleton: PNG ↔ DDS](05-slice-png-dds.md) | PNG → DDS → PNG round trip | 04 | todo |
+| 05 | [Walking skeleton: PNG ↔ DDS](05-slice-png-dds.md) | PNG → DDS → PNG round trip | 04 | in-progress |
 | 06 | [`formats` and `discover`](06-slice-discover-formats.md) | `discover icon.png` | 05 | todo |
 | 07 | [Open an rpak, list its assets](07-slice-rpak-listing.md) | `discover common.rpak --depth 1` | 06, license (PROJECT.md §11) | blocked |
 | 08 | [rpak texture → DDS (permanent mips)](08-slice-txtr-to-dds.md) | `convert …/foo.txtr --to dds` | 07 | blocked |
