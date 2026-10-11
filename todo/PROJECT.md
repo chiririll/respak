@@ -1,16 +1,19 @@
 # respak — project summary
 
-respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts their contents into usable formats (e.g. an `.rpak` texture to PNG/DDS, a model to Cast), and later back into Respawn formats. It is designed from scratch. The C++ tool **rsx** (`C:\Users\chiririll\Projects\rsx`) is a source of format knowledge only, not code to port.
+respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts their contents into usable formats (e.g. an `.rpak` texture to PNG/DDS, a model to Cast), and later back into Respawn formats. Its architecture is designed from scratch. Format code (pak loading, codecs, asset parsing) is **ported from the C++ tool rsx** (`C:\Users\chiririll\Projects\rsx`) and fitted into that architecture; rsx's own architecture is not carried over (§12). Version coverage = whatever rsx supports.
 
-**Status:** design under discussion, nothing implemented. The task list is in [`tasks/`](tasks/README.md).
+**Status:** foundation done (workspace, errors, values, capabilities); now building vertical slices. The task list is in [`tasks/`](tasks/README.md).
 
 ---
 
 ## 1. Workflow and rules
-1. **Interfaces first:** types, traits, crate layout, docs, skeleton plugins and CLI. It compiles; logic bodies are `todo!()`; no tests.
-2. **The user reviews the interfaces.**
-3. **Test cases are defined together with the user.** Never invent the test suite alone.
-4. **Implementation, test-first (TDD).**
+This document is the **target design**. It is built in **vertical slices**: thin end-to-end paths (plugin → core → engine → CLI), each ending in a command the user can run. A part of the design is built only when a slice needs it. Per slice ([details](tasks/README.md)):
+1. **Sketch** the interfaces this slice needs (compiles, `todo!()` bodies) and propose test cases.
+2. **The user reviews the sketch and agrees the tests.** Never invent the test suite alone.
+3. **Implement test-first (TDD).**
+4. **The user runs the demo.** What was learned updates this document before the next slice.
+
+If a slice shows that part of this design doesn't work, stop and tell the user. Don't work around it.
 
 Rules:
 - **Prefer existing, well-maintained crates.** The one agreed exception is the mediator, hand-written on purpose.
@@ -261,7 +264,8 @@ impl Mediator {
 - `formats` · `discover <path>... [--depth N]` · `run <request.json | ->` · `convert <path|glob> --to '<json>' [--path P]`. Non-zero exit if any output failed.
 
 ## 11. Open questions (decide with the user)
-- **First milestone:** which games and pak versions first (Titanfall 2 / rpak v7, Apex / v8 and which seasons), and which formats beyond txtr → png/dds.
+- **License (blocks the first ported code, slice 07):** rsx is AGPL-3.0; respak declares `MIT OR Apache-2.0` (root `Cargo.toml`). Porting rsx code makes respak a derivative work, so respak must become AGPL-3.0 unless the rsx authors grant otherwise.
+- ~~First milestone~~ decided: port rsx, covering every game and pak version it supports; first formats txtr → png/dds.
 - **rpak patches** (`common(01).rpak`, …, `patch_master.rpak`): out of scope for v1. Later the base pak's volume probably applies the latest patch transparently.
 - Raw-byte / chunk caching of the input operator (the user asked to revisit; matters for remote inputs).
 - In-memory cache design (§7).
@@ -269,7 +273,7 @@ impl Mediator {
   - Present: `Operator`, `stat`, `exists`, `read`, `read_with(p).range(..)`, `reader`/`reader_with` (`Reader::read(range)`, `fetch(Vec<Range>)`), `list`/`lister`, `write` (returns `Metadata`, not `()`), `services::Fs` (feature `services-fs`, needs tokio), `services::Memory` (always available).
   - `opendal` is a facade over `opendal-core` and per-service crates; custom-service API is under `opendal::raw`.
   - `Access`/`Accessor` → `raw::Service` (`ServiceInfo`, dyn `ServiceDyn`, `Servicer = Arc<dyn ServiceDyn>`). Methods take `&OperationContext` first; `read`/`write`/`list`/`delete` are sync and return the reader/lister, `stat`/`create_dir` are async.
-  - Read-only service (task 09): implement `raw::Service` with `Reader = oio::StreamReader<R>` where `R: oio::StreamRead` (one method, `open(range)`), `Lister: oio::List` (`next() -> Option<Entry>`), the rest `()`; report only `stat`/`read`/`list` in `capability()` (use `..Default::default()`); return `ErrorKind::Unsupported` otherwise. Template: `MemoryBackend` in `opendal-core`. Build with `Operator::new(Builder)` (needs `Builder` + `Configurator`) or `Operator::from_inner(Arc<dyn ServiceDyn>)`.
+  - Read-only service (slice 07): implement `raw::Service` with `Reader = oio::StreamReader<R>` where `R: oio::StreamRead` (one method, `open(range)`), `Lister: oio::List` (`next() -> Option<Entry>`), the rest `()`; report only `stat`/`read`/`list` in `capability()` (use `..Default::default()`); return `ErrorKind::Unsupported` otherwise. Template: `MemoryBackend` in `opendal-core`. Build with `Operator::new(Builder)` (needs `Builder` + `Configurator`) or `Operator::from_inner(Arc<dyn ServiceDyn>)`.
   - `Layer` has a new shape (`apply_service`, `apply_context`); `Operator::new` has no `.finish()`; `Scheme` enum is replaced by string schemes; option structs grow fields, never use exhaustive literals.
   - Not verified: running with `default-features = false` and no executor feature; we enable `executors-tokio`.
 - rpak volume layout (§6 proposal): file names, the `.mem` pointer-relocation scheme.
@@ -277,7 +281,17 @@ impl Mediator {
 - FFI shape for the async API ("JSON in/out + event callback").
 - zstd-compressed paks (flagged, unsupported by rsx). Codec licensing (Oodle).
 
-## 12. rsx reference
+## 12. Porting from rsx
+**rsx code is reviewed before it is ported, never translated line by line.** In every slice that ports code, the sketch step includes an **rsx review**, written into the task under `## rsx review`. The user approves it at the gate, before any porting starts:
+1. **What it does:** the rsx files and functions involved; the layouts, constants and version/variant branches they encode.
+2. **Problems:** bugs, duplicated or dead branches, unchecked offsets and sizes, whole-file reads, global state, failures as `bool`, and anything that breaks the I/O rules (§6).
+3. **Fit:** where each piece goes in respak (score function, volume, typed entry, capability, codec edge) and what changes to make it fit. Examples: ranged reads instead of loading the file; `Result` with the §9 errors instead of `bool`; one handler branching on `Version` instead of a copy per version; tables instead of `switch` chains.
+
+Rules:
+- **Keep** the format knowledge: struct layouts, constants, version and variant detection, codec algorithms. Each ported module names its rsx source files in its doc comment.
+- **Don't keep** rsx's architecture or code structure where a better fit exists. Ported logic goes into score functions, volumes, typed entries and capabilities.
+- A behaviour change against rsx (a bug fix, a dropped branch) is listed in the review, so the demo comparison with rsx can account for it.
+- Use subagents for the source sweep.
 - **Avoid rsx's problems:** global mutable settings; dependencies exported several times concurrently to one path; exporters writing straight to disk with repeated path logic; failures as bare `bool`.
 - **Where to look** (paths under `src/game/rtech/` unless noted):
   - `cpakfile.{h,cpp}`: pak headers v6/v7/v8, asset entries (`headerStructSize`, version), pointer relocation, patches, compression flags. Starpak offsets: low 12 bits = starpak index, rest = 4K-aligned offset (`cpakfile.h:1175`); starpak table of contents at file end (`cpakfile.cpp:635`).
