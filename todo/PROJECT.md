@@ -1,255 +1,236 @@
 # respak — project summary
 
-respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts what is inside them into usable formats. For example, it can turn a texture in an `.rpak` into a PNG or DDS, or a model into Cast or SMD. It is designed from scratch. The C++ tool **rsx** (`C:\Users\chiririll\Projects\rsx`) is a source of format knowledge only, not code to port.
+respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts their contents into usable formats (e.g. an `.rpak` texture to PNG/DDS, a model to Cast), and later back into Respawn formats. It is designed from scratch. The C++ tool **rsx** (`C:\Users\chiririll\Projects\rsx`) is a source of format knowledge only, not code to port.
 
-**Status:** the design is agreed and nothing is implemented. The tasks are in [`tasks/`](tasks/README.md).
+**Status:** design under discussion, nothing implemented. The task list in [`tasks/`](tasks/README.md) still describes the previous design and will be rewritten once this document is agreed.
 
 ---
 
-## 1. Workflow (mandatory)
-1. **Interfaces first.** Write the types, traits, crate layout and doc comments, plus skeleton plugins and the CLI. It must compile, logic bodies are `todo!()`, and there are no tests yet.
+## 1. Workflow and rules
+1. **Interfaces first:** types, traits, crate layout, docs, skeleton plugins and CLI. It compiles; logic bodies are `todo!()`; no tests.
 2. **The user reviews the interfaces.**
-3. **Test cases are defined together with the user.** Do not invent the test suite alone.
+3. **Test cases are defined together with the user.** Never invent the test suite alone.
 4. **Implementation, test-first (TDD).**
 
-Rules for anyone working on this project:
-- **Prefer existing, well-maintained crates over hand-written infrastructure.** The user doesn't want reinvented wheels. The one agreed exception is the mediator/dispatcher, which is hand-written on purpose.
-- **Ask the user when something is unclear.** Don't guess. The user explicitly prefers clarifying up front.
-- **No Steam or downloader code in this project.** respak is a converter. Where bytes come from is the host's business, handled through the filesystem abstraction.
-- **Never load a large file fully into memory unless it's necessary.** Reading a whole file is fine when the format requires it, for example a pak's full asset table to list its entries. Pulling a multi-GB starpak into memory to get one texture is not. Read only what the current request needs, with range reads.
+Rules:
+- **Prefer existing, well-maintained crates.** The one agreed exception is the mediator, hand-written on purpose.
+- **Ask the user when something is unclear.** Don't guess.
+- **No Steam or downloader code.** Where bytes come from is the host's business.
+- **Read only the byte ranges you need** (§6).
+- **A format handler only handles its own format.** For anything else it asks the mediator: "here is a value, convert it to format X". Modules may share *data types* of other formats, never call their handlers.
+- **Plugin crates depend only on `respak-core`.**
+- **Core contains no format knowledge.**
+- **A version number is not proof of a layout:** the same version can hide several layouts (§5.3).
+- **Keep the public API wrappable for a later FFI:** JSON in/out, object-safe traits.
 
----
-
-## 2. Goals
-- Convert any supported input file into requested outputs.
-- Be **abstract over input formats** (RPak, Miles banks, Source MDL/VPK, future formats and versions) and **over output formats** (PNG, DDS, Cast, SMD, …). The core contains no format knowledge.
-- Support **all versions of all formats, including future ones**, by registering handlers per kind and version range. An unknown version gives an explicit `UnsupportedVersion` error.
-- It is a **Rust crate first**. FFI to other languages comes later, so keep the public API wrappable: JSON in, JSON out, and object-safe traits.
-- A **CLI** for manual use and testing lives in its own crate.
-
-## 3. Crate layout (Cargo workspace)
+## 2. Crates
 ```
-respak/
-  crates/
-    respak-core/    # mediator, middleware, events, core request types, intermediate types,
-                    # plugin cache view, Engine (public API), errors. NO format code.
-    respak-cli/     # host binary: chooses plugin crates, registers them, CLI commands
-    respak-rpak/    # RPak container + every asset kind inside it (txtr, matl, mdl_, uiia, aseq, dtbl, …)
-    respak-image/   # PNG / DDS encoders for core::types::Texture
-  # future: respak-miles (mbnk/mstr), respak-source (MDL v52/53, VPK), respak-cast, respak-smd, …
-```
-- There is **one crate per format family.** Everything belonging to the RPak world lives in `respak-rpak`, and Miles files get their own crate.
-- **Plugin crates depend only on `respak-core`, never on each other.** They communicate through the mediator and the shared intermediate types. For example, `rpak` decodes a texture into `core::types::Texture`, and `image` encodes any `core::types::Texture`. Neither crate knows the other exists.
-
-```
-            respak-core
-   ▲        ▲        ▲        ▲
- rpak    miles    image    cast …        (each depends only on core)
-   ▲                 ▲
-   └──── respak-cli ─┘                   (host registers the plugins it wants)
+crates/
+  respak-core/      # mediator, format graph, scoring, capabilities, volumes, Engine, errors
+  respak-respawn/   # Respawn formats incl. Respawn's flavours: rpak, starpak, txtr, matl, rmdl, aseq,
+                    # arig, dtbl, uimg, shaders, Respawn VPK, … Read now, write later.
+  respak-formats/   # common formats: png, dds (read + write); later cast, smd, csv/json, audio
+  respak-cli/       # host: registers plugins, CLI commands
+# later: respak-miles (mbnk, mstr). Not planned: respak-source (Valve Source MDL/VPK).
 ```
 
-## 4. Key dependencies
+## 3. Dependencies
 | Purpose | Crate | Note |
 |---|---|---|
-| Filesystem abstraction (input, output, cache) | **Apache OpenDAL** (`opendal`) | `Operator` plays the role of .NET `IFileSystem`. Use `services::Fs` for disk and `services::Memory` for tests; hosts can plug in any backend. It is pre-1.0, so **pin an exact version** and check the API names on docs.rs. |
-| Async runtime | `tokio`, `tokio-util` (`CancellationToken`) | tokio is a direct dependency of core (an agreed decision) |
-| Async traits | `async-trait` | needed so the traits can be used as trait objects (`dyn`) |
-| Dedup of in-flight requests | `futures` (`future::Shared`) | |
-| Serialization | `serde`, `serde_json` | requests, selectors, targets, reports and discovery are all JSON |
-| Errors | `thiserror` | |
-| Logging | `tracing` | |
-| Byte buffers | `bytes` | |
+| Storage (input, output, cache) | `opendal` | Pre-1.0: **pin an exact version**. `services::Fs` for disk, `services::Memory` for tests. |
+| Async | `tokio`, `tokio-util` (`CancellationToken`), `async-trait`, `futures` (`Shared`) | tokio is a direct dependency of core |
+| Data | `serde`, `serde_json`, `bytes` | requests, targets, reports, discovery are JSON |
+| Errors / logs | `thiserror`, `tracing` | |
 | CLI | `clap` (derive), `anyhow` | CLI crate only |
+| Candidates | `globset` (path globs), `moka` (in-memory cache, later) | added when needed |
 
-Approaches that were rejected, so don't reopen them without asking:
-- A **home-made filesystem trait.** Use OpenDAL instead.
-- **`object_store`** as the filesystem layer: it requires write methods and its API churns.
-- **`vfs`**: its async support is built on async-std and is being sunset.
-- **`tower`** for the mediator: the user chose a hand-written dispatcher.
-- A **real message broker**: not needed in-process.
+Rejected, don't reopen without asking: a home-made filesystem replacing OpenDAL; `object_store`; `vfs`; `tower` for the mediator; a message broker; first-match `can_handle` routing (→ scoring); shared intermediate structs such as one `Texture` for every format (→ capabilities).
 
-## 5. Architecture: mediator
-The core is an in-process **mediator**, like MediatR in .NET. Everything is a typed request routed to a plugin handler, through a middleware chain. Handlers can send further requests through the mediator.
+## 4. Overview
+Everything is a **value tagged with a format**. Handlers are **edges** between formats. The mediator detects formats by **scoring probes** and converts by finding the **cheapest path** through the graph. Files are addressed by **virtual paths** that may go into containers, because every container is an **OpenDAL service**.
+```
+paks/Win64/common.rpak/texture/foo.txtr  →  png
 
+common.rpak is a file → scored as rpak → its volume is mounted → texture/foo.txtr resolved inside it
+file(rpak volume, texture/foo.txtr) ─read─▶ txtr ─(Bitmap)─▶ png ─▶ output
+   header           read(texture/foo.txtr)                → rpak volume serves the asset header
+   permanent mips   convert(rpak.ptr → file)              → page file in the rpak volume
+   streamed mips    read(texture/foo.txtr.stream, range)  → mapped onto x.starpak → ranged read on the host
+   compressed mip   convert(compressed{oodle,…} → blob)   → codec handler
+```
+`txtr` never parses rpak structures; `rpak` never learns that `txtr` exists.
+
+## 5. Core architecture
+
+### 5.1 Values and formats
 ```rust
-pub trait Request: Send + Sync + 'static {
-    type Response: Clone + Send + Sync + 'static;
-    fn key(&self) -> RequestKey;               // identity for dedup + cycle detection
-}
-#[async_trait]
-pub trait Handler<R: Request>: Send + Sync {
-    fn info(&self) -> HandlerInfo;             // static metadata (see below)
-    fn can_handle(&self, req: &R) -> bool;
-    async fn handle(&self, req: R, cx: &Cx) -> Result<R::Response>;
-}
-pub trait Plugin { fn id(&self) -> &str; fn register(&self, m: &mut Mediator); }
+pub type Value = Arc<dyn Data>;
 
+pub trait Data: Any + Send + Sync + Debug {
+    fn format(&self) -> &FormatId;                  // name + resolved version, e.g. txtr@10
+    fn key(&self) -> &ValueKey;                     // identity for dedup and cycle detection
+    fn approx_size(&self) -> usize { 0 }            // for the later in-memory cache (§7)
+    fn as_blob(&self) -> Option<&dyn Blob> { None } // capabilities (§5.4), default: unsupported
+    fn as_container(&self) -> Option<&dyn Container> { None }
+    fn as_metadata(&self) -> Option<&dyn Metadata> { None }
+    fn as_bitmap(&self) -> Option<&dyn Bitmap> { None }
+    // … as_mesh, as_skeleton, as_animation, as_table, as_audio
+    fn capability(&self, id: TypeId) -> Option<&dyn Any> { None }   // plugin-defined
+}
+pub struct FormatId { name: Cow<'static, str>, version: Option<Version> }
+pub struct Version  { major: u32, minor: u32 }     // minor = layout variant, 0 if none
+```
+- Formats are names owned by the crate that defines them. Core formats:
+  - `file { op: Operator, path, range: Option<Range<u64>> }`: on the host operator or inside a container volume
+  - `blob`: bytes in memory
+  - `bundle`: several values (one output with several sources)
+  - `compressed { codec, data, decoded_len }`: decompressed to `blob` by a plugin's codec handler
+- Plugin formats, including internal plumbing: `rpak`, `starpak`, `rpak.ptr`, `rpak.guid`, `txtr`, … (respawn); `png`, `dds`, … (formats).
+- **Keys:** a file's key is its full virtual path (+ range); a converted value's key is source key + target.
+
+### 5.2 Edges, registration, paths
+- **Read edges** turn a generic value into a specific one (`file → rpak`, `file → txtr`). Each has a probe; the best score wins (§5.3).
+- **Convert edges** turn one format into another (`txtr → dds`, `rpak.ptr → file`, `compressed → blob`, `Bitmap → png`). Each has a cost (1 = lossless, higher = lossy) and starts from a format or a capability.
+- Registration is grouped per format:
+```rust
+impl Plugin for RespawnPlugin {
+    fn id(&self) -> &str { "respawn" }
+    fn register(&self, r: &mut Registry) {
+        r.format("rpak")      .from("file", RpakOpen, |p| p.magic(0, b"RPak").required().u16le(4).within(6..=8));
+        r.format("starpak")   .from("file", StarpakOpen, |p| p.extension(["starpak"]).required());
+        r.format("rpak.ptr")  .to("file", RpakPtrResolve);   // page pointer → page file + range
+        r.format("rpak.guid") .to("file", RpakLocate);       // dependency → asset file (own pak, cache, other paks)
+        r.format("txtr")
+            .from("file", TxtrRead, |p| p.kind("txtr").required().version().within(8..=10))
+            .to("dds", TxtrToDds);                           // copies BC blocks, cost 1
+    }
+}
+r.format("png").from("file", PngRead, |p| p.magic(0, b"\x89PNG").required())
+               .from_cap::<dyn Bitmap>(PngEncode).cost(2);   // respak-formats
+```
+- **Path selection:** the graph is built in `Engine::build()`. Cheapest path wins; a direct edge beats a capability edge of equal cost; two equally cheap paths are a **build error**; a request may pin a route with `via`.
+
+### 5.3 Detection by scoring
+- **Probes look at header values only.** Layout variants are handled in the handler's code (below).
+- Probes use a shared check library: `window(offset, size)`, `magic`, `u16le/u32le/…` with `eq / within / matches(fn)`, `extension`, `len`, and container-provided header values `kind()`, `version()`, `header_size()`. Each check is `.required()` or has `.weight(n)` (default 1).
+- **Score:** a failed required check → 0, candidate dropped. Otherwise the sum of passed weights; **highest absolute score wins** (8/10 beats 5/5), the pass ratio only breaks ties. A real tie → `AmbiguousFormat`; the request can set `format`.
+- **I/O:** each probe declares its windows; the mediator merges them across candidates and reads each range once.
+- **Variants:** one handler per format branches on the variant in code, sampling data if needed (e.g. rsx: `matl` 23.1/23.2 by header size, `rmdl` 12.x by `studiohdr` offsets). The variant becomes `Version.minor`. A separate handler only for big changes, distinguished by its probe. Unknown variant → `UnsupportedVersion` at conversion.
+- Discovery reports winner, score and runners-up.
+
+### 5.4 Capabilities
+Each format keeps its full native type (`TxtrAsset`, …) and implements the capability traits that apply. Capabilities are lazy views.
+- `Blob`: in-memory bytes · `Container`: `volume() -> Operator` · `Metadata`: name, guid, dependencies
+- `Bitmap`: dimensions, depth, array/faces, mip count, pixel format, `read_mip(level, layer)`
+- `Mesh`, `Skeleton`, `Animation`, `Table`, `Audio`: skeletal, refined with the first real converters
+- Core ships owned helpers (e.g. `BitmapBuf`) for converters that create data. Plugins may add capabilities via `Data::capability`.
+
+### 5.5 Mediator, context, linking
+```rust
 impl Mediator {
-    pub fn register<R: Request>(&mut self, h: Arc<dyn Handler<R>>);
-    pub fn add_middleware(&mut self, m: Arc<dyn Middleware>);
-    pub async fn send<R: Request>(&self, req: R, cx: &Cx) -> Result<R::Response>;
+    pub async fn convert(&self, source: Value, to: Target, cx: &Cx) -> Result<Value>;  // Target = { format, options: Value }
+    pub async fn identify(&self, source: Value, cx: &Cx) -> Result<Value>;             // read edges only
     pub fn publish(&self, e: Event);
-    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Event>;
+    pub fn subscribe(&self) -> broadcast::Receiver<Event>;
 }
 ```
-- **Routing:** the first registered handler whose `can_handle` returns true wins, in registration order (document this). If none matches, the result is `Error::NoHandler`.
-- **`HandlerInfo` is static metadata,** so discovery works without decoding anything:
-  - Decoders declare `kind`, `versions: VersionRange` and `produces` (the intermediate type name).
-  - Encoders declare `target_type` (`"png"`) and `accepts` (intermediate type names).
-  - The available targets for an item are computed from the registry: the item's kind and version select a decoder, its `produces` type is matched against what each encoder `accepts`, and the matching encoders are the targets.
-  - When the kind is known but no version range matches, the error is `UnsupportedVersion`, not `NoHandler`.
-- **`Plugin::register`** registers **all** of a crate's handlers. `RpakPlugin` registers:
-  - the input handlers `OpenInput`, `Discover`, `Select`, `Locate` and `ReadItem`
-  - one `Decode` handler per asset kind it understands, each with its version range
-  - any private request types it uses internally
-  
-  Plugins may take options that enable a subset, e.g. `RpakPlugin::default().kinds(["txtr","matl"])`. Input plugins register no encoders.
-- **Plugins may define their own request types.** For example, rpak could define a private `ReadStarpakRange`.
-- **`Cx`** is the per-call context. It holds:
-  - a mediator handle
-  - the call chain of request keys
-  - the `CancellationToken`
-  - `cache() -> Option<PluginCache>`
-  - the input and output `Operator`s
-  - the helpers `blocking(..)` (CPU work via `spawn_blocking`) and `io(..)`
+- **One request type** (`Convert`). Open, select, locate, decode and encode are paths, values and edges; plugin-internal needs are private formats, not private requests.
+- **Linking:** a converter asks for what it needs (a Cast encoder converts its textures to PNG and writes them via `cx.write`). Dedup produces each thing once; there is no `with_dependencies` flag.
+- **Output:** core writes any `Blob` value to the output operator; multi-file or streaming writers use `cx` directly.
+- **`Cx`:** mediator handle, call chain of keys, `CancellationToken`, input/output operators, `cache()`, `write(path, value)`, `blocking(..)` (`spawn_blocking`) and `io(..)`.
+- **`TypedTarget<T>`** parses target options into a plugin struct (missing fields from `Default`); typed edge adapters downcast `Value` to the handler's type.
 
-### Middleware
-`trait Middleware { async fn around(&self, req: &dyn ErasedRequest, cx: &Cx, next: Next<'_>) -> Result<ErasedResponse>; }`. The built-in layers run in this order:
-1. **Cancellation:** fail with `Cancelled` if the token has been triggered.
-2. **Cycle guard:** a key already in the call chain gives `DependencyCycle`. The guard *also* keeps a **wait-for graph over in-flight keys**. Without it, two concurrent chains (A→B in one, B→A in the other) would each wait on the other's in-flight future forever.
-3. **Dedup:** an in-flight map of `RequestKey` to `Shared` future. Identical concurrent requests share one result. **The entry is removed when the request completes.** The exception is `OpenInput`: an opened file's handle (header and tables) stays open for the rest of the `convert` call.
-4. **Tracing:** a span per request.
-5. **Events:** started, finished and failed events.
+### 5.6 Middleware
+`async fn around(&self, req: &Convert, cx: &Cx, next: Next<'_>) -> Result<Value>`. Built-ins, in order:
+1. **Cancellation:** `Cancelled` if the token is triggered.
+2. **Cycle guard:** a key already in the call chain → `DependencyCycle`. Also a **wait-for graph** over in-flight keys (recorded when a request joins an in-flight future), so concurrent chains A→B / B→A can't deadlock.
+3. **Dedup:** in-flight map (source key, target) → `Shared` future. Removed on completion, except mounted volumes, which live until the `Engine` call ends.
+4. **Tracing** span per request. 5. **Events:** started / finished / failed.
 
-**There is no per-request concurrency limit.** A parent holds its permit while it awaits its children, so such a limit deadlocks. Limits apply only to top-level outputs in `Engine::convert` and to the work done in `cx.blocking`/`cx.io`.
+- **No per-request concurrency limit** (a parent awaiting children while holding a permit deadlocks). Limits apply only to top-level outputs and to `cx.blocking` / `cx.io`.
+- Results are shared, so `Value` is `Arc` and errors are `Arc`-wrapped (`opendal::Error` isn't `Clone`). Hosts can add middleware.
 
-Because results are shared between waiters, `Response: Clone` and errors are `Arc`-wrapped. `opendal::Error` isn't `Clone`.
+### 5.7 Events
+- `#[non_exhaustive] enum Event`: `RequestStarted`, `RequestFinished`, `RequestFailed`, `InputOpened{path, files}`, `OutputWritten{path}`, `Progress{task, done, total}`, `Warning{message}`, `Custom{source, name, data}`.
+- `tokio::sync::broadcast`; `LogSubscriber` forwards to `tracing`. Progress is only an event. Lagging subscribers may miss events; anything that matters is in the returned report.
 
-### Events (pub/sub)
-- `#[non_exhaustive] enum Event` has these variants:
-  - `RequestStarted`, `RequestFinished`, `RequestFailed`
-  - `InputOpened{path, files}`, `OutputWritten{path}`
-  - `Progress{task, done, total}`
-  - `Warning{message}`
-  - `Custom{source, name, data: Value}`
-- Events go through a `tokio::sync::broadcast` channel. A built-in `LogSubscriber` forwards them to `tracing`, and the CLI prints them to stderr.
-- **Progress is published as events**, so there is no separate progress interface.
-- A slow subscriber can miss events (`Lagged`), and that's acceptable. Results that matter are always in the returned report, never only in events.
+### 5.8 Writing Respawn formats (later, designed now)
+- An rpak writer is an edge `bundle → rpak`. It converts each item to `rpak.asset@V` (writer-side: header, pages, streamed data); per-kind writers register the versions they produce.
+- The target names a **profile**, not a bare version: `{"type": "rpak", "profile": "apex-s20"}`. A profile (table in `respak-respawn`) fixes the pak version and each kind's version/variant. If any item can't be produced, the output fails with `UnsupportedVersion` **before writing**.
+- Writers stream large data to the output operator. No core changes are needed to add them.
 
-## 6. Core request types
-| Request | Response | Handled by |
-|---|---|---|
-| `OpenInput { path, format: Option<String> }` | `Arc<dyn OpenedInput>` | the input plugin; the right one is picked by `can_handle` (extension or header probe) |
-| `Discover { input }` | `Vec<DiscoveredItem>` | the input plugin lists the items; the engine fills in `targets` from registry metadata |
-| `Select { input, selector: Value }` | `Vec<ItemRef>` | the input plugin, which parses its own selector struct |
-| `Locate { from: ItemRef, key }` | `ItemRef` or `MissingDependency` | the plugin owning `from`'s file: it checks its own file, then its cache, then opens other files lazily |
-| `ReadItem { item }` | `RawItem { kind, version, header: Bytes, data: ItemData }` | the input plugin; `ItemData` reads byte ranges on demand |
-| `Decode { item }` | `Decoded = Arc<dyn Intermediate>` | the decoder for (kind, version) |
-| `Encode { item, target: Value, path: Option<String> }` | `Vec<String>` (written paths) | the encoder for target `type` |
+## 6. I/O: every file is a path on an OpenDAL operator
+- **Inputs may be remote and expensive.** A host may plug in a backend that downloads byte ranges on demand (e.g. Steam depots, host code only). A 60 GB starpak must cost its table of contents plus the requested few MB, never a full download:
+  - sizes come from `stat`, never from reading;
+  - every read is ranged; a whole-file read only where the format requires it (a compressed `.rpak` body), documented in its doc comment;
+  - no read-ahead beyond the range plus a small bounded margin; nearby small reads may be coalesced;
+  - small, expensive-to-re-read data (a starpak's table of contents) goes to the plugin cache;
+  - tested with a byte-counting `Operator` layer on a synthetic multi-GB starpak.
+- **Containers are OpenDAL services.** A container (rpak, starpak, later VPK, mbnk) exposes its contents as a read-only `Operator`, its **volume**. Readers always work on (`Operator`, path), at any nesting depth, and OpenDAL layers (byte counting, logging, chunk cache) work inside containers too.
+- **Small per-container code:** core provides one generic adapter implementing OpenDAL's service traits over a small read-only trait (`stat`, ranged `read`, `list`).
+- **Virtual paths** are resolved left to right: the longest prefix that is a real file is scored; if it is a container, the rest is resolved in its volume; repeat. Real files win over container entries. Globs are supported.
+- **Container compression is the container's business;** its volume decompresses on demand and documents the cost:
+  - chunked with an index: only the chunks covering the range;
+  - one stream (`.rpak` body; flags RTech `1<<8`, Oodle `1<<9`, zstd `1<<15`): decompress forward, keep tables and a bounded set of pages, restart only for an evicted page. Costs the `.rpak`'s size, never its starpaks'.
+- **Compression inside a format** (texture mips, model LODs) stays in that format: ranged read of the unit, then `compressed → blob`. Units are small, so cost is bounded.
+- **Codecs are shared mediator edges** (RTech, Snowflake, Oodle in respawn; zstd where first needed), so a host can also supply a licensed codec (Oodle).
+- **rpak volume (proposal):**
+  ```
+  common.rpak/
+    texture/foo.txtr          asset header; stat carries kind, version, header size, guid
+    0x8A3F12C4D5E6F701.txtr   the same asset by GUID (names may be unknown)
+    texture/foo.txtr.stream   streamed data → mandatory starpak
+    texture/foo.txtr.opt      streamed data → optional starpak
+    .pages/12                 one decompressed page (target of rpak.ptr)
+  ```
+  The extension is the asset's kind; a name is hashed to its GUID, so named paths work without stored names. Starpaks are volumes too (`x.starpak/<offset>`, sized by their table of contents) and are opened lazily.
+- **Companion files** (starpaks, patches, `common.rpak`) are opened only when the current request needs them. Missing → `MissingDependency{item, file}`, except a missing optional starpak when the handler can fall back to lower mips.
 
-- **`OpenedInput`** is an object-safe trait with `id`, `source_files` (every file pulled in: the rpak, its starpaks and patches), `items` and `suggested_path(item)`.
-- **Item identity is `ItemRef { file: String, key: String }`,** the file plus the format's internal id: a GUID for RPak, an entry path for VPK, empty for a single-asset file.
-  - Some references don't know their file yet. An RPak dependency, for example, is stored only as a GUID and often lives in another pak such as `common.rpak`. Such a reference stays inside the plugin until `Locate` turns it into an `ItemRef`.
-- **The pipeline is decode → intermediate → encode.** Hosts can stop after decode to get in-memory data.
-- **The intermediate set is open:**
-  - `trait Intermediate: Any + Send + Sync { fn type_name(&self) -> &'static str; }`
-  - Standard types live in `core::types`: `Texture`, `Model`, `Material`, `Animation`, `Rig`, `Audio`, `Table`, `Text`, `Binary`. They are skeletal at first.
-  - A plugin can add its own types.
-- **Linking:** an encoder asks for what it needs, e.g. a Cast model encoder sends `Encode{texture, {"type":"png"}}` and gets the written path back. Dedup ensures each thing is produced once, and the cycle guard catches loops. **There is no `with_dependencies` flag:** a request names only the desired output, and converters fetch the dependencies that output needs.
-- **Typed helpers** let plugin authors use their own structs for selectors and options while the core only sees JSON: `TypedSelector<T>` and `TypedTarget<T>`, where `T: Serialize + DeserializeOwned`. This is the Rust equivalent of .NET's `IHandler<TSelector>` → `IHandler`.
+## 7. Memory and caching
+- **Now:** values live only while in flight (dedup), plus mounted volumes for the `Engine` call.
+- **Later:** an in-memory cache as an optional Dedup retention policy (size-bounded LRU weighted by `approx_size`), off by default.
+- **Plugin cache:** optional `Operator`; each plugin gets `cx.cache() -> Option<PluginCache>` namespaced by plugin id + schema version (`get`, `put`, `remove`, `get_json`, `put_json`). Core never interprets contents (e.g. respawn: GUID → name, GUID → containing file). Plugins must work without it; cache errors become `Warning` events.
 
-## 7. I/O and memory rules
-- All I/O goes through OpenDAL `Operator`s supplied by the host: **input**, **output** and an optional **cache**.
-- **Never load a large file fully into memory unless it's necessary** (see section 1).
-  - `OpenInput` reads what's needed to list items, using `read_with(path).range(..)` where the format allows.
-  - Item data, especially starpak data, is read by offset and length, in chunks.
-- **Caveat to verify per RPak version:** a compressed `.rpak` body may have to be decompressed as one stream. That costs the size of the `.rpak`, not of the starpaks. Stream-decompress it and keep only the tables and pages that are needed.
-- **Memory policy:** decoded results live only while a request is in flight (for dedup). Nothing is kept for the whole call. Reuse comes from the plugin cache or from decoding again.
-- **Cross-file dependencies** are opened lazily, **only when the current request needs them**. If a file can't be located or opened, that output fails with `MissingDependency{item, file}`.
-
-## 8. Optional plugin cache
-- It is an optional `Operator`, so any OpenDAL backend works: a directory, memory, SQLite, …
-- Each plugin gets a **namespaced view**, `cx.cache() -> Option<PluginCache>`. The prefix is the plugin id plus its schema version.
-  - Methods: `get`, `put`, `remove`, `get_json<T>`, `put_json<T>`.
-- **Core never interprets cache contents.** Each plugin decides what helps it decode faster, such as name mappings or indexes.
-  - Example: rsx caches GUID → original name and GUID → containing file. An RPak GUID is a hash of the asset path, so names can be recovered and dependencies located.
-- **Plugins must work without a cache.** A cache error becomes a `Warning` event and is never fatal.
-
-## 9. Public API (`respak-core::Engine`)
-- **Builder:** `Engine::builder().input(op).output(op).cache(op /*optional*/).plugin(p).middleware(m).build()`
-- **Methods:**
-  - `engine.discover(path, &cancel) -> Result<Discovery>`
-  - `engine.convert(&ConvertRequest, &cancel) -> ConvertReport`: each output becomes `Select` + `Encode`. **When one output fails the others continue**, and the report has a result for each output.
-  - `engine.decode(path, selector, &cancel) -> Result<Decoded>`: in-memory access.
-  - `engine.events() -> broadcast::Receiver<Event>`
-
-JSON shapes. A request is **one input file plus a list of desired outputs**:
+## 8. Public API (`Engine`)
+- `Engine::builder().input(op).output(op).cache(op?).plugin(p).middleware(m).max_concurrency(n).event_capacity(n).build()`; `build()` fails on ambiguous paths.
+- `discover(path, &DiscoverOptions{depth}, &cancel) -> Result<Discovery>` · `convert(&ConvertRequest, &cancel) -> ConvertReport` · `open(path_or_glob, &cancel) -> Result<Vec<Value>>` · `events()` · `formats() -> FormatGraph`
 ```json
 { "version": 1,
-  "input": "paks/Win64/common.rpak",
-  "format": null,
   "outputs": [
-    { "select": { "asset": "mdl/weapons/r97/w_r97.rmdl" }, "target": { "type": "cast" } },
-    { "select": { "guid": "0x8A3F12C4D5E6F701" }, "target": { "type": "png", "mips": "all" }, "path": "custom/name.png" }
-  ] }
+    { "from": "paks/Win64/common.rpak/texture/foo.txtr", "to": { "type": "png", "mips": "all" } },
+    { "from": "paks/Win64/common.rpak/0x8A3F12C4D5E6F701.rmdl", "to": { "type": "cast" }, "path": "custom/w_r97.cast" },
+    { "from": "paks/Win64/common.rpak/**/*.txtr", "to": { "type": "dds" } },
+    { "from": [ "art/icon.png", { "path": "mods/thing.bin", "format": "txtr" } ],
+      "to": { "type": "rpak", "profile": "apex-s20" }, "path": "out/custom.rpak" } ] }
 ```
-- `select` is the input plugin's own struct.
-  - RPak: `{asset}`, `{guid}` or `{kind}`. An asset path is hashed to its GUID, so selection works even without names.
-  - MDL or DDS: `{}`.
-  - VPK: `{entry}`.
-- `target` is the encoder's own struct: `type` picks the encoder, and the other fields are its options.
-- `path` is optional. By default the input plugin's `suggested_path` is used; for RPak that is the asset path, falling back to the GUID.
+- `from`: a path, glob or list; `{path, format}` overrides detection. Several files → one bundle if the target accepts `bundle`, otherwise one conversion each.
+- `to.type` is the target format; other fields are its options, plus optional `via`.
+- `path` defaults to the path inside the innermost container with the target's extension (`texture/foo.png`). Existing outputs are overwritten.
+- Outputs run in parallel up to `max_concurrency`; one failure doesn't stop the others.
 - `ConvertReport { outputs: [ Ok{files, dependencies} | Err{error} ] }`
-- `Discovery { input, format, items: [ { select, kind, version, name?, targets: [ {type, label, defaults} ] } ] }`. Discovery returns the **same shapes** a request uses, so entries can be copied straight into a request.
+- `Discovery { path, entries: [ { path, format, version, score, alternatives, name?, targets: [ {type, label, defaults} ] } ] }`. Targets are formats reachable in the graph (no decoding); an entry's `path` goes straight into `from`.
 
-Other defaults:
-- The input format is auto-detected, and `"format"` overrides it.
-- Existing outputs are overwritten.
-- Top-level outputs run in parallel, up to a configurable limit.
+## 9. Errors
+`Error(Arc<ErrorKind>)`, serialized as kind + message: `UnknownFormat`, `AmbiguousFormat{candidates}`, `UnsupportedVersion{format, version}`, `NoPath{from, to}`, `NoMatch`, `InvalidOptions`, `NotFound`, `Storage(opendal::Error)`, `MissingDependency{item, file}`, `DependencyCycle{chain}`, `Corrupt{context}`, `Cancelled`, `Custom{source, message}`.
 
-## 10. Errors
-`Error` is cheap to clone (`Arc`). Its variants:
-- `NoHandler`, `NotFound`, `Storage(opendal::Error)`
-- `UnsupportedVersion{kind,version}`, `InvalidSelector`, `NoMatch`
-- `UnknownTarget`, `TargetNotApplicable`, `InvalidOptions`
-- `MissingDependency{item,file}`, `DependencyCycle{chain}`
-- `Corrupt`, `Cancelled`
+## 10. CLI (`respak-cli`)
+- `lib.rs`: `async fn run(cli, engine, out) -> Result<ExitCode>`, testable in-process with `services::Memory`.
+- `main.rs`: `services::Fs` operators from `--root`, `--out`, optional `--cache`; registers plugins; events to stderr; Ctrl-C → cancel.
+- `formats` · `discover <path>... [--depth N]` · `run <request.json | ->` · `convert <path|glob> --to '<json>' [--path P]`. Non-zero exit if any output failed.
 
-## 11. CLI (`respak-cli`)
-- `src/lib.rs` holds `async fn run(cli, engine, out) -> Result<ExitCode>`, so it can be tested in-process with `services::Memory`.
-- `src/main.rs` runs under `#[tokio::main]`. It:
-  - builds `services::Fs` operators from `--root`, `--out` and the optional `--cache`
-  - registers the plugins
-  - prints events to stderr
-  - wires Ctrl-C to the cancel token
-- Commands:
-  - `formats` lists the registered handlers as JSON.
-  - `discover <input>` prints the Discovery JSON.
-  - `run <request.json | ->` runs a full request and prints the report.
-  - `convert <input> --select '<json>' --target '<json>' [--path P]` is the shorthand for a single output.
+## 11. Open questions (decide with the user)
+- Raw-byte / chunk caching of the input operator (the user asked to revisit; matters for remote inputs).
+- In-memory cache design (§7).
+- OpenDAL pin: API names; size of the generic service adapter; can `Metadata` carry custom fields (kind, version, header size); is a host ranged-read backend (e.g. Steam depot) practical?
+- rpak volume naming (§6 proposal).
+- Exact capability methods; option schemas for targets (`schemars`?).
+- FFI shape for the async API ("JSON in/out + event callback").
+- zstd-compressed paks (flagged, unsupported by rsx). Codec licensing (Oodle).
 
-## 12. Open questions (deferred, not to be decided alone)
-- **Raw-byte caching of the input `Operator`:** the user asked to revisit this later. Ask them.
-- **FFI shape for the async API.** "JSON in / JSON out + an event callback" looks natural.
-- **Exact fields of the intermediate types,** to be refined with the first real decoders and encoders.
-- **Option schemas:** should `TargetInfo` carry a JSON Schema (e.g. `schemars`)?
-- **OpenDAL version pinning** and an API-name check.
-- **RPak compression layout per version:** confirm the caveat in section 7.
-
-## 13. Background from rsx (format knowledge source)
-- **What the rsx export architecture does:**
-  - a global `std::map<fourCC, AssetTypeBinding_t>`, where each binding has `exportFunc(asset, setting)` and the format index lives in global state
-  - dispatch in `src/core/filehandling/rpak.cpp`, run on a parallel task pool
-- **Problems in rsx that respak avoids:**
-  - global mutable settings
-  - shared dependencies exported several times, concurrently, to the same path
-  - the no-GUI build never executes the export tasks
-  - exporters write directly to disk, and each one repeats path building
-  - failures reported as a bare `bool`
-- **Where to look in the rsx repo for format knowledge:**
-  - `src/game/rtech/cpakfile.{h,cpp}`: RPak headers v6/v7/v8, asset entries, patches, starpaks
-  - `src/game/rtech/starpak_source.h`: the range-reader abstraction for starpaks
-  - `src/game/rtech/assets/*.cpp`: per-asset-type parsing and export (texture, material, model, animseq, …)
-  - `src/core/mdl/`: model writers (Cast, SMD, QC, RMAX)
-  - `src/core/cache/cachedb.h`: the GUID → name/file mapping database
+## 12. rsx reference
+- **Avoid rsx's problems:** global mutable settings; dependencies exported several times concurrently to one path; exporters writing straight to disk with repeated path logic; failures as bare `bool`.
+- **Where to look** (paths under `src/game/rtech/` unless noted):
+  - `cpakfile.{h,cpp}`: pak headers v6/v7/v8, asset entries (`headerStructSize`), patches, compression flags. Starpak offsets: low 12 bits = starpak index, rest = 4K-aligned offset (`cpakfile.h:1175`); starpak table of contents at file end (`cpakfile.cpp:635`).
+  - `starpak_source.h`: starpak range reads. Compressed streamed data: per-mip codec bits `assets/texture.h:1072`, per-LOD `src/core/mdl/modeldata.h:340`, codec enum `utils/utils.h:148`.
+  - `assets/*.cpp`: per-kind parsing. Variant detection: `material.cpp`, `model.cpp` `GetModelVersionFromAsset`, `animseq.h`, `settings.cpp`, `shaderset.cpp`, `ui_rtk.cpp`; `AssetVersion_t` in `src/game/asset.h`.
+  - `src/core/mdl/`: Cast/SMD/QC writers · `src/core/cache/cachedb.h`: GUID → name/file database.
