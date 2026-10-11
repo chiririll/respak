@@ -11,3 +11,5 @@ workspace = true
 [dependencies]
 
 opendal.workspace = true
+serde.workspace = true
+thiserror.workspace = true

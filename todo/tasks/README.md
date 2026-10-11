@@ -8,7 +8,7 @@ Status values: `todo` · `in-progress` · `blocked` (waiting on the user or anot
 | # | Task | Depends on | Status |
 |---|---|---|---|
 | 01 | [Workspace setup](01-workspace-setup.md) | — | done |
-| 02 | [Core: errors](02-core-errors.md) | 01 | todo |
+| 02 | [Core: errors](02-core-errors.md) | 01 | done |
 | 03 | [Core: values, formats, keys](03-core-values.md) | 02 | todo |
 | 04 | [Core: capabilities](04-core-capabilities.md) | 03 | todo |
 | 05 | [Core: events](05-core-events.md) | 03 | todo |

@@ -1,5 +1,5 @@
 # 02 · Core: errors
-**Status:** todo · **Depends on:** 01 · **See:** PROJECT.md §9
+**Status:** done · **Depends on:** 01 · **See:** PROJECT.md §9
 
 ## Goal
 One shared, cloneable error type for the whole library.
