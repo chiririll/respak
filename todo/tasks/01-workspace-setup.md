@@ -1,5 +1,5 @@
 # 01 · Workspace setup
-**Status:** todo · **Depends on:** — · **See:** PROJECT.md §2, §3
+**Status:** done · **Depends on:** — · **See:** PROJECT.md §2, §3
 
 ## Goal
 Create the Cargo workspace and the four crates, with dependencies declared once at workspace level.

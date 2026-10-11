@@ -38,7 +38,7 @@ crates/
 ## 3. Dependencies
 | Purpose | Crate | Note |
 |---|---|---|
-| Storage (input, output, cache) | `opendal` | Pre-1.0: **pin an exact version**. `services::Fs` for disk, `services::Memory` for tests. |
+| Storage (input, output, cache) | `opendal` | Pre-1.0: **pinned `=0.59.4`** (latest stable, checked in task 01), `default-features = false`, features `services-fs`, `executors-tokio`. `services::Fs` for disk, `services::Memory` for tests (always available, lives in `opendal-core`). API notes below. |
 | Async | `tokio`, `tokio-util` (`CancellationToken`), `async-trait`, `futures` (`Shared`) | tokio is a direct dependency of core |
 | Data | `serde`, `serde_json`, `bytes` | requests, targets, reports, discovery are JSON |
 | Errors / logs | `thiserror`, `tracing` | |
@@ -265,7 +265,13 @@ impl Mediator {
 - **rpak patches** (`common(01).rpak`, …, `patch_master.rpak`): out of scope for v1. Later the base pak's volume probably applies the latest patch transparently.
 - Raw-byte / chunk caching of the input operator (the user asked to revisit; matters for remote inputs).
 - In-memory cache design (§7).
-- OpenDAL pin: API names; size of the generic service adapter; is a host ranged-read backend (e.g. Steam depot) practical?
+- OpenDAL pin (`=0.59.4`, API names verified from source in task 01). Still open: size of the generic service adapter; is a host ranged-read backend (e.g. Steam depot) practical? Verified API, and where it differs from older docs:
+  - Present: `Operator`, `stat`, `exists`, `read`, `read_with(p).range(..)`, `reader`/`reader_with` (`Reader::read(range)`, `fetch(Vec<Range>)`), `list`/`lister`, `write` (returns `Metadata`, not `()`), `services::Fs` (feature `services-fs`, needs tokio), `services::Memory` (always available).
+  - `opendal` is a facade over `opendal-core` and per-service crates; custom-service API is under `opendal::raw`.
+  - `Access`/`Accessor` → `raw::Service` (`ServiceInfo`, dyn `ServiceDyn`, `Servicer = Arc<dyn ServiceDyn>`). Methods take `&OperationContext` first; `read`/`write`/`list`/`delete` are sync and return the reader/lister, `stat`/`create_dir` are async.
+  - Read-only service (task 09): implement `raw::Service` with `Reader = oio::StreamReader<R>` where `R: oio::StreamRead` (one method, `open(range)`), `Lister: oio::List` (`next() -> Option<Entry>`), the rest `()`; report only `stat`/`read`/`list` in `capability()` (use `..Default::default()`); return `ErrorKind::Unsupported` otherwise. Template: `MemoryBackend` in `opendal-core`. Build with `Operator::new(Builder)` (needs `Builder` + `Configurator`) or `Operator::from_inner(Arc<dyn ServiceDyn>)`.
+  - `Layer` has a new shape (`apply_service`, `apply_context`); `Operator::new` has no `.finish()`; `Scheme` enum is replaced by string schemes; option structs grow fields, never use exhaustive literals.
+  - Not verified: running with `default-features = false` and no executor feature; we enable `executors-tokio`.
 - rpak volume layout (§6 proposal): file names, the `.mem` pointer-relocation scheme.
 - Exact capability methods; option schemas for targets (`schemars`?).
 - FFI shape for the async API ("JSON in/out + event callback").

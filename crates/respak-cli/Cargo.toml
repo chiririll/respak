@@ -1,0 +1,11 @@
+[package]
+name = "respak-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+respak-core.workspace = true
+respak-respawn.workspace = true
+respak-formats.workspace = true

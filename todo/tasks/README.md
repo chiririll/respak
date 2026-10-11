@@ -7,7 +7,7 @@ Status values: `todo` · `in-progress` · `blocked` (waiting on the user or anot
 ## Phase 1: interfaces only (compiles, `todo!()` bodies, no tests)
 | # | Task | Depends on | Status |
 |---|---|---|---|
-| 01 | [Workspace setup](01-workspace-setup.md) | — | todo |
+| 01 | [Workspace setup](01-workspace-setup.md) | — | done |
 | 02 | [Core: errors](02-core-errors.md) | 01 | todo |
 | 03 | [Core: values, formats, keys](03-core-values.md) | 02 | todo |
 | 04 | [Core: capabilities](04-core-capabilities.md) | 03 | todo |
