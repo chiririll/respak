@@ -56,5 +56,5 @@ pub trait ConvertHandler: Send + Sync {
 
 /// Score helper: whether `header[offset..]` starts with `magic`.
 pub fn magic(header: &[u8], offset: usize, magic: &[u8]) -> bool {
-    todo!()
+    offset.checked_add(magic.len()).and_then(|end| header.get(offset..end)) == Some(magic)
 }

@@ -70,19 +70,24 @@ impl Data for FileData {
     }
 }
 
-/// `blob`: bytes in memory.
+/// `blob`: bytes in memory. A converter that encodes a format (e.g. `png`) returns a blob
+/// tagged with that format (see [`BlobData::with_format`]), so core can write it out.
 #[derive(Debug)]
 pub struct BlobData {
     bytes: Bytes,
     key: ValueKey,
+    format: FormatId,
 }
 
-core_format!(BlobData, BLOB);
-
 impl BlobData {
-    /// A blob with the given identity.
+    /// A plain `blob` with the given identity.
     pub fn new(bytes: Bytes, key: ValueKey) -> Self {
-        Self { bytes, key }
+        Self { bytes, key, format: FormatId::from_static(BLOB) }
+    }
+
+    /// Encoded bytes of `format`; still a [`Blob`] capability, so it can be written to the output.
+    pub fn with_format(format: FormatId, bytes: Bytes, key: ValueKey) -> Self {
+        Self { bytes, key, format }
     }
 
     /// The bytes.
@@ -99,7 +104,7 @@ impl Blob for BlobData {
 
 impl Data for BlobData {
     fn format(&self) -> &FormatId {
-        Self::format_id()
+        &self.format
     }
     fn key(&self) -> &ValueKey {
         &self.key

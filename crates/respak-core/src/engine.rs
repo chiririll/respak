@@ -1,12 +1,14 @@
 //! The public entry point (PROJECT.md §8). Slice 05: single-path `convert` only.
 
+use std::sync::Arc;
+
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
-use crate::mediator::Mediator;
-use crate::plugin::Plugin;
-use crate::value::FormatId;
+use crate::error::{Error, ErrorKind, Result};
+use crate::mediator::{Cx, Mediator, Target};
+use crate::plugin::{Plugin, Registry};
+use crate::value::{FileData, FormatId, Value};
 
 /// `{ "version": 1, "outputs": [...] }`
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -72,6 +74,15 @@ pub enum OutputResult {
     },
 }
 
+/// `icon.png` + `dds` -> `icon.dds`; a dot in a directory name is not an extension.
+fn with_extension(path: &str, ext: &str) -> String {
+    let name_start = path.rfind('/').map_or(0, |i| i + 1);
+    match path[name_start..].rfind('.') {
+        Some(dot) if dot > 0 => format!("{}.{ext}", &path[..name_start + dot]),
+        _ => format!("{path}.{ext}"),
+    }
+}
+
 /// Builds an [`Engine`].
 #[derive(Default)]
 pub struct EngineBuilder {
@@ -82,20 +93,33 @@ pub struct EngineBuilder {
 
 impl EngineBuilder {
     /// Where inputs are read from (required).
-    pub fn input(self, op: Operator) -> Self {
-        todo!()
+    pub fn input(mut self, op: Operator) -> Self {
+        self.input = Some(op);
+        self
     }
     /// Where outputs are written (required).
-    pub fn output(self, op: Operator) -> Self {
-        todo!()
+    pub fn output(mut self, op: Operator) -> Self {
+        self.output = Some(op);
+        self
     }
     /// Adds a plugin.
-    pub fn plugin(self, p: impl Plugin + 'static) -> Self {
-        todo!()
+    pub fn plugin(mut self, p: impl Plugin + 'static) -> Self {
+        self.plugins.push(Box::new(p));
+        self
     }
     /// Fails on a missing operator or a format defined twice.
     pub fn build(self) -> Result<Engine> {
-        todo!()
+        let missing = |what: &str| {
+            Error::new(ErrorKind::Custom { source: None, message: format!("engine has no {what} operator") })
+        };
+        let input = self.input.ok_or_else(|| missing("input"))?;
+        let output = self.output.ok_or_else(|| missing("output"))?;
+        let mut registry = Registry::new();
+        for p in &self.plugins {
+            registry.add(p.as_ref());
+        }
+        registry.check()?;
+        Ok(Engine { mediator: Mediator::new(registry), input, output })
     }
 }
 
@@ -115,6 +139,47 @@ impl Engine {
     /// Runs every output; one failing output does not stop the others.
     /// `Err` only for an invalid request (unknown `version`).
     pub async fn convert(&self, request: &ConvertRequest) -> Result<ConvertReport> {
-        todo!()
+        if request.version != 1 {
+            return Err(Error::new(ErrorKind::InvalidRequest {
+                message: format!("unknown request version {}", request.version),
+            }));
+        }
+        let mut outputs = Vec::with_capacity(request.outputs.len());
+        for out in &request.outputs {
+            let result = match self.convert_one(out).await {
+                Ok(files) => OutputResult::Ok { files },
+                Err(error) => OutputResult::Err { error },
+            };
+            outputs.push(OutputReport { from: out.from.clone(), result });
+        }
+        Ok(ConvertReport { outputs })
+    }
+
+    async fn convert_one(&self, out: &OutputRequest) -> Result<Vec<String>> {
+        self.input.stat(&out.from).await?;
+        let cx = Cx { mediator: self.mediator.clone(), input: self.input.clone(), output: self.output.clone() };
+        let source: Value = Arc::new(FileData::new(self.input.clone(), out.from.clone(), out.from.clone(), None));
+        let options = if out.to.options.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::Object(out.to.options.clone())
+        };
+        let target = Target { format: out.to.format.clone(), options };
+        let result = self.mediator.convert(source, target, &cx).await?;
+        let blob = result.as_blob().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: format!("a `{}` value cannot be written to a file", result.format()),
+            })
+        })?;
+        let path = match &out.path {
+            Some(p) => p.clone(),
+            None => {
+                let name = out.to.format.name();
+                with_extension(&out.from, self.mediator.extension_of(name).unwrap_or(name))
+            }
+        };
+        self.output.write(&path, blob.bytes().clone()).await?;
+        Ok(vec![path])
     }
 }

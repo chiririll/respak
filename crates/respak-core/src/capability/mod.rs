@@ -31,7 +31,7 @@ pub trait Cap {
 }
 
 // Compile-time check that every capability is object-safe.
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 fn _object_safe(
     _: &dyn Blob,
     _: &dyn Container,

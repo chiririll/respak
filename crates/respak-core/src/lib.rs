@@ -1,7 +1,5 @@
 //! respak-core: mediator, format graph, capabilities, volumes and the engine.
 
-// Sketch stage (task 05): bodies are todo!().
-#![allow(unused_variables, dead_code)]
 
 pub mod capability;
 pub mod detect;
