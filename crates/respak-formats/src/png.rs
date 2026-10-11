@@ -46,17 +46,19 @@ pub struct PngEncode;
 
 #[async_trait]
 impl Detect for PngRead {
-    /// Magic = 10, plus extension `png` = +1. The extension alone does not make a PNG.
+    /// Magic = 10, `IHDR` as the first chunk = +2, extension `png` = +1. The extension alone
+    /// does not make a PNG.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
         if !magic(input.header, 0, &MAGIC) {
             return Ok(None);
         }
-        let bonus = u32::from(input.extension == Some("png"));
-        Ok(Some(Detected { score: 10 + bonus, version: None }))
+        let ihdr = u32::from(magic(input.header, 12, b"IHDR")) * 2;
+        let ext = u32::from(input.extension == Some("png"));
+        Ok(Some(Detected { score: 10 + ihdr + ext, version: None }))
     }
 
     fn header_len(&self) -> usize {
-        MAGIC.len()
+        16
     }
 }
 

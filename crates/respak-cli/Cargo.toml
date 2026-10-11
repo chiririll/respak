@@ -17,3 +17,4 @@ opendal.workspace = true
 
 [dev-dependencies]
 png = "0.18"
+ddsfile = "0.6"

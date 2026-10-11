@@ -11,7 +11,7 @@ use opendal::Operator;
 use respak_core::capability::{Bitmap, BitmapInfo, PixelFormat};
 use respak_core::value::BlobData;
 use respak_core::{
-    magic, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Target,
+    magic, u32le, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Target,
     Value, ValueKey,
 };
 
@@ -70,17 +70,18 @@ pub struct DdsEncode;
 
 #[async_trait]
 impl Detect for DdsRead {
-    /// Magic = 10, plus extension `dds` = +1.
+    /// Magic = 10, header size field 124 = +2, extension `dds` = +1.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
         if !magic(input.header, 0, MAGIC) {
             return Ok(None);
         }
-        let bonus = u32::from(input.extension == Some("dds"));
-        Ok(Some(Detected { score: 10 + bonus, version: None }))
+        let size = u32::from(u32le(input.header, 4) == Some(124)) * 2;
+        let ext = u32::from(input.extension == Some("dds"));
+        Ok(Some(Detected { score: 10 + size + ext, version: None }))
     }
 
     fn header_len(&self) -> usize {
-        MAGIC.len()
+        8
     }
 }
 

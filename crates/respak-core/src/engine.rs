@@ -5,7 +5,9 @@ use std::sync::Arc;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 
+use crate::discover::{Alternative, DiscoverOptions, Discovery, DiscoveryEntry};
 use crate::error::{Error, ErrorKind, Result};
+use crate::graph::FormatGraph;
 use crate::mediator::{Cx, Mediator, Target};
 use crate::plugin::{Plugin, Registry};
 use crate::value::{FileData, FormatId, Value};
@@ -38,6 +40,9 @@ pub struct TargetSpec {
     /// Target format.
     #[serde(rename = "type")]
     pub format: FormatId,
+    /// Formats the conversion path must pass through, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub via: Vec<String>,
     /// All other fields. Not interpreted in this slice.
     #[serde(flatten)]
     pub options: serde_json::Map<String, serde_json::Value>,
@@ -136,6 +141,54 @@ impl Engine {
         EngineBuilder::default()
     }
 
+    /// The format graph, for `respak formats`.
+    pub fn formats(&self) -> FormatGraph {
+        self.mediator.formats()
+    }
+
+    /// Detects what `path` is and which formats it can be converted to, without decoding.
+    /// `NotFound` if the path does not exist; an unrecognised file is an entry with no format.
+    /// `options.depth` must be 0 until slice 07 (`InvalidRequest` otherwise).
+    pub async fn discover(&self, path: &str, options: &DiscoverOptions) -> Result<Discovery> {
+        if options.depth > 0 {
+            return Err(Error::new(ErrorKind::InvalidRequest {
+                message: "discover depth > 0 needs container support, which is not implemented yet".into(),
+            }));
+        }
+        self.input.stat(path).await?;
+        let cx = Cx { mediator: self.mediator.clone(), input: self.input.clone(), output: self.output.clone() };
+        let source: Value = Arc::new(FileData::new(self.input.clone(), path, path, None));
+        let mut hits = self.mediator.detect(&source, &cx).await?.into_iter();
+        let version = |f: &FormatId| f.version().map(|v| v.to_string());
+        let entry = match hits.next() {
+            Some(winner) => DiscoveryEntry {
+                path: path.to_owned(),
+                format: Some(winner.format.name().to_owned()),
+                version: version(&winner.format),
+                score: winner.score,
+                alternatives: hits
+                    .map(|h| Alternative {
+                        format: h.format.name().to_owned(),
+                        version: version(&h.format),
+                        score: h.score,
+                    })
+                    .collect(),
+                name: None,
+                targets: self.mediator.targets_from(winner.format.name()),
+            },
+            None => DiscoveryEntry {
+                path: path.to_owned(),
+                format: None,
+                version: None,
+                score: 0,
+                alternatives: Vec::new(),
+                name: None,
+                targets: Vec::new(),
+            },
+        };
+        Ok(Discovery { path: path.to_owned(), entries: vec![entry] })
+    }
+
     /// Runs every output; one failing output does not stop the others.
     /// `Err` only for an invalid request (unknown `version`).
     pub async fn convert(&self, request: &ConvertRequest) -> Result<ConvertReport> {
@@ -164,7 +217,7 @@ impl Engine {
         } else {
             serde_json::Value::Object(out.to.options.clone())
         };
-        let target = Target { format: out.to.format.clone(), options };
+        let target = Target { format: out.to.format.clone(), options, via: out.to.via.clone() };
         let result = self.mediator.convert(source, target, &cx).await?;
         let blob = result.as_blob().ok_or_else(|| {
             Error::new(ErrorKind::Custom {

@@ -2,7 +2,7 @@
 
 respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts their contents into usable formats (e.g. an `.rpak` texture to PNG/DDS, a model to Cast), and later back into Respawn formats. Its architecture is designed from scratch. Format code (pak loading, codecs, asset parsing) is **ported from the C++ tool rsx** (`C:\Users\chiririll\Projects\rsx`) and fitted into that architecture; rsx's own architecture is not carried over (§12). Version coverage = whatever rsx supports.
 
-**Status:** foundation done (workspace, errors, values, capabilities); now building vertical slices. The task list is in [`tasks/`](tasks/README.md).
+**Status:** foundation done (workspace, errors, values, capabilities); slices 05 (PNG ↔ DDS) and 06 (`formats`, `discover`) done; now building vertical slices. The task list is in [`tasks/`](tasks/README.md).
 
 ---
 
@@ -85,7 +85,7 @@ pub struct FormatId { name: Cow<'static, str>, version: Option<Version> }
 pub struct Version  { major: u32, minor: u32 }     // minor = layout variant, 0 if none
 ```
 - Formats are names owned by the crate that defines them. Two plugins defining the same format name → build error. Any plugin may add edges to or from any format name.
-- Core formats:
+- Core formats (an encoder returns a `blob` **tagged with its own format**, e.g. `BlobData::with_format(png, ..)`; core writes any value with `as_blob`):
   - `file { op: Operator, path, range: Option<Range<u64>> }`: on the host operator or inside a container volume
   - `blob`: bytes in memory
   - `bundle`: several values (one output with several sources)
@@ -116,7 +116,7 @@ r.format("png").from("file", PngRead).extensions(["png"]).provides::<dyn Bitmap>
 r.format("dds").from("file", DdsRead).extensions(["dds"]).provides::<dyn Bitmap>()
                .from_cap::<dyn Bitmap>(DdsEncode);       // BC blocks copied as-is, cost 1
 ```
-- **Path selection** happens per request, from the source value's format and declared capabilities; nothing is precomputed at build time. Cheapest path wins. Ties are broken deterministically: direct edge before capability edge, then fewer hops, then plugin registration order; the chosen path is logged as a `Warning` event. A request may pin a route with `via` (a list of format names).
+- **Path selection** happens per request, from the source value's format and declared capabilities; nothing is precomputed at build time. Cheapest path wins. Ties are broken deterministically: direct edge before capability edge, then fewer hops, then plugin registration order; the chosen path is logged as a `Warning` event. A request may pin a route with `via`: its formats must appear in the path in that order (the source and target count). The planner (slice 06) is a search over direct (`.to`) and capability edges; order of preference: cost, then fewer capability steps, then fewer hops, then registration order. The path is logged only when more than one complete path existed.
 
 ### 5.3 Detection by scoring
 - Each read edge has a **score function**: it looks at the input and returns `None` (not this format) or `Some(Detected { score, version })`. The version includes the layout variant (`Version.minor`), so `identify` returns the full version and handlers don't detect it again.
@@ -142,6 +142,7 @@ Each format keeps its full native type (`TxtrAsset`, …) and implements the cap
 - `Blob`: in-memory bytes · `Metadata`: name, guid, dependencies
 - `Container`: `volume() -> Operator` and `entry(path) -> Result<Value>`. The default `entry` returns `file { volume, path }`; a container overrides it to hand out typed entries carrying data that isn't in the entry's bytes. Example: the rpak volume returns `rpak.asset { kind, version, header_size, guid, header: file, mem: file, stream: Option<file>, opt: Option<file> }`, because an asset's version and header size live in the pak's asset entry, not in the asset bytes.
 - `Bitmap`: dimensions, depth, array/faces, mip count, pixel format, `read_mip(level, layer)`
+- **Registration names capabilities** with `Cap` (`provides::<dyn Bitmap>()`); it carries only a name. Handlers read a capability from the value (`value.as_bitmap()`); a `Cap::of(&dyn Data)` accessor is not possible with the current lifetimes. (Slice 05.)
 - `Mesh`, `Skeleton`, `Animation`, `Table`, `Audio`: skeletal, refined with the first real converters
 - Core ships owned helpers (e.g. `BitmapBuf`) for converters that create data. Plugins may add capabilities via `Data::capability`.
 

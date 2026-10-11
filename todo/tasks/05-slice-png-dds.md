@@ -1,5 +1,5 @@
 # 05 · Slice: walking skeleton, PNG ↔ DDS
-**Status:** in-progress · **Depends on:** 04 · **See:** PROJECT.md §5.1–§5.5, §8, §10
+**Status:** done · **Depends on:** 04 · **See:** PROJECT.md §5.1–§5.5, §8, §10
 
 ## Goal
 The thinnest path through every layer, on real files, in both directions:

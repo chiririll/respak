@@ -1,0 +1,55 @@
+//! Discovery: what is this, and what can it become (PROJECT.md §8). Slice 06: files only.
+
+use serde::Serialize;
+
+use crate::graph::TargetInfo;
+
+/// Options for [`Engine::discover`](crate::Engine::discover).
+#[derive(Debug, Clone, Default)]
+pub struct DiscoverOptions {
+    /// How many container levels to open. Only 0 is supported until slice 07.
+    pub depth: u32,
+}
+
+/// The result of discovering one path.
+#[derive(Debug, Clone, Serialize)]
+pub struct Discovery {
+    /// The path that was discovered.
+    pub path: String,
+    /// One entry per recognised item. For a plain file, exactly one.
+    pub entries: Vec<DiscoveryEntry>,
+}
+
+/// One item: its detected format and where it can go.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiscoveryEntry {
+    /// Goes straight into a request's `from`.
+    pub path: String,
+    /// The winning format, `None` if nothing recognised the item.
+    pub format: Option<String>,
+    /// Detected version including the layout variant, e.g. `10` or `23.2`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// The winner's score, 0 if unrecognised.
+    pub score: u32,
+    /// The other formats that scored, best first. An equal score here means the winner was
+    /// not clear-cut (convert would say `AmbiguousFormat`).
+    pub alternatives: Vec<Alternative>,
+    /// Name from the item's metadata, if it has one without decoding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Formats it can be converted to, found without decoding.
+    pub targets: Vec<TargetInfo>,
+}
+
+/// A runner-up in detection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Alternative {
+    /// Format name.
+    pub format: String,
+    /// Detected version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Its score.
+    pub score: u32,
+}

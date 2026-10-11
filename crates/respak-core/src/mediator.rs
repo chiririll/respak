@@ -6,7 +6,8 @@ use opendal::Operator;
 
 use crate::detect::{Detected, Probe};
 use crate::error::{Error, ErrorKind, Result};
-use crate::plugin::{CapEdge, FormatDef, ReadEdge, Registry};
+use crate::graph::{self, FormatGraph, Path, TargetInfo};
+use crate::plugin::{FormatDef, ReadEdge, Registry};
 use crate::value::{FileData, FormatId, Value, ValueKey};
 
 /// What to convert to: a format and its options.
@@ -14,8 +15,19 @@ use crate::value::{FileData, FormatId, Value, ValueKey};
 pub struct Target {
     /// Target format.
     pub format: FormatId,
-    /// Target options, `Null` if none. Unused in this slice.
+    /// Target options, `Null` if none. Unused so far.
     pub options: serde_json::Value,
+    /// Formats the path must pass through, in order. Empty = cheapest path.
+    pub via: Vec<String>,
+}
+
+/// One format that scored for an input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hit {
+    /// The format, with its detected version.
+    pub format: FormatId,
+    /// Its score.
+    pub score: u32,
 }
 
 /// Detects formats and converts values along the cheapest path.
@@ -25,6 +37,14 @@ pub struct Mediator {
 }
 
 type Candidate<'a> = (&'a FormatDef, &'a ReadEdge);
+type Scored<'a> = (&'a FormatDef, &'a ReadEdge, Detected);
+
+/// The result of scoring: `primary` is what `identify` chooses from (extension candidates if
+/// any of them matched, otherwise every read edge); `rest` are the hits of the other phase.
+struct Scan<'a> {
+    primary: Vec<Scored<'a>>,
+    rest: Vec<Scored<'a>>,
+}
 
 impl Mediator {
     /// A mediator over a checked registry.
@@ -40,27 +60,37 @@ impl Mediator {
             .collect()
     }
 
-    /// Scores read edges from `source`'s format and applies the winner.
-    ///
-    /// Extension candidates are scored first; if none matches, all read edges are. Highest
-    /// score wins; a tie is `AmbiguousFormat`, no match `UnknownFormat`.
-    pub async fn identify(&self, source: Value, cx: &Cx) -> Result<Value> {
+    /// Scores read edges. With `full` false the second phase is skipped when the first
+    /// matched (what `identify` needs); with `full` true both phases are scored.
+    async fn scan<'a>(&'a self, source: &Value, cx: &Cx, full: bool) -> Result<Scan<'a>> {
         let candidates = self.candidates(source.format().name());
         let header_len = candidates.iter().map(|(_, e)| e.handler.header_len()).max().unwrap_or(0);
-        let (header, len) = probe_data(&source, header_len).await?;
+        let (header, len) = probe_data(source, header_len).await?;
         let extension = extension_of_key(source.key());
-        let probe = Probe { source: &source, extension: extension.as_deref(), len, header: &header };
+        let probe = Probe { source, extension: extension.as_deref(), len, header: &header };
 
         let (by_ext, others): (Vec<_>, Vec<_>) = candidates
             .into_iter()
             .partition(|(f, _)| extension.as_deref().is_some_and(|x| f.extensions.contains(&x)));
 
-        let mut hits = score_all(&by_ext, &probe, cx).await?;
-        if hits.is_empty() {
-            hits = score_all(&others, &probe, cx).await?;
+        let mut first = score_all(&by_ext, &probe, cx).await?;
+        if first.is_empty() {
+            let primary = score_all(&others, &probe, cx).await?;
+            return Ok(Scan { primary: sorted(primary), rest: Vec::new() });
         }
-        let top = hits.iter().map(|h| h.2.score).max().ok_or_else(|| Error::new(ErrorKind::UnknownFormat))?;
-        let mut winners: Vec<_> = hits.into_iter().filter(|h| h.2.score == top).collect();
+        let rest = if full { score_all(&others, &probe, cx).await? } else { Vec::new() };
+        first = sorted(first);
+        Ok(Scan { primary: first, rest: sorted(rest) })
+    }
+
+    /// Scores read edges from `source`'s format and applies the winner.
+    ///
+    /// Extension candidates are scored first; if none matches, all read edges are. Highest
+    /// score wins; a tie is `AmbiguousFormat`, no match `UnknownFormat`.
+    pub async fn identify(&self, source: Value, cx: &Cx) -> Result<Value> {
+        let scan = self.scan(&source, cx, false).await?;
+        let top = scan.primary.first().map(|h| h.2.score).ok_or_else(|| Error::new(ErrorKind::UnknownFormat))?;
+        let mut winners: Vec<_> = scan.primary.into_iter().filter(|h| h.2.score == top).collect();
         if winners.len() > 1 {
             return Err(Error::new(ErrorKind::AmbiguousFormat {
                 candidates: winners.iter().map(|(f, _, _)| f.name.to_owned()).collect(),
@@ -70,11 +100,27 @@ impl Mediator {
         edge.handler.read(source, &detected, cx).await
     }
 
-    /// Identifies `source`, then follows the cheapest path to `to.format`
+    /// Scores read edges like [`identify`](Self::identify) but applies none. The winner comes
+    /// first, then the other hits of the same phase by score (ties in registration order), then
+    /// the hits of the other phase. Empty = unrecognised. Never fails on a tie.
+    pub async fn detect(&self, source: &Value, cx: &Cx) -> Result<Vec<Hit>> {
+        let scan = self.scan(source, cx, true).await?;
+        Ok(scan
+            .primary
+            .into_iter()
+            .chain(scan.rest)
+            .map(|(f, _, d)| {
+                let mut format = FormatId::new(f.name);
+                if let Some(v) = d.version {
+                    format = format.with_version(v);
+                }
+                Hit { format, score: d.score }
+            })
+            .collect())
+    }
+
+    /// Identifies `source`, then follows the cheapest path to `to.format` that visits `to.via`
     /// (`NoPath` if there is none). A source already in the target format is returned as is.
-    ///
-    /// The path is a read edge followed by at most one capability edge; that is all this
-    /// slice needs. Longer paths come with the first slice that has one.
     pub async fn convert(&self, source: Value, to: Target, cx: &Cx) -> Result<Value> {
         let target = to.format.name();
         let mut value = source;
@@ -87,23 +133,52 @@ impl Mediator {
                 return Ok(value);
             }
         }
-        let no_path = || Error::new(ErrorKind::NoPath { from: value.format().to_string(), to: target.to_owned() });
-        let provides = self
-            .registry
-            .formats
-            .iter()
-            .find(|f| f.name == value.format().name())
-            .map(|f| f.provides.as_slice())
-            .unwrap_or(&[]);
-        let edge: &CapEdge = self
-            .registry
-            .formats
-            .iter()
-            .find(|f| f.name == target)
-            // Cheapest first; ties go to the earlier registration (`min_by_key` keeps the first).
-            .and_then(|f| f.cap_edges.iter().filter(|e| provides.contains(&e.cap)).min_by_key(|e| e.cost))
-            .ok_or_else(no_path)?;
-        edge.handler.convert(value, &to, cx).await
+        let planned = self.plan_inner(value.format(), target, &to.via)?;
+        let last = planned.handlers.len().saturating_sub(1);
+        for (i, (step, handler)) in planned.path.steps.iter().zip(&planned.handlers).enumerate() {
+            let next = if i == last {
+                to.clone()
+            } else {
+                Target { format: FormatId::new(step.to.clone()), options: serde_json::Value::Null, via: Vec::new() }
+            };
+            value = handler.convert(value, &next, cx).await?;
+        }
+        Ok(value)
+    }
+
+    fn plan_inner(&self, from: &FormatId, to: &str, via: &[String]) -> Result<graph::Planned> {
+        let planned = graph::plan(&self.registry, from.name(), to, via)
+            .ok_or_else(|| Error::new(ErrorKind::NoPath { from: from.to_string(), to: to.to_owned() }))?;
+        if planned.alternatives > 0 {
+            tracing::warn!(
+                "path {} -> {to}: chose `{}` over {} other path(s)",
+                from.name(),
+                planned.path,
+                planned.alternatives
+            );
+        }
+        Ok(planned)
+    }
+
+    /// The cheapest path from `from` to `to` that visits `via` in order.
+    ///
+    /// Candidates are ordered by: total cost, then fewer capability steps (direct edges first),
+    /// then fewer hops, then registration order. `via` must be a subsequence of the path's
+    /// formats (both ends count). When more than one complete path existed, the chosen one is
+    /// logged with `tracing::warn!`. `NoPath` if there is none.
+    pub fn plan(&self, from: &FormatId, to: &str, via: &[String]) -> Result<Path> {
+        Ok(self.plan_inner(from, to, via)?.path)
+    }
+
+    /// Formats reachable from `from` (excluding itself), found from declared capabilities
+    /// without decoding anything. In registration order.
+    pub fn targets_from(&self, from: &str) -> Vec<TargetInfo> {
+        graph::targets_from(&self.registry, from)
+    }
+
+    /// The whole graph as data.
+    pub fn formats(&self) -> FormatGraph {
+        graph::format_graph(&self.registry)
     }
 
     /// The extension output files of `format` get (its first registered extension).
@@ -112,11 +187,13 @@ impl Mediator {
     }
 }
 
-async fn score_all<'a>(
-    candidates: &[Candidate<'a>],
-    probe: &Probe<'_>,
-    cx: &Cx,
-) -> Result<Vec<(&'a FormatDef, &'a ReadEdge, Detected)>> {
+/// Best score first; equal scores keep registration order (stable sort).
+fn sorted(mut hits: Vec<Scored<'_>>) -> Vec<Scored<'_>> {
+    hits.sort_by_key(|h| std::cmp::Reverse(h.2.score));
+    hits
+}
+
+async fn score_all<'a>(candidates: &[Candidate<'a>], probe: &Probe<'_>, cx: &Cx) -> Result<Vec<Scored<'a>>> {
     let mut hits = Vec::new();
     for &(f, e) in candidates {
         if let Some(d) = e.handler.score(probe, cx).await? {

@@ -91,3 +91,70 @@ async fn malformed_target_json_is_an_invalid_request() {
     let error = error.downcast_ref::<respak_core::Error>().expect("a respak error");
     assert!(matches!(error.kind(), ErrorKind::InvalidRequest { .. }), "{error}");
 }
+
+fn dds_1x1() -> Vec<u8> {
+    let mut d = ddsfile::Dds::new_d3d(ddsfile::NewD3dParams {
+        height: 1,
+        width: 1,
+        depth: None,
+        format: ddsfile::D3DFormat::A8B8G8R8,
+        mipmap_levels: None,
+        caps2: None,
+    })
+    .unwrap();
+    d.data = vec![1, 2, 3, 4];
+    let mut out = Vec::new();
+    d.write(&mut out).unwrap();
+    out
+}
+
+#[tokio::test]
+async fn formats_prints_the_graph() {
+    let env = env();
+    let run = invoke(&env, &["formats"]).await;
+    assert_eq!(run.code, Some(ExitCode::SUCCESS));
+    let json: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    let names: Vec<_> = json["formats"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["png", "dds"]);
+}
+
+#[tokio::test]
+async fn discover_prints_one_entry_per_path() {
+    let env = env();
+    env.input.write("a.png", png_1x1()).await.unwrap();
+    env.input.write("b.dds", dds_1x1()).await.unwrap();
+    let run = invoke(&env, &["discover", "a.png", "b.dds"]).await;
+
+    assert_eq!(run.code, Some(ExitCode::SUCCESS));
+    let json: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    assert_eq!(json[0]["path"], "a.png");
+    assert_eq!(json[0]["entries"][0]["format"], "png");
+    assert_eq!(json[0]["entries"][0]["targets"][0]["type"], "dds");
+    assert_eq!(json[1]["entries"][0]["format"], "dds");
+}
+
+#[tokio::test]
+async fn discover_of_a_missing_path_fails_and_still_prints_the_others() {
+    let env = env();
+    env.input.write("a.png", png_1x1()).await.unwrap();
+    let run = invoke(&env, &["discover", "a.png", "gone.png"]).await;
+
+    assert_eq!(run.code, Some(ExitCode::FAILURE));
+    assert!(run.err.contains("gone.png"), "{}", run.err);
+    let json: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    assert_eq!(json.as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn convert_accepts_via() {
+    let env = env();
+    env.input.write("a.png", png_1x1()).await.unwrap();
+
+    // png -> dds is a single edge, so via [png] (the start counts) is fine ...
+    let ok = invoke(&env, &["convert", "a.png", "--to", r#"{"type":"dds","via":["png"]}"#]).await;
+    assert_eq!(ok.code, Some(ExitCode::SUCCESS));
+    // ... and a format that is not on the path is not.
+    let bad = invoke(&env, &["convert", "a.png", "--to", r#"{"type":"dds","via":["nope"]}"#]).await;
+    assert_eq!(bad.code, Some(ExitCode::FAILURE));
+    assert!(bad.err.contains("no conversion path"), "{}", bad.err);
+}

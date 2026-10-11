@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use respak_core::{ConvertRequest, Engine, Error, ErrorKind, OutputRequest, OutputResult, TargetSpec};
+use respak_core::{ConvertRequest, DiscoverOptions, Engine, Error, ErrorKind, OutputRequest, OutputResult, TargetSpec};
 
 /// `respak --root <dir> --out <dir> <command>`
 #[derive(Debug, Parser)]
@@ -20,9 +20,17 @@ pub struct Cli {
     pub command: Command,
 }
 
-/// Commands. (`formats`, `discover`, `run` come in later slices.)
+/// Commands. (`run` comes in a later slice.)
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Print the format graph as JSON.
+    Formats,
+    /// Print what each path is and which formats it can be converted to, as JSON.
+    Discover {
+        /// Paths relative to `--root`.
+        #[arg(required = true)]
+        paths: Vec<String>,
+    },
     /// Convert one file.
     Convert {
         /// Source path, relative to `--root`.
@@ -45,6 +53,28 @@ pub async fn run(
     err: &mut impl Write,
 ) -> anyhow::Result<ExitCode> {
     match cli.command {
+        Command::Formats => {
+            serde_json::to_writer_pretty(&mut *out, &engine.formats())?;
+            writeln!(out)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Discover { paths } => {
+            let options = DiscoverOptions::default();
+            let mut found = Vec::new();
+            let mut failed = false;
+            for path in &paths {
+                match engine.discover(path, &options).await {
+                    Ok(discovery) => found.push(discovery),
+                    Err(error) => {
+                        writeln!(err, "{path}: {error}")?;
+                        failed = true;
+                    }
+                }
+            }
+            serde_json::to_writer_pretty(&mut *out, &found)?;
+            writeln!(out)?;
+            Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
+        }
         Command::Convert { path, to, out_path } => {
             let to: TargetSpec = serde_json::from_str(&to).map_err(|e| {
                 Error::new(ErrorKind::InvalidRequest { message: format!("--to is not a valid target: {e}") })
