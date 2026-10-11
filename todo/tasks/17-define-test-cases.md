@@ -5,25 +5,18 @@
 Agree the TDD test suite **together with the user** before any implementation. Don't write the suite alone.
 
 ## How
-- Propose test case lists per area. Here are candidate areas to discuss, not a decided list:
-  - **Mediator:** routing order, `NoHandler` vs `UnsupportedVersion`, plugin-defined requests.
-  - **Middleware:**
-    - cancellation
-    - cycle guard (same chain, and cross-chain deadlock via the wait-for graph)
-    - dedup (concurrent identical requests run once, and the entry is removed after completion)
-    - events emitted
-  - **Engine:**
-    - one failing output doesn't stop the others
-    - discovery shapes round-trip into a request
-    - default paths
-    - overwrite behavior
-    - the concurrency limit doesn't deadlock nested requests
-  - **Cache:** absent cache works, cache errors are non-fatal, namespacing.
-  - **Typed helpers:** invalid selector/options give the right errors, and defaults are filled in.
-  - **CLI:** commands driven in-process against `services::Memory`; exit codes.
-  - **I/O rule:** reads are ranged; a test `Operator` layer can count the bytes read, so a large-file read can be detected.
+- Propose test case lists per area. Candidate areas, not a decided list:
+  - **Detection:** extension first, then fallback; highest score wins; tie → `AmbiguousFormat`; unknown variant → `UnsupportedVersion`; header prefix read once.
+  - **Path search:** cheapest path, tie-break + warning, `via`, capability edges, `NoPath`.
+  - **Middleware:** cancellation; cycle guard (same chain, cross-chain wait-for); dedup of concurrent requests; events.
+  - **Output:** written-paths map (same key skipped, `OutputConflict`), composite folders, default paths.
+  - **Volumes & paths:** nested resolution, real files win, glob rules, typed entries.
+  - **Engine:** one failing output doesn't stop the others; discovery round-trips into a request; bundle rule; nested requests don't deadlock under `max_concurrency`.
+  - **Cache:** absent cache works, errors are warnings, namespacing by id + version.
+  - **CLI:** commands in-process against `services::Memory`; exit codes.
+  - **I/O rule:** byte-counting `Operator` layer on a synthetic multi-GB starpak.
 - Fixtures: synthetic data generated in the tests. **No game files in the repo.**
-- Write the agreed list into each implementation task (18–24) under "Tests".
+- Write the agreed list into each implementation task (18–25) under "Tests".
 
 ## Done when
 The user approves the test lists.

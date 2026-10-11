@@ -2,7 +2,7 @@
 
 respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts their contents into usable formats (e.g. an `.rpak` texture to PNG/DDS, a model to Cast), and later back into Respawn formats. It is designed from scratch. The C++ tool **rsx** (`C:\Users\chiririll\Projects\rsx`) is a source of format knowledge only, not code to port.
 
-**Status:** design under discussion, nothing implemented. The task list in [`tasks/`](tasks/README.md) still describes the previous design and will be rewritten once this document is agreed.
+**Status:** design under discussion, nothing implemented. The task list is in [`tasks/`](tasks/README.md).
 
 ---
 
