@@ -172,6 +172,10 @@ impl From<ErrorKind> for Error {
 
 impl From<opendal::Error> for Error {
     fn from(e: opendal::Error) -> Self {
+        // A volume reports its own errors through OpenDAL; hand those back as they were.
+        if let Some(inner) = std::error::Error::source(&e).and_then(|s| s.downcast_ref::<Error>()) {
+            return inner.clone();
+        }
         // A missing path is `NotFound`, not a generic storage failure.
         if e.kind() == opendal::ErrorKind::NotFound {
             return Self::new(ErrorKind::NotFound { path: e.to_string() });

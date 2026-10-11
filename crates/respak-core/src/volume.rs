@@ -61,7 +61,8 @@ fn to_opendal(e: Error) -> opendal::Error {
         ErrorKind::Storage(inner) => inner.kind(),
         _ => opendal::ErrorKind::Unexpected,
     };
-    opendal::Error::new(kind, e.to_string())
+    // Keep the original error as the source, so it comes back out unchanged (`Error::from`).
+    opendal::Error::new(kind, e.to_string()).set_source(e)
 }
 
 /// `a/b/` -> `a/b`, `/` -> ``.

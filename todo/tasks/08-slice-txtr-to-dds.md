@@ -1,5 +1,5 @@
 # 08 · Slice: rpak texture → DDS (permanent mips)
-**Status:** todo · **Depends on:** 07 · **See:** PROJECT.md §4, §5.4, §6, §12
+**Status:** done · **Depends on:** 07 · **See:** PROJECT.md §4, §5.4, §6, §12
 
 ## Goal
 ```
@@ -38,6 +38,11 @@ The user converts real textures and checks them in a DDS viewer.
 - Only the PC layout (`swizzle == 0`) is supported; others are `UnsupportedVersion`. Depth must be 1.
 - The volume serves `.mem` (the flat decompressed pages) and the header relocated; relocation rewrites each pointer slot to `.mem` offsets (the pointer table is sorted; one pass).
 - Output path default: the path inside the innermost container with the target's extension.
+
+## Result
+Checked locally on `ui.rpak` (v8, RTech): all 11 `txtr` assets (v8 headers, BC7 sRGB and R8, up to 8192x8192, one permanent mip each) convert to DDS; the files are exactly header + the mip chain sizes the header implies (e.g. 8192x8192 BC7 = 67,108,864 data bytes). Not checked: that the pixels look right in a viewer (no viewer here; the demo is yours), v9/v10 headers and multi-mip textures (synthetic tests only), the GUID hash (the cached UI textures have null names; an ignored test checks it on any pak that does have names).
+
+Changes against the plan: the volume does not list `.mem` (it resolves); `rpak.asset` carries the pak volume and the header path instead of `FileData` values; the CLI binary is now called `respak`; `respak-respawn` has a `testing` feature with synthetic pak builders (used by its own tests and the CLI tests, which are the only place both plugins meet); the default output path is the path inside the innermost container (`0x...dds`, not the texture name, until names are readable); errors raised by a volume now pass through OpenDAL unchanged.
 
 ## Tests
 Synthetic paks with a txtr asset (v8, v9, v10 headers, BC1/BC3/RGBA8 data) generated in tests; DDS round trip equals the data; relocation; unsupported swizzle/format; the warning for streamed mips.

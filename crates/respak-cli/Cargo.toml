@@ -16,5 +16,10 @@ serde_json.workspace = true
 opendal.workspace = true
 
 [dev-dependencies]
+respak-respawn = { workspace = true, features = ["testing"] }
 png = "0.18"
 ddsfile = "0.6"
+
+[[bin]]
+name = "respak"
+path = "src/main.rs"

@@ -266,7 +266,8 @@ impl Engine {
             Some(p) => p.clone(),
             None => {
                 let name = out.to.format.name();
-                with_extension(&out.from, self.mediator.extension_of(name).unwrap_or(name))
+                let inner = cx.mounts.path_in_container(out.from.trim_matches('/'));
+                with_extension(inner, self.mediator.extension_of(name).unwrap_or(name))
             }
         };
         self.output.write(&path, blob.bytes().clone()).await?;

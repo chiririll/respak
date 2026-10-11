@@ -25,6 +25,18 @@ impl Mounts {
         self.containers.lock().unwrap().insert(key, value);
     }
 
+    /// The path of `path` inside the innermost mounted container that contains it
+    /// (`paks/Win64/common.rpak/texture/foo.txtr` -> `texture/foo.txtr`), or `path` itself if it
+    /// is not inside any.
+    pub fn path_in_container<'a>(&self, path: &'a str) -> &'a str {
+        let containers = self.containers.lock().unwrap();
+        containers
+            .keys()
+            .filter_map(|k| path.strip_prefix(k.as_str()).and_then(|rest| rest.strip_prefix('/')))
+            .min_by_key(|rest| rest.len())
+            .unwrap_or(path)
+    }
+
     /// How many containers are mounted.
     pub fn len(&self) -> usize {
         self.containers.lock().unwrap().len()

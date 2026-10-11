@@ -15,6 +15,12 @@ async-trait.workspace = true
 bytes.workspace = true
 opendal.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+
+[features]
+# Synthetic pak builders for tests (also used by the CLI's tests).
+testing = []
 
 [dev-dependencies]
 serde_json.workspace = true
+respak-respawn = { path = ".", features = ["testing"] }

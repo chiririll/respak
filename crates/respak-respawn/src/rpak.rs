@@ -40,6 +40,10 @@ fn corrupt(context: impl Into<String>) -> Error {
     Error::new(ErrorKind::Corrupt { context: context.into() })
 }
 
+/// The flat file of all decompressed pages (not listed, but it resolves). Pointers in served
+/// headers are offsets into it.
+pub const MEM: &str = ".mem";
+
 /// Where the body of a pak comes from.
 enum Body {
     /// Stored as is: ranged reads of the file.
@@ -122,11 +126,18 @@ impl VolumeSource for RpakSource {
         if path.is_empty() {
             return Ok(VolumeStat { is_dir: true, len: 0 });
         }
+        if path == MEM {
+            return Ok(VolumeStat { is_dir: false, len: self.0.tables.mem_len() });
+        }
         let index = self.0.locate(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
         Ok(VolumeStat { is_dir: false, len: u64::from(self.0.tables.assets[index].header_size) })
     }
 
     async fn read(&self, path: &str, range: Range<u64>) -> Result<Bytes> {
+        if path == MEM {
+            let base = self.0.tables.page_data_offset;
+            return self.0.body.read(base + range.start..base + range.end).await;
+        }
         let index = self.0.locate(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
         let asset = &self.0.tables.assets[index];
         let header = self
@@ -134,7 +145,11 @@ impl VolumeSource for RpakSource {
             .tables
             .header_range(asset)
             .ok_or_else(|| corrupt(format!("asset {:#018x}: header does not fit its page", asset.guid)))?;
-        self.0.body.read(header.start + range.start..header.start + range.end).await
+        let mut raw = self.0.body.read(header).await?.to_vec();
+        self.0.tables.relocate_header(asset, &mut raw)?;
+        raw.get(range.start as usize..range.end as usize)
+            .map(Bytes::copy_from_slice)
+            .ok_or_else(|| corrupt("read past the end of an asset header"))
     }
 
     async fn list(&self, dir: &str) -> Result<Vec<VolumeEntry>> {
@@ -196,7 +211,16 @@ impl Container for RpakData {
         let entry = self.inner.tables.assets[index].clone();
         let format = FormatId::new("rpak.asset").with_version(Version::new(entry.version));
         let kind = entry.kind_string();
-        Ok(Arc::new(RpakAsset { format, key: ValueKey::file(format!("{}/{path}", self.mount)), entry, kind }))
+        let data_mem_offset = if entry.data.is_null() { None } else { self.inner.tables.mem_offset(entry.data) };
+        Ok(Arc::new(RpakAsset {
+            format,
+            key: ValueKey::file(format!("{}/{path}", self.mount)),
+            entry,
+            kind,
+            volume: self.volume.clone(),
+            header_path: Inner::file_name(&self.inner.tables.assets[index]),
+            data_mem_offset,
+        }))
     }
 }
 
@@ -221,6 +245,24 @@ pub struct RpakAsset {
     /// The asset table entry.
     pub entry: AssetEntry,
     kind: String,
+    /// The pak's volume.
+    pub volume: Operator,
+    /// Path of the asset's header file in `volume` (pointers relocated to `.mem` offsets).
+    pub header_path: String,
+    /// Offset in `.mem` of the asset's CPU data, if it has any.
+    pub data_mem_offset: Option<u64>,
+}
+
+impl RpakAsset {
+    /// The asset header with pointers relocated, as served by the volume.
+    pub async fn read_header(&self) -> Result<Bytes> {
+        Ok(self.volume.read(&self.header_path).await?.to_bytes())
+    }
+
+    /// `len` bytes of the flat page memory at `offset`.
+    pub async fn read_mem(&self, offset: u64, len: u64) -> Result<Bytes> {
+        Ok(self.volume.read_with(MEM).range(offset..offset + len).await?.to_bytes())
+    }
 }
 
 impl Metadata for RpakAsset {

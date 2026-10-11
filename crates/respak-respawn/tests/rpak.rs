@@ -39,7 +39,7 @@ async fn every_version_is_detected_and_listed() {
             listed,
             [
                 ("common.rpak/0x00000000000000FF.ui", Some("rpak.asset"), Some("2"), Some("ui")),
-                ("common.rpak/0x1111222233334444.txtr", Some("rpak.asset"), Some("10"), Some("txtr")),
+                ("common.rpak/0x1111222233334444.txtr", Some("txtr"), Some("10"), Some("txtr")),
                 ("common.rpak/0xAAAABBBBCCCCDDDD.matl", Some("rpak.asset"), Some("15"), Some("matl")),
             ],
             "v{version}"
@@ -53,7 +53,7 @@ async fn an_asset_path_resolves_and_its_header_is_served_with_ranged_reads() {
     env.input.write("p/common.rpak", build_pak(8, &assets())).await.unwrap();
 
     let d = env.engine.discover("p/common.rpak/0x1111222233334444.txtr", &depth(0)).await.unwrap();
-    assert_eq!(d.entries[0].format.as_deref(), Some("rpak.asset"));
+    assert_eq!(d.entries[0].format.as_deref(), Some("txtr"));
     assert_eq!(d.entries[0].version.as_deref(), Some("10"));
 
     // The volume itself: header bytes of the asset, whole and in a range.
@@ -82,7 +82,7 @@ async fn a_name_resolves_through_its_hashed_guid() {
     env.input.write("c.rpak", build_pak(8, &[TestAsset::new(guid, b"txtr", 8, b"named")])).await.unwrap();
 
     let d = env.engine.discover("c.rpak/texture/foo.txtr", &depth(0)).await.unwrap();
-    assert_eq!(d.entries[0].format.as_deref(), Some("rpak.asset"));
+    assert_eq!(d.entries[0].format.as_deref(), Some("txtr"));
     // Case and slash direction do not matter to the hash.
     env.engine.discover("c.rpak/Texture\\Foo.txtr", &depth(0)).await.unwrap();
     env.engine.discover("c.rpak/TEXTURE/FOO.TXTR", &depth(0)).await.unwrap();
@@ -221,6 +221,37 @@ mod real {
     const UI: &str =
         r"C:\Users\chiririll\Projects\rsx\rsx_steam_cache\rpak\1172471_6197768190074397522\paks\win64\ui.rpak";
 
+    /// The name in a texture header hashes to the asset's GUID (checks the GUID hash port).
+    #[tokio::test]
+    #[ignore]
+    async fn texture_names_hash_to_their_guids() {
+        if !Path::new(UI).exists() {
+            return;
+        }
+        let env = env();
+        env.input.write("ui.rpak", std::fs::read(UI).unwrap()).await.unwrap();
+        let mut r = respak_core::Registry::new();
+        r.add(&respak_respawn::RespawnPlugin::new());
+        let cx = respak_core::Cx::new(respak_core::Mediator::new(r), env.input.clone(), env.input.clone());
+        let d = env.engine.discover("ui.rpak", &depth(1)).await.unwrap();
+        let (mut named, mut matched) = (0, 0);
+        for e in d.entries.iter().filter(|e| e.kind.as_deref() == Some("txtr")) {
+            let asset = cx.mediator.open(&e.path, &cx).await.unwrap();
+            let tex = cx.mediator.identify(asset, &cx).await.unwrap();
+            let meta = tex.as_metadata().unwrap();
+            let (Some(name), Some(guid)) = (meta.name(), meta.guid()) else { continue };
+            named += 1;
+            let candidates = [name.to_owned(), format!("{name}.rpak"), name.trim_start_matches("texture/").to_owned()];
+            let hit = candidates.iter().find(|c| string_to_guid(c) == guid);
+            eprintln!("{name} {guid:#x} -> {hit:?}");
+            matched += usize::from(hit.is_some());
+        }
+        // The UI textures of the cached paks have no names (null name pointers), so this only
+        // checks something on paks that do.
+        eprintln!("{named} named textures, {matched} matched");
+        assert_eq!(named, matched);
+    }
+
     /// Slow (decompresses 268 MB): `cargo test -p respak-respawn -- --ignored`.
     #[tokio::test]
     #[ignore]
@@ -232,7 +263,10 @@ mod real {
         env.input.write("ui.rpak", std::fs::read(UI).unwrap()).await.unwrap();
         let d = env.engine.discover("ui.rpak", &depth(1)).await.unwrap();
         assert_eq!(d.entries.len(), 1665);
-        assert!(d.entries.iter().all(|e| e.format.as_deref() == Some("rpak.asset")));
+        // Textures are recognised as `txtr`; other kinds have no reader yet.
+        let textures = d.entries.iter().filter(|e| e.format.as_deref() == Some("txtr")).count();
+        assert_eq!(textures, 11);
+        assert!(d.entries.iter().all(|e| matches!(e.format.as_deref(), Some("rpak.asset" | "txtr"))));
         let mut kinds: std::collections::BTreeMap<&str, usize> = Default::default();
         for e in &d.entries {
             *kinds.entry(e.kind.as_deref().unwrap()).or_default() += 1;

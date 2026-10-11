@@ -34,7 +34,7 @@ Every slice ends with:
 | 05 | [Walking skeleton: PNG ↔ DDS](05-slice-png-dds.md) | PNG → DDS → PNG round trip | 04 | done |
 | 06 | [`formats` and `discover`](06-slice-discover-formats.md) | `discover icon.png` | 05 | done |
 | 07 | [Open an rpak, list its assets](07-slice-rpak-listing.md) | `discover common.rpak --depth 1` | 06 | done |
-| 08 | [rpak texture → DDS (permanent mips)](08-slice-txtr-to-dds.md) | `convert …/foo.txtr --to dds` | 07 | blocked |
+| 08 | [rpak texture → DDS (permanent mips)](08-slice-txtr-to-dds.md) | `convert …/foo.txtr --to dds` | 07 | done |
 | 09 | [BC decoding and target options](09-slice-txtr-to-png.md) | `convert …/foo.txtr --to png` | 08 | blocked |
 | 10 | [Streamed mips from starpaks](10-slice-streamed-mips.md) | full-size texture, byte count | 09 | blocked |
 | 11 | [Batch requests, globs, composite outputs](11-slice-batch-requests.md) | `run request.json` | 10 | blocked |

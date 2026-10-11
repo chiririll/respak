@@ -6,13 +6,17 @@ mod guid;
 mod pak;
 mod rpak;
 mod rtech;
+mod txtr;
+#[cfg(feature = "testing")]
+pub mod testing;
 
-use respak_core::capability::{Container, Metadata};
+use respak_core::capability::{Bitmap, Container, Metadata};
 use respak_core::{Plugin, Registry};
 
 pub use guid::string_to_guid;
 pub use pak::{AssetEntry, PagePtr, PakHeader, Tables};
-pub use rpak::{RpakAsset, RpakData, RpakRead};
+pub use rpak::{RpakAsset, RpakData, RpakRead, MEM};
+pub use txtr::{pixel_format, TxtrAsset, TxtrHeader, TxtrRead};
 
 /// Registers the Respawn formats.
 #[derive(Debug, Default)]
@@ -34,5 +38,11 @@ impl Plugin for RespawnPlugin {
         r.format("rpak").label("Respawn pak").from("file", RpakRead).extensions(["rpak"]).provides::<dyn Container>();
         // Handed out by the rpak volume, never read from a file.
         r.format("rpak.asset").label("Respawn pak asset").provides::<dyn Metadata>();
+        r.format("txtr")
+            .label("Respawn texture")
+            .from("rpak.asset", TxtrRead)
+            .extensions(["txtr"])
+            .provides::<dyn Bitmap>()
+            .provides::<dyn Metadata>();
     }
 }

@@ -14,6 +14,7 @@ pub enum PixelFormat {
     R8,
     Rg8,
     Rgba8,
+    Rgba8Srgb,
     Bgra8,
     R16,
     R16F,
@@ -21,18 +22,65 @@ pub enum PixelFormat {
     R32F,
     Rgba32F,
     Bc1,
+    Bc1Srgb,
     Bc2,
+    Bc2Srgb,
     Bc3,
+    Bc3Srgb,
     Bc4,
+    Bc4Snorm,
     Bc5,
+    Bc5Snorm,
     Bc6H,
+    Bc6HSigned,
     Bc7,
+    Bc7Srgb,
 }
 
 impl PixelFormat {
     /// Whether pixels are stored as 4×4 compressed blocks.
     pub fn is_block_compressed(self) -> bool {
-        matches!(self, Self::Bc1 | Self::Bc2 | Self::Bc3 | Self::Bc4 | Self::Bc5 | Self::Bc6H | Self::Bc7)
+        matches!(
+            self,
+            Self::Bc1
+                | Self::Bc1Srgb
+                | Self::Bc2
+                | Self::Bc2Srgb
+                | Self::Bc3
+                | Self::Bc3Srgb
+                | Self::Bc4
+                | Self::Bc4Snorm
+                | Self::Bc5
+                | Self::Bc5Snorm
+                | Self::Bc6H
+                | Self::Bc6HSigned
+                | Self::Bc7
+                | Self::Bc7Srgb
+        )
+    }
+
+    /// Bytes per pixel, or per 4×4 block for block-compressed formats.
+    pub fn bytes_per_unit(self) -> u64 {
+        match self {
+            Self::R8 => 1,
+            Self::Rg8 | Self::R16 | Self::R16F => 2,
+            Self::Rgba8 | Self::Rgba8Srgb | Self::Bgra8 | Self::R32F => 4,
+            Self::Rgba16F => 8,
+            Self::Rgba32F => 16,
+            Self::Bc1 | Self::Bc1Srgb | Self::Bc4 | Self::Bc4Snorm => 8,
+            _ => 16,
+        }
+    }
+
+    /// Size in bytes of a mip of `width` x `height` pixels in this format, tightly packed
+    /// (BC blocks are rounded up, so a 1x1 BC mip is one block).
+    pub fn mip_len(self, width: u32, height: u32) -> u64 {
+        let (w, h) = (u64::from(width.max(1)), u64::from(height.max(1)));
+        if self.is_block_compressed() {
+            w.div_ceil(4) * h.div_ceil(4) * self.bytes_per_unit()
+        } else {
+            w * h * self.bytes_per_unit()
+        }
     }
 }
 

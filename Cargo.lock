@@ -883,9 +883,11 @@ dependencies = [
  "bytes",
  "opendal",
  "respak-core",
+ "respak-respawn",
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

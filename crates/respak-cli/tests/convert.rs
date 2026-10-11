@@ -158,3 +158,56 @@ async fn convert_accepts_via() {
     assert_eq!(bad.code, Some(ExitCode::FAILURE));
     assert!(bad.err.contains("no conversion path"), "{}", bad.err);
 }
+
+fn rpak_env() -> Env {
+    let input = Operator::new(Memory::default()).unwrap();
+    let output = Operator::new(Memory::default()).unwrap();
+    let engine = Engine::builder()
+        .input(input.clone())
+        .output(output.clone())
+        .plugin(FormatsPlugin)
+        .plugin(respak_respawn::RespawnPlugin::new())
+        .build()
+        .unwrap();
+    Env { engine, input, output }
+}
+
+#[tokio::test]
+async fn an_rpak_texture_converts_to_dds_inside_the_container_path() {
+    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    // 8x8 BC1 with 2 permanent mips: 32 bytes + 8 bytes (padded to 16 each), smallest first.
+    let mut data = vec![2u8; 16];
+    data.extend(vec![1u8; 32]);
+    let mut t = TexSpec::new(0x42, 9, 8, 8, 0, 2, data);
+    t.name = Some("ui/thing");
+    let env = rpak_env();
+    env.input.write("paks/common.rpak", build_tex_pak(8, &[t])).await.unwrap();
+
+    let run = invoke(&env, &["convert", "paks/common.rpak/0x0000000000000042.txtr", "--to", r#"{"type":"dds"}"#]).await;
+    assert_eq!(run.code, Some(ExitCode::SUCCESS), "{}", run.err);
+    let report: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    assert_eq!(report["outputs"][0]["result"]["Ok"]["files"][0], "0x0000000000000042.dds");
+
+    let bytes = env.output.read("0x0000000000000042.dds").await.unwrap().to_vec();
+    let dds = ddsfile::Dds::read(std::io::Cursor::new(&bytes)).unwrap();
+    assert_eq!(dds.header10.as_ref().map(|h| h.dxgi_format), Some(ddsfile::DxgiFormat::BC1_UNorm));
+    assert_eq!((dds.get_width(), dds.get_height(), dds.get_num_mipmap_levels()), (8, 8, 2));
+    let mut expected = vec![1u8; 32];
+    expected.extend(vec![2u8; 8]);
+    assert_eq!(dds.data, expected);
+}
+
+#[tokio::test]
+async fn discover_in_an_rpak_lists_textures_as_convertible() {
+    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    let env = rpak_env();
+    let t = TexSpec::new(0x42, 10, 4, 4, 31, 1, vec![9u8; 64]);
+    env.input.write("c.rpak", build_tex_pak(8, &[t])).await.unwrap();
+    let run = invoke(&env, &["discover", "c.rpak", "--depth", "1"]).await;
+    assert_eq!(run.code, Some(ExitCode::SUCCESS), "{}", run.err);
+    let json: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    let e = &json[0]["entries"][0];
+    assert_eq!((e["format"].as_str(), e["version"].as_str()), (Some("txtr"), Some("10")));
+    let targets: Vec<_> = e["targets"].as_array().unwrap().iter().map(|t| t["type"].as_str().unwrap()).collect();
+    assert_eq!(targets, ["png", "dds"]);
+}

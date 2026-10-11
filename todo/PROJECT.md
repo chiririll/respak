@@ -2,7 +2,7 @@
 
 respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts their contents into usable formats (e.g. an `.rpak` texture to PNG/DDS, a model to Cast), and later back into Respawn formats. Its architecture is designed from scratch. Format code (pak loading, codecs, asset parsing) is **ported from the C++ tool rsx** (`C:\Users\chiririll\Projects\rsx`) and fitted into that architecture; rsx's own architecture is not carried over (§12). Version coverage = whatever rsx supports.
 
-**Status:** foundation done (workspace, errors, values, capabilities); slices 05 (PNG ↔ DDS), 06 (`formats`, `discover`) and 07 (rpak listing) done; now building vertical slices. The task list is in [`tasks/`](tasks/README.md).
+**Status:** foundation done (workspace, errors, values, capabilities); slices 05 (PNG ↔ DDS), 06 (`formats`, `discover`), 07 (rpak listing) and 08 (rpak texture → DDS) done; now building vertical slices. The task list is in [`tasks/`](tasks/README.md).
 
 ---
 
@@ -278,7 +278,7 @@ impl Mediator {
   - Read-only service (slice 07): implement `raw::Service` with `Reader = oio::StreamReader<R>` where `R: oio::StreamRead` (one method, `open(range)`), `Lister: oio::List` (`next() -> Option<Entry>`), the rest `()`; report only `stat`/`read`/`list` in `capability()` (use `..Default::default()`); return `ErrorKind::Unsupported` otherwise. Template: `MemoryBackend` in `opendal-core`. Build with `Operator::new(Builder)` (needs `Builder` + `Configurator`) or `Operator::from_inner(Arc<dyn ServiceDyn>)`.
   - `Layer` has a new shape (`apply_service`, `apply_context`); `Operator::new` has no `.finish()`; `Scheme` enum is replaced by string schemes; option structs grow fields, never use exhaustive literals.
   - Not verified: running with `default-features = false` and no executor feature; we enable `executors-tokio`.
-- rpak volume layout (§6 proposal): slice 07 built the file names (`0x<GUID>.<kind>`, names hashed to GUIDs); `.mem` and relocation come in slice 08. Pages of unpatched paks are concatenated, so `.mem` offset = `page_base[page] + offset`.
+- rpak volume layout (§6 proposal): built in slices 07 and 08: files `0x<GUID>.<kind>` (a name is hashed to its GUID), headers with pointers relocated to `.mem` offsets (u64, all ones = null), and a hidden `.mem`. Pages of unpatched paks are concatenated, so `.mem` offset = `page_base[page] + offset`.
 - Exact capability methods; option schemas for targets (`schemars`?).
 - FFI shape for the async API ("JSON in/out + event callback").
 - zstd-compressed paks (flagged, unsupported by rsx). Codec licensing (Oodle).

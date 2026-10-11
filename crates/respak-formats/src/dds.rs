@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use ddsfile::{D3DFormat, Dds, DxgiFormat, NewD3dParams};
+use ddsfile::{AlphaMode, D3D10ResourceDimension, D3DFormat, Dds, DxgiFormat, NewD3dParams, NewDxgiParams};
 use opendal::Operator;
 use respak_core::capability::{Bitmap, BitmapInfo, PixelFormat};
 use respak_core::value::BlobData;
@@ -86,7 +86,7 @@ impl Detect for DdsRead {
 }
 
 fn mip_len(width: u32, height: u32, level: u32) -> u64 {
-    u64::from((width >> level).max(1)) * u64::from((height >> level).max(1)) * 4
+    PixelFormat::Rgba8.mip_len(width >> level, height >> level)
 }
 
 #[async_trait]
@@ -145,37 +145,93 @@ impl ReadHandler for DdsRead {
     }
 }
 
+fn dxgi_format(f: PixelFormat) -> Option<DxgiFormat> {
+    Some(match f {
+        PixelFormat::R8 => DxgiFormat::R8_UNorm,
+        PixelFormat::Rg8 => DxgiFormat::R8G8_UNorm,
+        PixelFormat::Rgba8 => DxgiFormat::R8G8B8A8_UNorm,
+        PixelFormat::Rgba8Srgb => DxgiFormat::R8G8B8A8_UNorm_sRGB,
+        PixelFormat::Bgra8 => DxgiFormat::B8G8R8A8_UNorm,
+        PixelFormat::R16 => DxgiFormat::R16_UNorm,
+        PixelFormat::R16F => DxgiFormat::R16_Float,
+        PixelFormat::Rgba16F => DxgiFormat::R16G16B16A16_Float,
+        PixelFormat::R32F => DxgiFormat::R32_Float,
+        PixelFormat::Rgba32F => DxgiFormat::R32G32B32A32_Float,
+        PixelFormat::Bc1 => DxgiFormat::BC1_UNorm,
+        PixelFormat::Bc1Srgb => DxgiFormat::BC1_UNorm_sRGB,
+        PixelFormat::Bc2 => DxgiFormat::BC2_UNorm,
+        PixelFormat::Bc2Srgb => DxgiFormat::BC2_UNorm_sRGB,
+        PixelFormat::Bc3 => DxgiFormat::BC3_UNorm,
+        PixelFormat::Bc3Srgb => DxgiFormat::BC3_UNorm_sRGB,
+        PixelFormat::Bc4 => DxgiFormat::BC4_UNorm,
+        PixelFormat::Bc4Snorm => DxgiFormat::BC4_SNorm,
+        PixelFormat::Bc5 => DxgiFormat::BC5_UNorm,
+        PixelFormat::Bc5Snorm => DxgiFormat::BC5_SNorm,
+        PixelFormat::Bc6H => DxgiFormat::BC6H_UF16,
+        PixelFormat::Bc6HSigned => DxgiFormat::BC6H_SF16,
+        PixelFormat::Bc7 => DxgiFormat::BC7_UNorm,
+        PixelFormat::Bc7Srgb => DxgiFormat::BC7_UNorm_sRGB,
+        _ => return None,
+    })
+}
+
 #[async_trait]
 impl ConvertHandler for DdsEncode {
-    /// Bitmap -> a blob tagged `dds`: legacy header with RGBA masks, all mips of layer 0.
+    /// Bitmap -> a blob tagged `dds`. Block-compressed data is copied as it is.
+    ///
+    /// A single-layer RGBA8/BGRA8 bitmap gets a legacy header with colour masks (readable by
+    /// every viewer); everything else (BC, arrays, other formats) gets a DX10 header. All mips
+    /// of every layer are written, layers outer and mips inner.
     async fn convert(&self, source: Value, target: &Target, _cx: &Cx) -> Result<Value> {
         let bitmap = bitmap_of(&source)?;
         let info = bitmap.info();
-        if info.layer_count() != 1 || info.depth != 1 {
-            return Err(unsupported("dds", "arrays, cube maps and volumes"));
+        if info.faces != 1 || info.depth != 1 {
+            return Err(unsupported("dds", "cube maps and volumes"));
         }
-        let d3d = match info.format {
-            PixelFormat::Rgba8 => D3DFormat::A8B8G8R8,
-            PixelFormat::Bgra8 => D3DFormat::A8R8G8B8,
-            other => return Err(unsupported("dds", &format!("pixel format {other:?}"))),
+        let mips = info.mip_count.max(1);
+        let legacy = match info.format {
+            PixelFormat::Rgba8 if info.array_len == 1 => Some(D3DFormat::A8B8G8R8),
+            PixelFormat::Bgra8 if info.array_len == 1 => Some(D3DFormat::A8R8G8B8),
+            _ => None,
         };
-        let mut dds = Dds::new_d3d(NewD3dParams {
-            height: info.height,
-            width: info.width,
-            depth: None,
-            format: d3d,
-            mipmap_levels: (info.mip_count > 1).then_some(info.mip_count),
-            caps2: None,
-        })
+        let mut dds = match legacy {
+            Some(format) => Dds::new_d3d(NewD3dParams {
+                height: info.height,
+                width: info.width,
+                depth: None,
+                format,
+                mipmap_levels: (mips > 1).then_some(mips),
+                caps2: None,
+            }),
+            None => {
+                let format = dxgi_format(info.format)
+                    .ok_or_else(|| unsupported("dds", &format!("pixel format {:?}", info.format)))?;
+                Dds::new_dxgi(NewDxgiParams {
+                    height: info.height,
+                    width: info.width,
+                    depth: None,
+                    format,
+                    mipmap_levels: (mips > 1).then_some(mips),
+                    array_layers: (info.array_len > 1).then_some(info.array_len),
+                    caps2: None,
+                    is_cubemap: false,
+                    resource_dimension: D3D10ResourceDimension::Texture2D,
+                    alpha_mode: AlphaMode::Unknown,
+                })
+            }
+        }
         .map_err(|e| Error::custom("dds encode", e))?;
 
         let mut data = Vec::with_capacity(dds.data.len());
-        for level in 0..info.mip_count {
-            let mip = bitmap.read_mip(level, 0).await?;
-            if mip.len() as u64 != mip_len(info.width, info.height, level) {
-                return Err(corrupt(format!("bitmap mip {level} has the wrong size")));
+        for layer in 0..info.array_len {
+            for level in 0..mips {
+                let mip = bitmap.read_mip(level, layer).await?;
+                let want = info.format.mip_len(info.width >> level, info.height >> level);
+                if mip.len() as u64 != want {
+                    return Err(corrupt(format!("bitmap mip {level} of layer {layer} has the wrong size")));
+                }
+                data.extend_from_slice(&mip);
             }
-            data.extend_from_slice(&mip);
         }
         if data.len() != dds.data.len() {
             return Err(corrupt("bitmap mip chain does not match its info"));

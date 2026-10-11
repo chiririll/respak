@@ -392,6 +392,8 @@ pub struct Tables {
     pub page_data_offset: u64,
     /// Offset of each page from the start of the page data.
     pub page_bases: Vec<u64>,
+    /// The pointer table sorted by (page, offset), for lookups by location.
+    sorted_pointers: Vec<PagePtr>,
 }
 
 fn strings(buf: &[u8]) -> Vec<String> {
@@ -452,7 +454,20 @@ impl Tables {
                 return Err(corrupt(format!("asset {:#018x}: header page {} does not exist", a.guid, a.head.page)));
             }
         }
-        Ok(Self { starpaks, opt_starpaks, segments, pages, pointers, assets, guid_refs, page_data_offset, page_bases })
+        let mut sorted_pointers = pointers.clone();
+        sorted_pointers.sort_by_key(|p| (p.page, p.offset));
+        Ok(Self {
+            starpaks,
+            opt_starpaks,
+            segments,
+            pages,
+            pointers,
+            assets,
+            guid_refs,
+            page_data_offset,
+            page_bases,
+            sorted_pointers,
+        })
     }
 
     /// Reads one asset entry. `e` is exactly the entry size of `version`.
@@ -487,6 +502,53 @@ impl Tables {
                 kind: kind(0x44),
             }
         }
+    }
+
+    /// Total size of the pages: the length of the flat `.mem` file.
+    pub fn mem_len(&self) -> u64 {
+        self.pages.iter().map(|p| u64::from(p.size)).sum()
+    }
+
+    /// The offset in `.mem` (all pages back to back) of a page location, if it lies in a page.
+    /// The end of a page is a valid location (a pointer just past the data).
+    pub fn mem_offset(&self, ptr: PagePtr) -> Option<u64> {
+        let page = self.pages.get(ptr.page as usize)?;
+        (ptr.offset <= page.size).then(|| self.page_bases[ptr.page as usize] + u64::from(ptr.offset))
+    }
+
+    /// Rewrites every pointer slot inside an asset header into a `.mem` offset (little-endian
+    /// u64; `u64::MAX` for a null target). `raw` is the header as stored, `asset.header_size`
+    /// bytes. A slot is an 8-byte location listed in the pointer table whose content is a page
+    /// location (`i32 page, i32 offset`); only slots wholly inside the header are rewritten.
+    pub fn relocate_header(&self, asset: &AssetEntry, raw: &mut [u8]) -> Result<()> {
+        if asset.head.is_null() {
+            return Ok(());
+        }
+        let (page, base) = (asset.head.page, asset.head.offset);
+        let end = u64::from(base) + raw.len() as u64;
+        let first = self.sorted_pointers.partition_point(|p| (p.page, p.offset) < (page, base));
+        for slot in &self.sorted_pointers[first..] {
+            if slot.page != page || u64::from(slot.offset) + 8 > end {
+                break;
+            }
+            let at = (slot.offset - base) as usize;
+            let target = PagePtr {
+                page: u32::from_le_bytes(raw[at..at + 4].try_into().expect("4 bytes")),
+                offset: u32::from_le_bytes(raw[at + 4..at + 8].try_into().expect("4 bytes")),
+            };
+            let value = if target.is_null() {
+                u64::MAX
+            } else {
+                self.mem_offset(target).ok_or_else(|| {
+                    corrupt(format!(
+                        "asset {:#018x}: pointer at +{at:#x} leads to page {} offset {}, which does not exist",
+                        asset.guid, target.page, target.offset
+                    ))
+                })?
+            };
+            raw[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        Ok(())
     }
 
     /// Where in the body the header of `asset` starts, and its length. `None` if the asset has
