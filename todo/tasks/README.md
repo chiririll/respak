@@ -17,7 +17,7 @@ From task 05 on, every task is a **vertical slice**: a thin path through every l
 Every slice ends with:
 - `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass; public items have docs.
 - `cargo tree -p respak-respawn` / `-p respak-formats` show no plugin-to-plugin dependency, and core has no format knowledge.
-- Fixtures are synthetic and generated in tests. No game files in the repo. No Steam or downloader code.
+- Fixtures are synthetic and generated in tests. No game files in the repo. No Steam or downloader code outside `respak-steam` ([STEAM.md](../STEAM.md)).
 - Don't commit unless the user asks.
 
 ## Foundation (done)
@@ -38,6 +38,9 @@ Every slice ends with:
 | 09 | [BC decoding and target options](09-slice-txtr-to-png.md) | `convert …/foo.txtr --to png` | 08 | done |
 | 10 | [Streamed mips from starpaks](10-slice-streamed-mips.md) | full-size texture, byte count | 09 | done |
 | 11 | [Batch requests, globs, composite outputs](11-slice-batch-requests.md) | `run request.json` | 10 | done |
+| 11a | [Steam login](11a-slice-steam-login.md) | `steam login --qr`, token reused | 11 | todo |
+| 11b | [Steam depots as input](11b-slice-steam-depot.md) | `--steam … convert`, only the needed chunks downloaded | 11a | todo |
+| 11c | [Oodle decompression](11c-slice-oodle.md) | current Apex textures over Steam | 11b | todo |
 | 12 | [Events, progress, cancellation](12-slice-events-cancel.md) | progress + Ctrl-C | 11 | todo |
 | 13 | [Linking: a material with its textures](13-slice-linking-material.md) | material + textures | 12 | blocked |
 | 14 | [Backlog](14-backlog.md) | — | — | blocked |

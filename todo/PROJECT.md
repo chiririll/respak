@@ -18,7 +18,7 @@ If a slice shows that part of this design doesn't work, stop and tell the user. 
 Rules:
 - **Prefer existing, well-maintained crates.** The one agreed exception is the mediator, hand-written on purpose.
 - **Ask the user when something is unclear.** Don't guess.
-- **No Steam or downloader code.** Where bytes come from is the host's business.
+- **No Steam or downloader code.** Where bytes come from is the host's business. The one exception is the host-only crate `respak-steam` ([STEAM.md](STEAM.md)).
 - **Read only the byte ranges you need** (§6).
 - **A format handler only handles its own format.** For anything else it asks the mediator: "here is a value, convert it to format X".
 - **Traits and data types:** a format may implement core traits (capabilities, §5.4) and traits of its own crate. Conversions to formats of *other* crates go only through core traits. Inside one crate, modules may share data types of each other's formats (e.g. `txtr` reads `rpak.asset`), never call each other's handlers.
@@ -46,6 +46,7 @@ crates/
 | Data | `serde`, `serde_json`, `bytes` | requests, targets, reports, discovery are JSON |
 | Errors / logs | `thiserror`, `tracing` | |
 | CLI | `clap` (derive), `anyhow` | CLI crate only |
+| Oodle decoding | `oozextract` | `respak-respawn`, task 11c. Pure-Rust port of ooz (reverse-engineered, GPL-3.0+; the crate says MIT, treated as GPL-3.0+, compatible with AGPL). Decoder only. The proprietary Oodle library (oo2core) is never linked. |
 | Candidates | `globset` (path globs), `moka` (in-memory cache, later) | added when needed |
 
 Rejected, don't reopen without asking: a home-made filesystem replacing OpenDAL; `object_store`; `vfs`; `tower` for the mediator; a message broker; first-match `can_handle` routing (→ scoring); shared intermediate structs such as one `Texture` for every format (→ capabilities); a declarative probe DSL (→ score functions, §5.3); a path table precomputed at build time (→ per-request path search, §5.2); format-specific fields in OpenDAL `Metadata` (→ typed container entries, §5.4).
@@ -198,7 +199,7 @@ impl Mediator {
   - chunked with an index: only the chunks covering the range;
   - one stream (`.rpak` body; flags RTech `1<<8`, Oodle `1<<9`, zstd `1<<15`): decompress forward, keep tables and a bounded set of pages, restart only for an evicted page. Costs the `.rpak`'s size, never its starpaks'.
 - **Compression inside a format** (texture mips, model LODs) stays in that format: ranged read of the unit, then `compressed → blob`. Units are small, so cost is bounded.
-- **Codecs are shared mediator edges** (RTech, Snowflake, Oodle in respawn; zstd where first needed), so a host can also supply a licensed codec (Oodle).
+- **Codecs are shared mediator edges** (RTech, Snowflake, Oodle in respawn; zstd where first needed), so a host can also supply a licensed codec. Oodle is decoded with `oozextract` (§3), not the proprietary library. So far RTech is called directly, not as an edge; task 11c decides which way codecs go.
 - **rpak volume (proposal):**
   ```
   common.rpak/
@@ -281,7 +282,8 @@ impl Mediator {
 - rpak volume layout (§6 proposal): built in slices 07 and 08: files `0x<GUID>.<kind>` (a name is hashed to its GUID), headers with pointers relocated to `.mem` offsets (u64, all ones = null), and a hidden `.mem`. Pages of unpatched paks are concatenated, so `.mem` offset = `page_base[page] + offset`.
 - Exact capability methods; option schemas for targets (`schemars`?).
 - FFI shape for the async API ("JSON in/out + event callback").
-- zstd-compressed paks (flagged, unsupported by rsx). Codec licensing (Oodle).
+- zstd-compressed paks (flagged, unsupported by rsx).
+- ~~Codec licensing (Oodle)~~ decided: `oozextract` (task 11c). That it decodes Apex data is checked first in 11c.
 
 ## 12. Porting from rsx
 **rsx code is reviewed before it is ported, never translated line by line.** In every slice that ports code, the sketch step includes an **rsx review**, written into the task under `## rsx review`. The user approves it at the gate, before any porting starts:
