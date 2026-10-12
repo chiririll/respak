@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use respak_core::{ConvertRequest, DiscoverOptions, Engine, Error, ErrorKind, OutputRequest, OutputResult, TargetSpec};
+use respak_core::{ConvertReport, ConvertRequest, DiscoverOptions, Engine, Error, ErrorKind, OutputRequest, OutputResult, TargetSpec};
 
 /// `respak --root <dir> --out <dir> <command>`
 #[derive(Debug, Parser)]
@@ -20,7 +20,7 @@ pub struct Cli {
     pub command: Command,
 }
 
-/// Commands. (`run` comes in a later slice.)
+/// Commands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Print the format graph as JSON.
@@ -34,9 +34,14 @@ pub enum Command {
         #[arg(long, default_value_t = 0)]
         depth: u32,
     },
-    /// Convert one file.
+    /// Run a request file (`-` reads stdin): any number of outputs, with globs and lists.
+    Run {
+        /// Path of the request JSON, or `-`.
+        request: String,
+    },
+    /// Convert a file, or every file a glob matches.
     Convert {
-        /// Source path, relative to `--root`.
+        /// Source path or glob, relative to `--root`.
         path: String,
         /// Target as JSON, e.g. `{"type":"dds"}`.
         #[arg(long)]
@@ -83,19 +88,35 @@ pub async fn run(
                 Error::new(ErrorKind::InvalidRequest { message: format!("--to is not a valid target: {e}") })
             })?;
             let request =
-                ConvertRequest { version: 1, outputs: vec![OutputRequest { from: path, to, path: out_path }] };
-            let report = engine.convert(&request).await?;
-            serde_json::to_writer_pretty(&mut *out, &report)?;
-            writeln!(out)?;
-
-            let mut failed = false;
-            for output in &report.outputs {
-                if let OutputResult::Err { error } = &output.result {
-                    writeln!(err, "{}: {error}", output.from)?;
-                    failed = true;
-                }
-            }
-            Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
+                ConvertRequest { version: 1, outputs: vec![OutputRequest { from: path.into(), to, path: out_path }] };
+            report(engine.convert(&request).await?, out, err)
+        }
+        Command::Run { request } => {
+            let text = if request == "-" {
+                std::io::read_to_string(std::io::stdin())?
+            } else {
+                std::fs::read_to_string(&request).map_err(|e| {
+                    Error::new(ErrorKind::InvalidRequest { message: format!("cannot read {request}: {e}") })
+                })?
+            };
+            let request: ConvertRequest = serde_json::from_str(&text).map_err(|e| {
+                Error::new(ErrorKind::InvalidRequest { message: format!("the request is not valid: {e}") })
+            })?;
+            report(engine.convert(&request).await?, out, err)
         }
     }
+}
+
+/// Prints the report as JSON, each failure on `err`; non-zero exit if any output failed.
+fn report(report: ConvertReport, out: &mut impl Write, err: &mut impl Write) -> anyhow::Result<ExitCode> {
+    serde_json::to_writer_pretty(&mut *out, &report)?;
+    writeln!(out)?;
+    let mut failed = false;
+    for output in &report.outputs {
+        if let OutputResult::Err { error } = &output.result {
+            writeln!(err, "{}: {error}", output.from)?;
+            failed = true;
+        }
+    }
+    Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
 }

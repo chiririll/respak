@@ -100,6 +100,28 @@ impl Mediator {
         edge.handler.read(source, &detected, cx).await
     }
 
+    /// Reads `source` as `format` without scoring the alternatives (a request's `{path, format}`
+    /// override, for assets that are not in a container). The edge's own score function still
+    /// runs, to fill in the layout variant; a version in `format` overrides the detected one.
+    /// `NoPath` if there is no read edge from the source's format to `format`.
+    pub async fn identify_as(&self, source: Value, format: &FormatId, cx: &Cx) -> Result<Value> {
+        let (_, edge) = self
+            .candidates(source.format().name())
+            .into_iter()
+            .find(|(f, _)| f.name == format.name())
+            .ok_or_else(|| {
+                Error::new(ErrorKind::NoPath { from: source.format().to_string(), to: format.to_string() })
+            })?;
+        let (header, len) = probe_data(&source, edge.handler.header_len()).await?;
+        let extension = extension_of_key(source.key());
+        let probe = Probe { source: &source, extension: extension.as_deref(), len, header: &header };
+        let mut detected = edge.handler.score(&probe, cx).await?.unwrap_or(Detected { score: 0, version: None });
+        if let Some(v) = format.version() {
+            detected.version = Some(v);
+        }
+        edge.handler.read(source, &detected, cx).await
+    }
+
     /// Scores read edges like [`identify`](Self::identify) but applies none. The winner comes
     /// first, then the other hits of the same phase by score (ties in registration order), then
     /// the hits of the other phase. Empty = unrecognised. Never fails on a tie.
@@ -246,11 +268,37 @@ pub struct Cx {
     pub output: Operator,
     /// Containers mounted so far in this call.
     pub mounts: Arc<crate::resolve::Mounts>,
+    /// Output path -> key of the value written there, for the whole call (PROJECT.md §5.5).
+    written: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 
 impl Cx {
     /// A context with nothing mounted yet. One context serves one `Engine` call.
     pub fn new(mediator: Mediator, input: Operator, output: Operator) -> Self {
-        Self { mediator, input, output, mounts: Arc::default() }
+        Self { mediator, input, output, mounts: Arc::default(), written: Arc::default() }
+    }
+
+    /// Writes `bytes` to `path` on the output operator on behalf of the value with key `key`.
+    ///
+    /// The first writer of a path wins. Writing the same key to the same path again is skipped
+    /// (`Ok`, nothing written); a different key is `OutputConflict`. Returns whether the file
+    /// was written.
+    pub async fn write(&self, path: &str, key: &crate::value::ValueKey, bytes: bytes::Bytes) -> Result<bool> {
+        {
+            let mut written = self.written.lock().unwrap();
+            match written.get(path) {
+                Some(k) if *k == key.to_string() => return Ok(false),
+                Some(_) => return Err(Error::new(ErrorKind::OutputConflict { path: path.to_owned() })),
+                None => {
+                    written.insert(path.to_owned(), key.to_string());
+                }
+            }
+        }
+        if let Err(e) = self.output.write(path, bytes).await {
+            // Leave the path free for a retry.
+            self.written.lock().unwrap().remove(path);
+            return Err(e.into());
+        }
+        Ok(true)
     }
 }

@@ -37,8 +37,8 @@ Every slice ends with:
 | 08 | [rpak texture → DDS (permanent mips)](08-slice-txtr-to-dds.md) | `convert …/foo.txtr --to dds` | 07 | done |
 | 09 | [BC decoding and target options](09-slice-txtr-to-png.md) | `convert …/foo.txtr --to png` | 08 | done |
 | 10 | [Streamed mips from starpaks](10-slice-streamed-mips.md) | full-size texture, byte count | 09 | done |
-| 11 | [Batch requests, globs, composite outputs](11-slice-batch-requests.md) | `run request.json` | 10 | todo |
-| 12 | [Events, progress, cancellation](12-slice-events-cancel.md) | progress + Ctrl-C | 11 | blocked |
+| 11 | [Batch requests, globs, composite outputs](11-slice-batch-requests.md) | `run request.json` | 10 | done |
+| 12 | [Events, progress, cancellation](12-slice-events-cancel.md) | progress + Ctrl-C | 11 | todo |
 | 13 | [Linking: a material with its textures](13-slice-linking-material.md) | material + textures | 12 | blocked |
 | 14 | [Backlog](14-backlog.md) | — | — | blocked |
 

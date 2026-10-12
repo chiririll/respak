@@ -8,7 +8,7 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::graph::FormatGraph;
 use crate::mediator::{Cx, Mediator, Target};
 use crate::plugin::{Plugin, Registry};
-use crate::value::{FormatId, Value, FILE};
+use crate::value::{BundleData, FormatId, Value, FILE};
 
 /// `{ "version": 1, "outputs": [...] }`
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -22,14 +22,72 @@ pub struct ConvertRequest {
 /// One output: `{ "from": "icon.png", "to": { "type": "dds" }, "path": "x/icon.dds" }`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OutputRequest {
-    /// Source path on the input operator. (Later: glob, list, `{path, format}`; the JSON
-    /// stays compatible.)
-    pub from: String,
+    /// What to convert: a path, a glob, `{path, format}`, or a list of those.
+    pub from: FromSpec,
     /// Target format and options.
     pub to: TargetSpec,
-    /// Output path; default = source path with the target's extension.
+    /// Output path (the folder, for a composite output); default = the path inside the innermost
+    /// container with the target's extension.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+}
+
+/// `from`: one source or several.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum FromSpec {
+    /// One path or glob, or one `{path, format}`.
+    One(SourceSpec),
+    /// Several.
+    Many(Vec<SourceSpec>),
+}
+
+/// One source: a path or glob, or a path whose format is given instead of detected (an asset
+/// outside any container).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum SourceSpec {
+    /// A path or glob.
+    Path(String),
+    /// A path read as `format` (`txtr@10`).
+    As {
+        /// Path on the input.
+        path: String,
+        /// The format to read it as.
+        format: FormatId,
+    },
+}
+
+impl From<String> for FromSpec {
+    fn from(path: String) -> Self {
+        Self::One(SourceSpec::Path(path))
+    }
+}
+
+impl From<&str> for FromSpec {
+    fn from(path: &str) -> Self {
+        path.to_owned().into()
+    }
+}
+
+impl FromSpec {
+    fn sources(&self) -> Vec<&SourceSpec> {
+        match self {
+            Self::One(s) => vec![s],
+            Self::Many(v) => v.iter().collect(),
+        }
+    }
+
+    /// The request's own spelling, for the report of a request that expanded to nothing.
+    fn label(&self) -> String {
+        self.sources()
+            .iter()
+            .map(|s| match s {
+                SourceSpec::Path(p) | SourceSpec::As { path: p, .. } => p.as_str(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 /// `{ "type": "dds", ...options }`
@@ -56,7 +114,7 @@ pub struct ConvertReport {
 /// The outcome of one output.
 #[derive(Debug, Serialize)]
 pub struct OutputReport {
-    /// The request's `from`.
+    /// The source this conversion read (a glob is reported once per match).
     pub from: String,
     /// Files written, or the error.
     pub result: OutputResult,
@@ -92,9 +150,16 @@ pub struct EngineBuilder {
     input: Option<Operator>,
     output: Option<Operator>,
     plugins: Vec<Box<dyn Plugin>>,
+    max_concurrency: Option<usize>,
 }
 
 impl EngineBuilder {
+    /// How many outputs run at once (default 4, at least 1).
+    pub fn max_concurrency(mut self, n: usize) -> Self {
+        self.max_concurrency = Some(n.max(1));
+        self
+    }
+
     /// Where inputs are read from (required).
     pub fn input(mut self, op: Operator) -> Self {
         self.input = Some(op);
@@ -122,7 +187,12 @@ impl EngineBuilder {
             registry.add(p.as_ref());
         }
         registry.check()?;
-        Ok(Engine { mediator: Mediator::new(registry), input, output })
+        Ok(Engine {
+            mediator: Mediator::new(registry),
+            input,
+            output,
+            max_concurrency: self.max_concurrency.unwrap_or(4),
+        })
     }
 }
 
@@ -131,6 +201,7 @@ pub struct Engine {
     mediator: Mediator,
     input: Operator,
     output: Operator,
+    max_concurrency: usize,
 }
 
 impl Engine {
@@ -227,7 +298,19 @@ impl Engine {
         Cx::new(self.mediator.clone(), self.input.clone(), self.output.clone())
     }
 
-    /// Runs every output; one failing output does not stop the others.
+    /// Opens a path or glob on the input: one value per match (`NoMatch` if a glob matches
+    /// nothing, `NotFound` for a path that is not there).
+    pub async fn open(&self, path_or_glob: &str) -> Result<Vec<Value>> {
+        let cx = self.cx();
+        let mut values = Vec::new();
+        for path in self.mediator.expand(path_or_glob, &cx).await? {
+            values.push(self.mediator.open(&path, &cx).await?);
+        }
+        Ok(values)
+    }
+
+    /// Runs every output, up to `max_concurrency` at a time; one failing output does not stop
+    /// the others. A glob or a list in `from` gives one report entry per conversion.
     /// `Err` only for an invalid request (unknown `version`).
     pub async fn convert(&self, request: &ConvertRequest) -> Result<ConvertReport> {
         if request.version != 1 {
@@ -236,19 +319,62 @@ impl Engine {
             }));
         }
         let cx = self.cx();
-        let mut outputs = Vec::with_capacity(request.outputs.len());
+
+        // Expand every `from` first, in request order, so the report has a stable order.
+        let mut jobs: Vec<Job<'_>> = Vec::new();
         for out in &request.outputs {
-            let result = match self.convert_one(out, &cx).await {
-                Ok(files) => OutputResult::Ok { files },
-                Err(error) => OutputResult::Err { error },
-            };
-            outputs.push(OutputReport { from: out.from.clone(), result });
+            let sources = out.from.sources();
+            if sources.is_empty() {
+                let error = Error::new(ErrorKind::InvalidRequest { message: "`from` is an empty list".into() });
+                jobs.push(Job { from: out.from.label(), format: None, out, error: Some(error) });
+            }
+            for source in sources {
+                let (pattern, format) = match source {
+                    SourceSpec::Path(p) => (p.as_str(), None),
+                    SourceSpec::As { path, format } => (path.as_str(), Some(format)),
+                };
+                match self.mediator.expand(pattern, &cx).await {
+                    Ok(paths) => {
+                        jobs.extend(paths.into_iter().map(|from| Job { from, format, out, error: None }));
+                    }
+                    Err(error) => jobs.push(Job { from: pattern.to_owned(), format, out, error: Some(error) }),
+                }
+            }
         }
+
+        use futures::StreamExt;
+        let outputs = futures::stream::iter(jobs)
+            .map(|job| {
+                let cx = &cx;
+                async move {
+                    let result = match job.error {
+                        Some(error) => Err(error),
+                        None => self.convert_one(job.out, &job.from, job.format, cx).await,
+                    };
+                    let result = match result {
+                        Ok(files) => OutputResult::Ok { files },
+                        Err(error) => OutputResult::Err { error },
+                    };
+                    OutputReport { from: job.from, result }
+                }
+            })
+            .buffered(self.max_concurrency)
+            .collect()
+            .await;
         Ok(ConvertReport { outputs })
     }
 
-    async fn convert_one(&self, out: &OutputRequest, cx: &Cx) -> Result<Vec<String>> {
-        let source = self.mediator.open(&out.from, cx).await?;
+    async fn convert_one(
+        &self,
+        out: &OutputRequest,
+        from: &str,
+        format: Option<&FormatId>,
+        cx: &Cx,
+    ) -> Result<Vec<String>> {
+        let mut source = self.mediator.open(from, cx).await?;
+        if let Some(format) = format {
+            source = self.mediator.identify_as(source, format, cx).await?;
+        }
         let options = if out.to.options.is_empty() {
             serde_json::Value::Null
         } else {
@@ -256,22 +382,58 @@ impl Engine {
         };
         let target = Target { format: out.to.format.clone(), options, via: out.to.via.clone() };
         let result = self.mediator.convert(source, target, cx).await?;
-        let blob = result.as_blob().ok_or_else(|| {
+
+        let cannot_write = || {
             Error::new(ErrorKind::Custom {
                 source: None,
                 message: format!("a `{}` value cannot be written to a file", result.format()),
             })
-        })?;
+        };
+        // The source's path inside its innermost container (or on the input).
+        let inner = cx.mounts.path_in_container(from.trim_matches('/'));
+        if let Some(bundle) = result.downcast_ref::<BundleData>() {
+            // A composite output gets its own folder.
+            let folder = match &out.path {
+                Some(p) => p.trim_end_matches('/').to_owned(),
+                None => without_extension(inner).to_owned(),
+            };
+            let mut files = Vec::new();
+            for (name, item) in bundle.names.iter().zip(&bundle.items) {
+                let blob = item.as_blob().ok_or_else(cannot_write)?;
+                let path = format!("{folder}/{name}");
+                cx.write(&path, item.key(), blob.bytes().clone()).await?;
+                files.push(path);
+            }
+            return Ok(files);
+        }
+        let blob = result.as_blob().ok_or_else(cannot_write)?;
         let path = match &out.path {
             Some(p) => p.clone(),
             None => {
                 let name = out.to.format.name();
-                let inner = cx.mounts.path_in_container(out.from.trim_matches('/'));
                 with_extension(inner, self.mediator.extension_of(name).unwrap_or(name))
             }
         };
-        self.output.write(&path, blob.bytes().clone()).await?;
+        cx.write(&path, result.key(), blob.bytes().clone()).await?;
         Ok(vec![path])
+    }
+}
+
+/// One conversion: a concrete source of an output request.
+struct Job<'a> {
+    from: String,
+    format: Option<&'a FormatId>,
+    out: &'a OutputRequest,
+    /// The source could not be expanded (`NoMatch`, bad glob).
+    error: Option<Error>,
+}
+
+/// `texture/foo.txtr` -> `texture/foo`.
+fn without_extension(path: &str) -> &str {
+    let name_start = path.rfind('/').map_or(0, |i| i + 1);
+    match path[name_start..].rfind('.') {
+        Some(dot) if dot > 0 => &path[..name_start + dot],
+        _ => path,
     }
 }
 

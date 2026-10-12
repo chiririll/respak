@@ -117,20 +117,30 @@ impl Data for BlobData {
     }
 }
 
-/// `bundle`: several values that form one output (e.g. a model with its textures).
+/// `bundle`: several values that form one output (e.g. a model with its textures, a texture
+/// with all its mips). Written as a composite output: a folder with one file per named member.
 #[derive(Debug)]
 pub struct BundleData {
     /// The members, in order.
     pub items: Vec<Value>,
+    /// The file name of each member inside the output folder, parallel to `items`.
+    pub names: Vec<String>,
     key: ValueKey,
 }
 
 core_format!(BundleData, BUNDLE);
 
 impl BundleData {
-    /// A bundle with the given identity.
+    /// A bundle of unnamed members (named `0`, `1`, ... when written).
     pub fn new(items: Vec<Value>, key: ValueKey) -> Self {
-        Self { items, key }
+        let names = (0..items.len()).map(|i| i.to_string()).collect();
+        Self { items, names, key }
+    }
+
+    /// A bundle whose members are written under the given file names.
+    pub fn named(items: Vec<(String, Value)>, key: ValueKey) -> Self {
+        let (names, items) = items.into_iter().unzip();
+        Self { items, names, key }
     }
 }
 

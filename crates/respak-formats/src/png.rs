@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use bytes::Bytes;
 use respak_core::capability::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
-use respak_core::value::BlobData;
+use respak_core::value::{BlobData, BundleData};
 use respak_core::{
     magic, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Target,
     TypedTarget, Value, ValueKey,
@@ -109,7 +109,7 @@ fn decode(bytes: &[u8]) -> Result<BitmapBuf> {
 pub enum Mips {
     /// A mip level, 0 = the largest.
     Level(u32),
-    /// `"first"` = the largest mip. (`"all"` needs composite outputs: not implemented yet.)
+    /// `"first"` = the largest mip; `"all"` = every mip, written into a folder.
     Keyword(String),
 }
 
@@ -127,53 +127,96 @@ pub struct PngOptions {
     pub mips: Mips,
 }
 
+/// What `mips` asks for.
+enum Selection {
+    /// One mip of layer 0.
+    One(u32),
+    /// Every mip of every layer, as a composite output.
+    All,
+}
+
 impl PngOptions {
-    /// The mip level asked for.
-    fn level(&self) -> Result<u32> {
+    fn selection(&self) -> Result<Selection> {
         let invalid = |message: String| Error::new(ErrorKind::InvalidOptions { message });
         match &self.mips {
-            Mips::Level(n) => Ok(*n),
-            Mips::Keyword(k) if k == "first" => Ok(0),
-            Mips::Keyword(k) if k == "all" => {
-                Err(invalid("mips \"all\" needs composite outputs, which are not implemented yet".into()))
+            Mips::Level(n) => Ok(Selection::One(*n)),
+            Mips::Keyword(k) if k == "first" => Ok(Selection::One(0)),
+            Mips::Keyword(k) if k == "all" => Ok(Selection::All),
+            Mips::Keyword(k) => {
+                Err(invalid(format!("mips must be \"first\", \"all\" or a mip level number, not \"{k}\"")))
             }
-            Mips::Keyword(k) => Err(invalid(format!("mips must be \"first\" or a mip level number, not \"{k}\""))),
         }
     }
 }
 
+/// One mip of one layer as a PNG file.
+async fn encode_mip(bitmap: &dyn Bitmap, level: u32, layer: u32) -> Result<Vec<u8>> {
+    let info = bitmap.info();
+    let (width, height) = ((info.width >> level).max(1), (info.height >> level).max(1));
+    let raw = bitmap.read_mip(level, layer).await?;
+    let pixels = decode_rgba8(info.format, width, height, &raw)?;
+
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().map_err(|e| Error::custom("png encode", e))?;
+    writer.write_image_data(&pixels).map_err(|e| Error::custom("png encode", e))?;
+    writer.finish().map_err(|e| Error::custom("png encode", e))?;
+    Ok(out)
+}
+
 #[async_trait]
 impl ConvertHandler for PngEncode {
-    /// Bitmap -> a blob tagged `png`: one mip (option `mips`), layer 0, decoded to RGBA8.
+    /// Bitmap -> a blob tagged `png`: one mip (option `mips`), layer 0, decoded to RGBA8. With
+    /// `mips: "all"`: a bundle of `mip<N>.png` (`layer<L>_mip<N>.png` for arrays), which the
+    /// engine writes into a folder.
     async fn convert(&self, source: Value, target: &Target, _cx: &Cx) -> Result<Value> {
         let options = TypedTarget::<PngOptions>::parse(target)?;
-        let level = options.options().level()?;
+        let selection = options.options().selection()?;
         let bitmap = bitmap_of(&source)?;
         let info = bitmap.info();
         if info.depth != 1 {
             return Err(unsupported("png", "volume textures"));
         }
-        if level >= info.mip_count {
-            return Err(Error::new(ErrorKind::InvalidOptions {
-                message: format!("mips {level}: the bitmap has {} mip(s)", info.mip_count),
-            }));
-        }
-        if info.layer_count() > 1 {
-            tracing::warn!("png: the bitmap has {} layers, writing layer 0 only", info.layer_count());
-        }
-        let (width, height) = ((info.width >> level).max(1), (info.height >> level).max(1));
-        let raw = bitmap.read_mip(level, 0).await?;
-        let pixels = decode_rgba8(info.format, width, height, &raw)?;
-
-        let mut out = Vec::new();
-        let mut encoder = png::Encoder::new(&mut out, width, height);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().map_err(|e| Error::custom("png encode", e))?;
-        writer.write_image_data(&pixels).map_err(|e| Error::custom("png encode", e))?;
-        writer.finish().map_err(|e| Error::custom("png encode", e))?;
-
         let key = ValueKey::converted(Arc::new(source.key().clone()), target.format.unversioned(), options.normalized());
-        Ok(Arc::new(BlobData::with_format(FormatId::new("png"), Bytes::from(out), key)))
+        let png = FormatId::new("png");
+        let blob = |bytes: Vec<u8>, key: ValueKey| -> Value {
+            Arc::new(BlobData::with_format(png.clone(), Bytes::from(bytes), key))
+        };
+
+        match selection {
+            Selection::One(level) => {
+                if level >= info.mip_count {
+                    return Err(Error::new(ErrorKind::InvalidOptions {
+                        message: format!("mips {level}: the bitmap has {} mip(s)", info.mip_count),
+                    }));
+                }
+                if info.layer_count() > 1 {
+                    tracing::warn!("png: the bitmap has {} layers, writing layer 0 only", info.layer_count());
+                }
+                Ok(blob(encode_mip(bitmap, level, 0).await?, key))
+            }
+            Selection::All => {
+                let layers = info.layer_count();
+                let mut items = Vec::new();
+                for layer in 0..layers {
+                    for level in 0..info.mip_count {
+                        let name = if layers == 1 {
+                            format!("mip{level}.png")
+                        } else {
+                            format!("layer{layer}_mip{level}.png")
+                        };
+                        let item_key = ValueKey::converted(
+                            Arc::new(key.clone()),
+                            FormatId::new("png"),
+                            &serde_json::json!({ "layer": layer, "mip": level }),
+                        );
+                        items.push((name, blob(encode_mip(bitmap, level, layer).await?, item_key)));
+                    }
+                }
+                Ok(Arc::new(BundleData::named(items, key)))
+            }
+        }
     }
 }

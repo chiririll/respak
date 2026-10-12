@@ -17,6 +17,8 @@ serde_json.workspace = true
 bytes.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
+globset = "0.4"
+futures.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

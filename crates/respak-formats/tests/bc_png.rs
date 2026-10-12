@@ -110,7 +110,6 @@ async fn bad_options_are_invalid_options() {
     env.1.write("t.dds", dx10(DxgiFormat::BC1_UNorm, 4, 4, 1, RED_BC1.to_vec())).await.unwrap();
     for to in [
         serde_json::json!({ "type": "png", "mips": 5 }),
-        serde_json::json!({ "type": "png", "mips": "all" }),
         serde_json::json!({ "type": "png", "mips": "last" }),
         serde_json::json!({ "type": "png", "mips": -1 }),
         serde_json::json!({ "type": "png", "colour": "red" }),
@@ -118,9 +117,6 @@ async fn bad_options_are_invalid_options() {
         let err = to_png(&env, "t.dds", to.clone()).await.unwrap_err();
         assert!(matches!(err, ErrorKind::InvalidOptions { .. }), "{to}: {err:?}");
     }
-    let err = to_png(&env, "t.dds", serde_json::json!({ "type": "png", "mips": "all" })).await.unwrap_err();
-    let ErrorKind::InvalidOptions { message } = err else { unreachable!() };
-    assert!(message.contains("composite"), "{message}");
 }
 
 #[tokio::test]
@@ -152,4 +148,24 @@ async fn every_block_format_decodes_through_a_dds_file() {
         let (w, h, px) = decode(&to_png(&env, &format!("{name}.dds"), serde_json::json!({ "type": "png" })).await.unwrap());
         assert_eq!((w, h, px.len()), (8, 4, 8 * 4 * 4), "{name}");
     }
+}
+
+#[tokio::test]
+async fn mips_all_writes_a_folder_with_one_png_per_mip() {
+    let env = env();
+    // 8x8 BC1 with 2 mips: 4 blocks (red) and 1 block (blue)
+    let red = [0x00, 0xF8, 0, 0, 0, 0, 0, 0];
+    let blue = [0x1F, 0x00, 0, 0, 0, 0, 0, 0];
+    env.1.write("t.dds", dx10(DxgiFormat::BC1_UNorm, 8, 8, 2, [red.repeat(4), blue.to_vec()].concat())).await.unwrap();
+    let request: ConvertRequest = serde_json::from_value(
+        serde_json::json!({ "version": 1, "outputs": [{ "from": "t.dds", "to": { "type": "png", "mips": "all" } }] }),
+    )
+    .unwrap();
+    let report = env.0.convert(&request).await.unwrap();
+    let OutputResult::Ok { files } = &report.outputs[0].result else { panic!("{:?}", report.outputs[0].result) };
+    assert_eq!(files, &["t/mip0.png", "t/mip1.png"]);
+    let (w, h, px) = decode(&env.2.read("t/mip0.png").await.unwrap().to_vec());
+    assert_eq!((w, h, &px[..4]), (8, 8, &[255, 0, 0, 255][..]));
+    let (w, h, px) = decode(&env.2.read("t/mip1.png").await.unwrap().to_vec());
+    assert_eq!((w, h, &px[..4]), (4, 4, &[0, 0, 255, 255][..]));
 }

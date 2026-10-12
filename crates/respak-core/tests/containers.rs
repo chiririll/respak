@@ -254,3 +254,37 @@ async fn discover_accepts_a_path_inside_a_container() {
     assert_eq!(d.entries[0].path, "outer.pak/inner.pak/a/x.dat");
     assert_eq!(d.entries[0].format.as_deref(), Some("pak.item"));
 }
+
+async fn globbed(env: &Env, pattern: &str) -> Result<Vec<String>> {
+    Ok(env.engine.open(pattern).await?.iter().map(|v| v.key().to_string()).collect())
+}
+
+#[tokio::test]
+async fn globs_descend_into_a_container_only_where_a_segment_names_it() {
+    let env = fixture().await;
+    assert_eq!(globbed(&env, "outer.pak/*.dat").await.unwrap(), ["outer.pak/z.dat"]);
+    assert_eq!(globbed(&env, "*.pak/*.pak/**/*.dat").await.unwrap(), ["outer.pak/inner.pak/a/x.dat"]);
+    assert_eq!(
+        globbed(&env, "outer.pak/inner.pak/a/*").await.unwrap(),
+        ["outer.pak/inner.pak/a/x.dat", "outer.pak/inner.pak/a/y.bin"]
+    );
+}
+
+#[tokio::test]
+async fn double_star_alone_never_enters_a_container() {
+    let env = fixture().await;
+    // `**` walks real directories only: outer.pak is a file, so nothing is opened ...
+    let err = globbed(&env, "**/*.dat").await.unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::NoMatch { .. }), "{err}");
+    // ... and inside outer.pak it does not enter inner.pak either.
+    assert_eq!(globbed(&env, "outer.pak/**/*.dat").await.unwrap(), ["outer.pak/z.dat"]);
+    // a pattern that ends in `**` lists only real files
+    assert_eq!(globbed(&env, "**").await.unwrap(), ["outer.pak", "plain.txt"]);
+}
+
+#[tokio::test]
+async fn a_pattern_through_a_file_that_is_not_a_container_matches_nothing() {
+    let env = fixture().await;
+    let err = globbed(&env, "plain.txt/*.dat").await.unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::NoMatch { .. }), "{err}");
+}

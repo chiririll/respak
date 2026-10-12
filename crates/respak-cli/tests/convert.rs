@@ -247,3 +247,27 @@ async fn an_rpak_bc1_texture_converts_to_png_and_honours_mips() {
     assert_eq!((w, h), (4, 4));
     assert_eq!(px, [0, 0, 255, 255]);
 }
+
+#[tokio::test]
+async fn run_reads_a_request_file_with_a_glob() {
+    let env = env();
+    env.input.write("a/1.png", png_1x1()).await.unwrap();
+    env.input.write("a/2.png", png_1x1()).await.unwrap();
+    let dir = std::env::temp_dir().join(format!("respak-run-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("request.json");
+    std::fs::write(&file, r#"{"version":1,"outputs":[{"from":"a/*.png","to":{"type":"dds"}},{"from":"zzz/*.png","to":{"type":"dds"}}]}"#)
+        .unwrap();
+
+    let run = invoke(&env, &["run", file.to_str().unwrap()]).await;
+    let _ = std::fs::remove_dir_all(&dir);
+    // one output matched nothing, so the exit code is a failure, but the other ran
+    assert_eq!(run.code, Some(ExitCode::FAILURE));
+    assert!(run.err.contains("zzz/*.png"), "{}", run.err);
+    let report: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    assert_eq!(report["outputs"].as_array().unwrap().len(), 3);
+    assert!(env.output.exists("a/1.dds").await.unwrap() && env.output.exists("a/2.dds").await.unwrap());
+
+    let bad = invoke(&env, &["run", "/definitely/not/here.json"]).await;
+    assert!(bad.error.is_some());
+}
