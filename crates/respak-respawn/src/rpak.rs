@@ -3,8 +3,12 @@
 //! # The volume
 //! ```text
 //! common.rpak/
-//!   0x8A3F12C4D5E6F701.txtr    the asset header (a name hashed to the same GUID resolves too)
+//!   0x8A3F12C4D5E6F701.txtr          the asset header (a name hashed to the same GUID resolves too)
+//!   0x8A3F12C4D5E6F701.txtr.stream   its entry in a mandatory starpak (resolves, not listed)
+//!   0x8A3F12C4D5E6F701.txtr.opt      its entry in an optional starpak (resolves, not listed)
 //! ```
+//! The starpaks are looked up next to the pak by file name and opened on first use (their table
+//! of contents only). A missing one is `MissingDependency`.
 //! Each asset is a file named by its GUID and kind. The file's bytes are the asset header as
 //! stored in the pak (pointers are not relocated until the slice that reads assets). Names are
 //! not known yet, so listing shows GUIDs; a path that gives a *name* (`texture/foo.txtr`) is
@@ -35,6 +39,7 @@ use tokio::sync::OnceCell;
 use crate::guid::string_to_guid;
 use crate::pak::{AssetEntry, PakHeader, Tables};
 use crate::rtech;
+use crate::starpak::{self, Starpak, StarpakEntry};
 
 fn corrupt(context: impl Into<String>) -> Error {
     Error::new(ErrorKind::Corrupt { context: context.into() })
@@ -96,12 +101,42 @@ struct Inner {
     body: Body,
     /// GUID -> index into `tables.assets`; the first entry wins on a duplicate.
     by_guid: HashMap<u64, usize>,
+    /// Where the pak lives, to find the starpaks next to it.
+    host: Operator,
+    /// The pak's directory on `host`: empty, or ending in `/`.
+    dir: String,
+    /// The starpaks, opened on first use (`starpaks` first, then `opt_starpaks`).
+    opened: Vec<OnceCell<Arc<Starpak>>>,
+}
+
+/// Which file of an asset a volume path names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Part {
+    /// The relocated asset header.
+    Header,
+    /// `<asset>.stream`: its entry in a mandatory starpak.
+    Stream,
+    /// `<asset>.opt`: its entry in an optional starpak.
+    Opt,
 }
 
 impl Inner {
     /// Finds the asset a volume path names: `0x<GUID>.<kind>`, or `<name>.<kind>` (the name is
     /// hashed). The kind must match.
     fn locate(&self, path: &str) -> Option<usize> {
+        self.locate_part(path).map(|(i, _)| i)
+    }
+
+    /// Like [`locate`](Self::locate), also telling `foo.txtr`, `foo.txtr.stream` and
+    /// `foo.txtr.opt` apart.
+    fn locate_part(&self, path: &str) -> Option<(usize, Part)> {
+        let (path, part) = if let Some(p) = path.strip_suffix(".stream") {
+            (p, Part::Stream)
+        } else if let Some(p) = path.strip_suffix(".opt") {
+            (p, Part::Opt)
+        } else {
+            (path, Part::Header)
+        };
         let (stem, kind) = path.rsplit_once('.')?;
         let guid = match stem.strip_prefix("0x").or_else(|| stem.strip_prefix("0X")) {
             Some(hex) if !hex.is_empty() && hex.len() <= 16 && hex.bytes().all(|b| b.is_ascii_hexdigit()) => {
@@ -110,7 +145,39 @@ impl Inner {
             _ => string_to_guid(stem),
         };
         let index = *self.by_guid.get(&guid)?;
-        (self.tables.assets[index].kind_string().eq_ignore_ascii_case(kind)).then_some(index)
+        (self.tables.assets[index].kind_string().eq_ignore_ascii_case(kind)).then_some((index, part))
+    }
+
+    /// Opens starpak number `index` of the mandatory (or optional) list. A starpak file that is
+    /// not next to the pak is `MissingDependency`; an index past the list is `Corrupt`.
+    async fn starpak(&self, asset: &AssetEntry, optional: bool, index: usize) -> Result<&Arc<Starpak>> {
+        let list = if optional { &self.tables.opt_starpaks } else { &self.tables.starpaks };
+        let path = list.get(index).ok_or_else(|| {
+            corrupt(format!("asset {:#018x}: starpak index {index} is past the pak's {} starpak(s)", asset.guid, list.len()))
+        })?;
+        let slot = &self.opened[if optional { self.tables.starpaks.len() + index } else { index }];
+        slot.get_or_try_init(|| async {
+            let file = format!("{}{}", self.dir, starpak::file_name(path));
+            match Starpak::open(self.host.clone(), file.clone(), None).await {
+                Ok(s) => Ok(Arc::new(s)),
+                Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. }) => {
+                    Err(Error::new(ErrorKind::MissingDependency { item: Self::file_name(asset), file }))
+                }
+                Err(e) => Err(e),
+            }
+        })
+        .await
+    }
+
+    /// The starpak and the entry an asset's `.stream` / `.opt` file maps onto. `NotFound` if the
+    /// asset has no such reference, or the starpak's table of contents has no entry at its offset.
+    async fn stream_entry(&self, asset: &AssetEntry, optional: bool) -> Result<(&Arc<Starpak>, StarpakEntry)> {
+        let reference = if optional { asset.opt_starpak } else { asset.starpak };
+        let none = || Error::new(ErrorKind::NotFound { path: format!("{} streamed data", Self::file_name(asset)) });
+        let (index, offset) = starpak::split_reference(reference).ok_or_else(none)?;
+        let sp = self.starpak(asset, optional, index).await?;
+        let entry = sp.entry(offset).ok_or_else(none)?;
+        Ok((sp, entry))
     }
 
     fn file_name(asset: &AssetEntry) -> String {
@@ -129,8 +196,14 @@ impl VolumeSource for RpakSource {
         if path == MEM {
             return Ok(VolumeStat { is_dir: false, len: self.0.tables.mem_len() });
         }
-        let index = self.0.locate(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
-        Ok(VolumeStat { is_dir: false, len: u64::from(self.0.tables.assets[index].header_size) })
+        let (index, part) =
+            self.0.locate_part(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
+        let asset = &self.0.tables.assets[index];
+        if part != Part::Header {
+            let (_, entry) = self.0.stream_entry(asset, part == Part::Opt).await?;
+            return Ok(VolumeStat { is_dir: false, len: entry.size });
+        }
+        Ok(VolumeStat { is_dir: false, len: u64::from(asset.header_size) })
     }
 
     async fn read(&self, path: &str, range: Range<u64>) -> Result<Bytes> {
@@ -138,8 +211,13 @@ impl VolumeSource for RpakSource {
             let base = self.0.tables.page_data_offset;
             return self.0.body.read(base + range.start..base + range.end).await;
         }
-        let index = self.0.locate(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
+        let (index, part) =
+            self.0.locate_part(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
         let asset = &self.0.tables.assets[index];
+        if part != Part::Header {
+            let (sp, entry) = self.0.stream_entry(asset, part == Part::Opt).await?;
+            return sp.read(entry.offset + range.start..entry.offset + range.end).await;
+        }
         let header = self
             .0
             .tables
@@ -211,6 +289,8 @@ impl Container for RpakData {
         let entry = self.inner.tables.assets[index].clone();
         let format = FormatId::new("rpak.asset").with_version(Version::new(entry.version));
         let kind = entry.kind_string();
+        let has_stream = starpak::split_reference(entry.starpak).is_some();
+        let has_opt = starpak::split_reference(entry.opt_starpak).is_some();
         let data_mem_offset = if entry.data.is_null() { None } else { self.inner.tables.mem_offset(entry.data) };
         Ok(Arc::new(RpakAsset {
             format,
@@ -219,6 +299,8 @@ impl Container for RpakData {
             kind,
             volume: self.volume.clone(),
             header_path: Inner::file_name(&self.inner.tables.assets[index]),
+            stream: has_stream.then(|| format!("{}.stream", Inner::file_name(&self.inner.tables.assets[index]))),
+            opt: has_opt.then(|| format!("{}.opt", Inner::file_name(&self.inner.tables.assets[index]))),
             data_mem_offset,
         }))
     }
@@ -249,6 +331,10 @@ pub struct RpakAsset {
     pub volume: Operator,
     /// Path of the asset's header file in `volume` (pointers relocated to `.mem` offsets).
     pub header_path: String,
+    /// Path in `volume` of the asset's streamed data (mandatory starpak), if it has any.
+    pub stream: Option<String>,
+    /// Path in `volume` of the asset's optional streamed data, if it has any.
+    pub opt: Option<String>,
     /// Offset in `.mem` of the asset's CPU data, if it has any.
     pub data_mem_offset: Option<u64>,
 }
@@ -357,7 +443,9 @@ impl ReadHandler for RpakRead {
         for (i, a) in tables.assets.iter().enumerate() {
             by_guid.entry(a.guid).or_insert(i);
         }
-        let inner = Arc::new(Inner { header, tables, body, by_guid });
+        let dir = file.path.rsplit_once('/').map_or(String::new(), |(d, _)| format!("{d}/"));
+        let opened = (0..tables.starpaks.len() + tables.opt_starpaks.len()).map(|_| OnceCell::new()).collect();
+        let inner = Arc::new(Inner { header, tables, body, by_guid, host: file.op.clone(), dir, opened });
         let mount = source.key().to_string();
         let volume = volume_operator(RpakSource(inner.clone()), &mount);
         let format = FormatId::new("rpak").with_version(Version::new(u32::from(inner.header.version)));

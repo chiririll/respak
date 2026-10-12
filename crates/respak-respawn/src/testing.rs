@@ -127,13 +127,33 @@ pub struct RawAsset {
     pub head: (u32, u32),
     pub data: Option<(u32, u32)>,
     pub header_size: u32,
+    /// Starpak reference (`-1` = none): `index | offset`, offset 4096-aligned.
+    pub starpak: i64,
+    pub opt_starpak: i64,
 }
 
 /// Builds a pak from explicit pages, a pointer table and raw asset entries (uncompressed).
 pub fn build_raw(version: u16, pages: &[Vec<u8>], pointers: &[(u32, u32)], assets: &[RawAsset]) -> Vec<u8> {
+    build_raw_with(version, pages, pointers, assets, &[], &[])
+}
+
+/// Like [`build_raw`], with the pak's starpak path lists (stored as given, so Windows-style
+/// paths can be tested).
+pub fn build_raw_with(
+    version: u16,
+    pages: &[Vec<u8>],
+    pointers: &[(u32, u32)],
+    assets: &[RawAsset],
+    starpaks: &[&str],
+    opt_starpaks: &[&str],
+) -> Vec<u8> {
+    let list = |paths: &[&str]| paths.iter().flat_map(|p| p.bytes().chain([0])).collect::<Vec<u8>>();
+    let (starpaks, opt_starpaks) = (list(starpaks), if version == 8 { list(opt_starpaks) } else { Vec::new() });
     let header_len = if version == 8 { 0x80 } else { 0x58 };
     let entry_len = if version == 8 { 0x50 } else { 0x48 };
     let mut body = Vec::new();
+    body.extend_from_slice(&starpaks);
+    body.extend_from_slice(&opt_starpaks);
     body.extend_from_slice(&1i32.to_le_bytes());
     body.extend_from_slice(&16u32.to_le_bytes());
     body.extend_from_slice(&(pages.iter().map(Vec::len).sum::<usize>() as i64).to_le_bytes());
@@ -154,9 +174,9 @@ pub fn build_raw(version: u16, pages: &[Vec<u8>], pointers: &[(u32, u32)], asset
         let (dp, doff) = a.data.unwrap_or((u32::MAX, u32::MAX));
         put(&mut e, 0x18, &dp.to_le_bytes());
         put(&mut e, 0x1C, &doff.to_le_bytes());
-        put(&mut e, 0x20, &(-1i64).to_le_bytes());
+        put(&mut e, 0x20, &a.starpak.to_le_bytes());
         if version == 8 {
-            put(&mut e, 0x28, &(-1i64).to_le_bytes());
+            put(&mut e, 0x28, &a.opt_starpak.to_le_bytes());
             put(&mut e, 0x44, &a.header_size.to_le_bytes());
             e[0x48] = a.version as u8;
             put(&mut e, 0x4C, &a.kind);
@@ -179,6 +199,7 @@ pub fn build_raw(version: u16, pages: &[Vec<u8>], pointers: &[(u32, u32)], asset
     let (np, nptr, na) = (pages.len() as u32, pointers.len() as i32, assets.len() as i32);
     match version {
         6 => {
+            put(&mut h, 0x30, &(starpaks.len() as i32).to_le_bytes());
             put(&mut h, 0x34, &1i32.to_le_bytes());
             put(&mut h, 0x38, &(np as i32).to_le_bytes());
             put(&mut h, 0x3C, &nptr.to_le_bytes());
@@ -186,6 +207,7 @@ pub fn build_raw(version: u16, pages: &[Vec<u8>], pointers: &[(u32, u32)], asset
         }
         7 => {
             put(&mut h, 0x28, &total.to_le_bytes());
+            put(&mut h, 0x38, &(starpaks.len() as i16).to_le_bytes());
             put(&mut h, 0x3A, &1u16.to_le_bytes());
             put(&mut h, 0x3C, &(np as u16).to_le_bytes());
             put(&mut h, 0x40, &nptr.to_le_bytes());
@@ -193,6 +215,8 @@ pub fn build_raw(version: u16, pages: &[Vec<u8>], pointers: &[(u32, u32)], asset
         }
         _ => {
             put(&mut h, 0x30, &total.to_le_bytes());
+            put(&mut h, 0x48, &(starpaks.len() as i16).to_le_bytes());
+            put(&mut h, 0x4A, &(opt_starpaks.len() as i16).to_le_bytes());
             put(&mut h, 0x4C, &1u16.to_le_bytes());
             put(&mut h, 0x4E, &(np as u16).to_le_bytes());
             put(&mut h, 0x54, &nptr.to_le_bytes());
@@ -219,6 +243,13 @@ pub struct TexSpec {
     pub streamed: u8,
     pub permanent: u8,
     pub swizzle: u8,
+    /// Codec bits and compressed sizes (v9/v10 only).
+    pub codecs: u16,
+    pub compressed: [u16; 7],
+    /// Reference into the pak's mandatory starpak 0 (`streamed.starpak`) / optional starpak 0
+    /// (`opt.starpak`): the 4096-aligned entry offset. `None` = no reference.
+    pub stream_at: Option<u64>,
+    pub opt_at: Option<u64>,
     /// The CPU data bytes, exactly as the permanent mips are stored (smallest first).
     pub data: Vec<u8>,
 }
@@ -237,6 +268,10 @@ impl TexSpec {
             streamed: 0,
             permanent,
             swizzle: 0,
+            codecs: 0,
+            compressed: [0; 7],
+            stream_at: None,
+            opt_at: None,
             data,
         }
     }
@@ -269,6 +304,11 @@ impl TexSpec {
             h[0x18] = self.permanent;
             h[0x19] = self.streamed;
             h[0x1A] = self.optional;
+            let at = if self.version == 9 { 0x1C } else { 0x1E };
+            put(&mut h, at, &self.codecs.to_le_bytes());
+            for (i, c) in self.compressed.iter().enumerate() {
+                put(&mut h, at + 2 + 2 * i, &c.to_le_bytes());
+            }
         }
         h
     }
@@ -307,7 +347,35 @@ pub fn build_tex_pak(pak_version: u16, textures: &[TexSpec]) -> Vec<u8> {
             head: (0, head_offset),
             data: Some((1, data_offset)),
             header_size: 56,
+            starpak: t.stream_at.map_or(-1, |o| o as i64),
+            opt_starpak: t.opt_at.map_or(-1, |o| o as i64),
         });
     }
-    build_raw(pak_version, &[headers, misc], &pointers, &assets)
+    build_raw_with(
+        pak_version,
+        &[headers, misc],
+        &pointers,
+        &assets,
+        &[r"paks\Win64\streamed.starpak"],
+        &["paks/Win64/opt.starpak"],
+    )
+}
+
+/// A starpak file: the entries at their offsets (zero-filled between), then the table of
+/// contents and its count.
+pub fn build_starpak(entries: &[(u64, Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (offset, bytes) in entries {
+        out.resize(*offset as usize, 0);
+        out.extend_from_slice(bytes);
+    }
+    while out.len() % 4096 != 0 {
+        out.push(0);
+    }
+    for (offset, bytes) in entries {
+        out.extend_from_slice(&offset.to_le_bytes());
+        out.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+    }
+    out.extend_from_slice(&(entries.len() as u64).to_le_bytes());
+    out
 }

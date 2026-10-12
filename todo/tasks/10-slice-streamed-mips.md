@@ -1,5 +1,5 @@
 # 10 · Slice: streamed mips from starpaks
-**Status:** todo · **Depends on:** 09 · **See:** PROJECT.md §6, §12
+**Status:** done · **Depends on:** 09 · **See:** PROJECT.md §6, §12
 
 ## Goal
 Full-resolution textures, with proof that only the needed bytes are read:
@@ -22,3 +22,11 @@ Starpak handling is ported from rsx (`starpak_source.h`, `cpakfile.{h,cpp}`: off
 
 ## Demo
 The user converts a texture with streamed mips and compares the size and quality with rsx.
+
+## Done
+- `respak-respawn/src/starpak.rs`: `Starpak` (trailer table of contents, ranged reads), the `starpak` format (container; entries `0x<offset>`), `split_reference`, `file_name` (Windows paths).
+- rpak volume: `<asset>.stream` / `.opt` resolve to the starpak entry at the asset's exact offset (not listed). Starpaks are looked up next to the pak by file name and opened lazily, once. `RpakAsset` carries `stream` / `opt`.
+- `txtr`: v9/v10 codec bits (`compTypePacked` at 0x1C v9 / 0x1E v10, `compressedBytes[7]` after it), mip layout per starpak entry (v8 smallest first, v9/v10 largest first), mips checked against the entry size. Missing mandatory starpak or entry → `MissingDependency`; missing optional → warning and the chain starts at the first non-optional mip.
+- Compressed streamed mips: codec 1 (RTech) goes through `rtech::decompress(block, 0, Some(len))`. **Not verified against real data** (no synthetic RTech encoder); codecs 2 (Snowflake) and 3 (Oodle) give `UnsupportedVersion` when the mip is read. Arrays with compressed streamed mips are rejected (rsx only asserts `arraySize == 1`).
+- Test: a synthetic 2 GiB starpak behind a counting `VolumeSource`: opening reads 24 bytes of it, reading a mip reads exactly that mip.
+- The Warning events for the missing-optional case are `tracing::warn!` until slice 12.

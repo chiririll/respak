@@ -6,7 +6,7 @@ use bytes::Bytes;
 use common::*;
 use respak_core::capability::PixelFormat;
 use respak_core::{Cx, ErrorKind, Mediator, Registry, Value};
-use respak_respawn::{RespawnPlugin, TxtrAsset};
+use respak_respawn::RespawnPlugin;
 
 const BC1: u16 = 0;
 const BC7: u16 = 12;
@@ -36,10 +36,6 @@ fn data(w: u32, h: u32, fmt: PixelFormat, first_shift: u32, total: u32, array: u
         }
     }
     out
-}
-
-fn as_txtr(v: &Value) -> &TxtrAsset {
-    v.downcast_ref::<TxtrAsset>().expect("a txtr")
 }
 
 #[tokio::test]
@@ -75,18 +71,15 @@ async fn permanent_mips_are_ordered_largest_first_and_read_from_the_right_place(
 }
 
 #[tokio::test]
-async fn only_the_permanent_mips_are_exposed_when_others_are_streamed() {
+async fn streamed_mips_without_a_starpak_reference_are_a_missing_dependency() {
     let env = env();
     // 64x64, 6 mips: 1 optional, 2 streamed, 3 permanent (shifts 3, 4, 5 = 8x8, 4x4, 2x2)
     let mut t = TexSpec::new(2, 10, 64, 64, RGBA8, 3, data(64, 64, PixelFormat::Rgba8, 3, 6, 1));
     t.optional = 1;
     t.streamed = 2;
     env.input.write("c.rpak", build_tex_pak(8, &[t])).await.unwrap();
-    let v = texture(&env, "c.rpak/0x0000000000000002.txtr").await.unwrap();
-    let info = v.as_bitmap().unwrap().info();
-    assert_eq!((info.width, info.height, info.mip_count), (8, 8, 3));
-    assert_eq!(v.as_bitmap().unwrap().read_mip(0, 0).await.unwrap(), Bytes::from(vec![4u8; 8 * 8 * 4]));
-    assert_eq!(as_txtr(&v).header().total_mips(), 6);
+    let err = texture(&env, "c.rpak/0x0000000000000002.txtr").await.unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::MissingDependency { .. }), "{err}");
 }
 
 #[tokio::test]

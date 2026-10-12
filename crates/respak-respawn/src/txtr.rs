@@ -34,6 +34,7 @@ use respak_core::capability::{Bitmap, BitmapInfo, Dependency, Metadata, PixelFor
 use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version};
 
 use crate::rpak::{RpakAsset, MEM};
+use crate::rtech;
 
 fn corrupt(context: impl Into<String>) -> Error {
     Error::new(ErrorKind::Corrupt { context: context.into() })
@@ -104,7 +105,15 @@ pub struct TxtrHeader {
     pub optional: u32,
     /// The name pointer as a `.mem` offset, `None` if null.
     pub name_offset: Option<u64>,
+    /// 2 bits per streamed mip (index 0 = the largest): 0 none, 1 RTech, 2 Snowflake, 3 Oodle.
+    /// Always 0 for v8.
+    pub codecs: u16,
+    /// For each compressed streamed mip, its stored size in 4096-byte units minus one.
+    pub compressed_blocks: [u16; MAX_COMPRESSED],
 }
+
+/// The header has room for this many compressed streamed mips.
+const MAX_COMPRESSED: usize = 7;
 
 impl TxtrHeader {
     /// Parses a relocated 56-byte header of the given asset `version`.
@@ -125,6 +134,20 @@ impl TxtrHeader {
         } else {
             (ptr(0), le16(h, 0x0A), le16(h, 0x0C), le16(h, 0x08), h[0x10], h[0x12], h[0x18], h[0x19], h[0x1A])
         };
+        // v9 keeps the codec bits at 0x1C and the sizes at 0x1E; v10 moved both two bytes up.
+        // v8 has no compression.
+        let comp_at = match version {
+            8 => None,
+            9 => Some(0x1C),
+            _ => Some(0x1E),
+        };
+        let codecs = comp_at.map_or(0, |at| le16(h, at) as u16);
+        let mut compressed_blocks = [0u16; MAX_COMPRESSED];
+        if let Some(at) = comp_at {
+            for (i, b) in compressed_blocks.iter_mut().enumerate() {
+                *b = le16(h, at + 2 + 2 * i) as u16;
+            }
+        }
         if swizzle != 0 {
             return Err(unsupported(format!("{version} (swizzle {swizzle}, console layout)")));
         }
@@ -141,6 +164,8 @@ impl TxtrHeader {
             streamed: u32::from(streamed),
             optional: u32::from(opt),
             name_offset,
+            codecs,
+            compressed_blocks,
         };
         if w == 0 || ht == 0 {
             return Err(corrupt("txtr has a zero dimension"));
@@ -163,14 +188,69 @@ impl TxtrHeader {
     }
 }
 
-/// Where one available mip lives, relative to the asset's CPU data.
+/// Which file of the asset a mip is stored in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Store {
+    /// The pak's pages (`.mem`), from the asset's CPU data.
+    Mem,
+    /// The mandatory starpak entry.
+    Stream,
+    /// The optional starpak entry.
+    Opt,
+}
+
+/// Where one available mip lives. `offset` is relative to the asset's CPU data (`Mem`) or to
+/// the start of its starpak entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MipLoc {
+    store: Store,
     offset: u64,
-    /// Distance between array slices (the mip padded to 16 bytes).
+    /// Distance between array slices (the mip padded to 16 bytes, or its compressed block).
     stride: u64,
     /// Bytes of one slice that are pixels.
     len: u64,
+    /// The codec of a compressed mip (1 RTech, 2 Snowflake, 3 Oodle); 0 = stored as is.
+    codec: u8,
+}
+
+/// The mips held by one starpak entry, as `(shift, location)`, in storage order.
+///
+/// v9/v10 store the largest mip first, v8 the smallest first. An uncompressed mip takes
+/// `align16(size)` per array slice; a compressed one its block of `(compressedBytes + 1) << 12`
+/// bytes (rsx `TextureAsset`, `SORT_MIXED` / `SORT_BOTTOM_TOP`).
+fn layout_entry(
+    h: &TxtrHeader,
+    pixel: PixelFormat,
+    store: Store,
+    shifts: std::ops::Range<u32>,
+) -> Result<Vec<(u32, MipLoc)>> {
+    let order: Vec<u32> = if h.version == 8 { shifts.rev().collect() } else { shifts.collect() };
+    let mut cursor = 0u64;
+    let mut out = Vec::new();
+    for shift in order {
+        let len = pixel.mip_len((h.width >> shift).max(1), (h.height >> shift).max(1));
+        let codec = ((h.codecs >> (2 * shift)) & 3) as u8;
+        let stride = if codec == 0 {
+            len.div_ceil(16).max(1) * 16
+        } else {
+            let block = h
+                .compressed_blocks
+                .get(shift as usize)
+                .ok_or_else(|| corrupt(format!("txtr: no compressed size for streamed mip {shift}")))?;
+            if h.array_size > 1 {
+                return Err(unsupported(format!("{} (compressed streamed mips of an array)", h.version)));
+            }
+            (u64::from(*block) + 1) << 12
+        };
+        out.push((shift, MipLoc { store, offset: cursor, stride, len, codec }));
+        cursor += stride * u64::from(h.array_size);
+    }
+    Ok(out)
+}
+
+/// Total bytes of the mips from [`layout_entry`].
+fn entry_len(h: &TxtrHeader, mips: &[(u32, MipLoc)]) -> u64 {
+    mips.iter().map(|(_, m)| m.stride * u64::from(h.array_size)).sum()
 }
 
 /// A texture: `Data` + `Bitmap` + `Metadata`.
@@ -185,6 +265,8 @@ pub struct TxtrAsset {
     mips: Vec<MipLoc>,
     volume: Operator,
     data_offset: u64,
+    stream: Option<String>,
+    opt: Option<String>,
 }
 
 impl TxtrAsset {
@@ -204,8 +286,31 @@ impl Bitmap for TxtrAsset {
         let (Some(mip), true) = (self.mips.get(level as usize), layer < self.header.array_size) else {
             return Err(Error::new(ErrorKind::NotFound { path: format!("mip {level} of layer {layer}") }));
         };
-        let at = self.data_offset + mip.offset + mip.stride * u64::from(layer);
-        Ok(self.volume.read_with(MEM).range(at..at + mip.len).await?.to_bytes())
+        let slice = mip.offset + mip.stride * u64::from(layer);
+        if mip.codec == 0 {
+            // Only the pixels are read; the padding is skipped.
+            let (path, at) = match mip.store {
+                Store::Mem => (MEM, self.data_offset + slice),
+                Store::Stream => (self.stream.as_deref().unwrap_or_default(), slice),
+                Store::Opt => (self.opt.as_deref().unwrap_or_default(), slice),
+            };
+            return Ok(self.volume.read_with(path).range(at..at + mip.len).await?.to_bytes());
+        }
+        let path = match mip.store {
+            Store::Opt => self.opt.as_deref(),
+            _ => self.stream.as_deref(),
+        };
+        // The decoder gets the whole padded block and the exact decoded length (rsx
+        // `DecompressStreamedBuffer`).
+        let block = self.volume.read_with(path.unwrap_or_default()).range(slice..slice + mip.stride).await?.to_bytes();
+        match mip.codec {
+            1 => {
+                let decoded = rtech::decompress(&block, 0, Some(mip.len)).map_err(|e| Error::custom("rtech", e))?;
+                Ok(Bytes::from(decoded))
+            }
+            2 => Err(unsupported("Snowflake-compressed streamed mips")),
+            _ => Err(unsupported("Oodle-compressed streamed mips (no Oodle codec available)")),
+        }
     }
 }
 
@@ -266,6 +371,12 @@ async fn read_name(volume: &Operator, at: u64, mem_len: u64) -> Option<String> {
     (!name.is_empty()).then_some(name)
 }
 
+/// The length of `path` in the volume. Errors the volume raised itself (`MissingDependency`)
+/// come back as they were.
+async fn stat_len(volume: &Operator, path: &str) -> Result<u64> {
+    Ok(volume.stat(path).await?.content_length())
+}
+
 #[async_trait]
 impl ReadHandler for TxtrRead {
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
@@ -279,43 +390,87 @@ impl ReadHandler for TxtrRead {
         let mem_len = asset.volume.stat(MEM).await?.content_length();
         let data_offset = asset.data_mem_offset.ok_or_else(|| corrupt("txtr has no data pointer"))?;
 
-        // The permanent mips, smallest first in the data.
-        let first = header.first_permanent_shift();
-        let total = header.total_mips();
-        let mut cursor = 0u64;
-        let mut by_shift = Vec::new();
-        for shift in (first..total).rev() {
-            let len = pixel.mip_len(header.width >> shift, header.height >> shift);
-            let stride = len.div_ceil(16).max(1) * 16;
-            by_shift.push((shift, MipLoc { offset: cursor, stride, len }));
-            cursor += stride * u64::from(header.array_size);
-        }
-        if data_offset.checked_add(cursor).is_none_or(|end| end > mem_len) {
-            return Err(corrupt("txtr mips run past the end of the pak's pages"));
-        }
-        // Level 0 is the largest available mip.
-        let mips: Vec<MipLoc> = by_shift.into_iter().rev().map(|(_, m)| m).collect();
-
-        let missing = header.streamed + header.optional;
         let name = match header.name_offset {
             Some(at) => read_name(&asset.volume, at, mem_len).await,
             None => None,
         }
         .map(|n| if n.to_ascii_lowercase().starts_with("texture/") { n } else { format!("texture/{n}") });
-        if missing > 0 {
-            tracing::warn!(
-                "texture {}: {missing} streamed mip(s) are not available yet, only the {} permanent mip(s) are used",
-                name.as_deref().unwrap_or("(unnamed)"),
-                header.permanent
-            );
+        let label = name.as_deref().unwrap_or("(unnamed)");
+
+        // The permanent mips (shifts `streamed + optional ..`), smallest first in the CPU data.
+        let first_permanent = header.first_permanent_shift();
+        let total = header.total_mips();
+        let mut cursor = 0u64;
+        let mut by_shift = Vec::new();
+        for shift in (first_permanent..total).rev() {
+            let len = pixel.mip_len((header.width >> shift).max(1), (header.height >> shift).max(1));
+            let stride = len.div_ceil(16).max(1) * 16;
+            by_shift.push((shift, MipLoc { store: Store::Mem, offset: cursor, stride, len, codec: 0 }));
+            cursor += stride * u64::from(header.array_size);
         }
+        if data_offset.checked_add(cursor).is_none_or(|end| end > mem_len) {
+            return Err(corrupt("txtr mips run past the end of the pak's pages"));
+        }
+
+        // The streamed mips. A starpak that is missing, or has no entry for this asset, makes the
+        // mandatory mips `MissingDependency`; the optional ones are dropped with a warning.
+        if header.streamed > 0 {
+            let path = asset.stream.as_deref().ok_or_else(|| {
+                Error::new(ErrorKind::MissingDependency { item: label.to_owned(), file: "(no mandatory starpak reference)".into() })
+            })?;
+            let size = match stat_len(&asset.volume, path).await {
+                Ok(n) => n,
+                Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. }) => {
+                    return Err(Error::new(ErrorKind::MissingDependency {
+                        item: label.to_owned(),
+                        file: format!("{path} (no entry in the starpak)"),
+                    }));
+                }
+                Err(e) => return Err(e),
+            };
+            let mips = layout_entry(&header, pixel, Store::Stream, header.optional..header.optional + header.streamed)?;
+            if entry_len(&header, &mips) > size {
+                return Err(corrupt(format!("texture {label}: its streamed mips do not fit the starpak entry ({size} bytes)")));
+            }
+            by_shift.extend(mips);
+        }
+        let mut first = 0;
+        if header.optional > 0 {
+            let usable = match asset.opt.as_deref() {
+                None => Err("no optional starpak reference".to_owned()),
+                Some(path) => match stat_len(&asset.volume, path).await {
+                    Ok(n) => Ok(n),
+                    Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. } | ErrorKind::MissingDependency { .. }) => {
+                        Err(format!("{path} is not available ({e})"))
+                    }
+                    Err(e) => return Err(e),
+                },
+            };
+            match usable {
+                Ok(size) => {
+                    let mips = layout_entry(&header, pixel, Store::Opt, 0..header.optional)?;
+                    if entry_len(&header, &mips) > size {
+                        return Err(corrupt(format!("texture {label}: its optional mips do not fit the starpak entry ({size} bytes)")));
+                    }
+                    by_shift.extend(mips);
+                }
+                Err(why) => {
+                    first = header.optional;
+                    tracing::warn!("texture {label}: {} optional mip(s) are skipped: {why}", header.optional);
+                }
+            }
+        }
+
+        // Level 0 is the largest available mip.
+        by_shift.sort_by_key(|(shift, _)| *shift);
+        let mips: Vec<MipLoc> = by_shift.into_iter().map(|(_, m)| m).collect();
         let info = BitmapInfo {
             width: (header.width >> first).max(1),
             height: (header.height >> first).max(1),
             depth: 1,
             array_len: header.array_size,
             faces: 1,
-            mip_count: header.permanent,
+            mip_count: total - first,
             format: pixel,
         };
         let format = FormatId::new("txtr").with_version(Version::new(header.version));
@@ -329,6 +484,8 @@ impl ReadHandler for TxtrRead {
             mips,
             volume: asset.volume.clone(),
             data_offset,
+            stream: asset.stream.clone(),
+            opt: asset.opt.clone(),
         }))
     }
 }
