@@ -1,13 +1,14 @@
 //! respak-formats: common formats (png, dds). One plugin, no containers.
 
+mod bc;
 mod dds;
 mod png;
 
 use respak_core::value::FileData;
 use respak_core::{capability::Bitmap, Error, ErrorKind, Plugin, Registry, Result, Value};
 
-pub use dds::{DdsEncode, DdsImage, DdsRead};
-pub use png::{PngEncode, PngImage, PngRead};
+pub use dds::{DdsEncode, DdsImage, DdsOptions, DdsRead};
+pub use png::{Mips, PngEncode, PngImage, PngOptions, PngRead};
 
 /// Registers `png` and `dds`.
 pub struct FormatsPlugin;
@@ -53,13 +54,6 @@ fn corrupt(context: impl Into<String>) -> Error {
 
 fn unsupported(format: &str, what: &str) -> Error {
     Error::new(ErrorKind::UnsupportedVersion { format: format.to_owned(), version: what.to_owned() })
-}
-
-/// Swaps the red and blue channels of RGBA/BGRA pixels in place.
-fn swap_rb(pixels: &mut [u8]) {
-    for p in pixels.chunks_exact_mut(4) {
-        p.swap(0, 2);
-    }
 }
 
 /// The whole file (PNG is a single deflate stream and cannot be read in parts).

@@ -158,11 +158,3 @@ async fn unrelated_bytes_are_an_unknown_format() {
     env.input.write("notes.png", "hello").await.unwrap();
     assert!(matches!(env.convert("notes.png", "dds").await.unwrap_err(), ErrorKind::UnknownFormat));
 }
-
-#[tokio::test]
-async fn block_compressed_dds_is_reported_as_unsupported() {
-    let env = env();
-    env.input.write("bc.dds", dds(D3DFormat::DXT1, 4, 4, vec![0; 8])).await.unwrap();
-    let err = env.convert("bc.dds", "png").await.unwrap_err();
-    assert!(matches!(err, ErrorKind::UnsupportedVersion { ref format, .. } if format == "dds"), "{err:?}");
-}

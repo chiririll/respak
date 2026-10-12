@@ -15,6 +15,9 @@ ddsfile = "0.6"
 bytes.workspace = true
 async-trait.workspace = true
 opendal.workspace = true
+bcdec_rs = "0.2.0"
+serde.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

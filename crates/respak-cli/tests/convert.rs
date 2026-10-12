@@ -211,3 +211,39 @@ async fn discover_in_an_rpak_lists_textures_as_convertible() {
     let targets: Vec<_> = e["targets"].as_array().unwrap().iter().map(|t| t["type"].as_str().unwrap()).collect();
     assert_eq!(targets, ["png", "dds"]);
 }
+
+#[tokio::test]
+async fn an_rpak_bc1_texture_converts_to_png_and_honours_mips() {
+    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    // 8x8 BC1, 2 permanent mips (smallest first in the file): mip 0 is solid colour 0xF800 (red).
+    let block = |c0: u16| {
+        let mut b = c0.to_le_bytes().to_vec();
+        b.extend([0, 0, 0, 0, 0, 0]);
+        b
+    };
+    let mut data: Vec<u8> = block(0x001F).repeat(1); // mip 1: 1 block (blue), padded to 16
+    data.resize(16, 0);
+    data.extend(block(0xF800).repeat(4)); // mip 0: 4 blocks (red)
+    let t = TexSpec::new(0x42, 9, 8, 8, 0, 2, data);
+    let env = rpak_env();
+    env.input.write("c.rpak", build_tex_pak(8, &[t])).await.unwrap();
+
+    let png_of = |bytes: Vec<u8>| {
+        let mut r = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
+        let mut buf = vec![0; r.output_buffer_size().unwrap()];
+        let info = r.next_frame(&mut buf).unwrap();
+        (info.width, info.height, buf[..4].to_vec())
+    };
+
+    let run = invoke(&env, &["convert", "c.rpak/0x0000000000000042.txtr", "--to", r#"{"type":"png"}"#]).await;
+    assert_eq!(run.code, Some(ExitCode::SUCCESS), "{}", run.err);
+    let (w, h, px) = png_of(env.output.read("0x0000000000000042.png").await.unwrap().to_vec());
+    assert_eq!((w, h), (8, 8));
+    assert_eq!(px, [255, 0, 0, 255]);
+
+    let run = invoke(&env, &["convert", "c.rpak/0x0000000000000042.txtr", "--to", r#"{"type":"png","mips":1}"#]).await;
+    assert_eq!(run.code, Some(ExitCode::SUCCESS), "{}", run.err);
+    let (w, h, px) = png_of(env.output.read("0x0000000000000042.png").await.unwrap().to_vec());
+    assert_eq!((w, h), (4, 4));
+    assert_eq!(px, [0, 0, 255, 255]);
+}

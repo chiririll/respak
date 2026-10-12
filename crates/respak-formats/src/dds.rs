@@ -5,6 +5,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use bytes::Bytes;
 use ddsfile::{AlphaMode, D3D10ResourceDimension, D3DFormat, Dds, DxgiFormat, NewD3dParams, NewDxgiParams};
 use opendal::Operator;
@@ -12,7 +13,7 @@ use respak_core::capability::{Bitmap, BitmapInfo, PixelFormat};
 use respak_core::value::BlobData;
 use respak_core::{
     magic, u32le, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Target,
-    Value, ValueKey,
+    TypedTarget, Value, ValueKey,
 };
 
 use crate::{bitmap_of, corrupt, file_of, unsupported};
@@ -31,8 +32,8 @@ pub struct DdsImage {
     key: ValueKey,
     op: Operator,
     path: String,
-    /// `(offset in the file, length)` of each mip.
-    mips: Vec<(u64, u64)>,
+    /// `(offset in the file, length)` of each mip, `[layer][level]`.
+    mips: Vec<Vec<(u64, u64)>>,
 }
 
 impl Data for DdsImage {
@@ -56,12 +57,17 @@ impl Bitmap for DdsImage {
     async fn read_mip(&self, level: u32, layer: u32) -> Result<Bytes> {
         let &(offset, len) = self
             .mips
-            .get(level as usize)
-            .filter(|_| layer == 0)
+            .get(layer as usize)
+            .and_then(|l| l.get(level as usize))
             .ok_or_else(|| Error::new(ErrorKind::NotFound { path: format!("mip {level} of layer {layer}") }))?;
         Ok(self.op.read_with(&self.path).range(offset..offset + len).await?.to_bytes())
     }
 }
+
+/// Options of the `dds` target: none yet, and unknown ones are rejected.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DdsOptions {}
 
 /// Read edge `file -> dds`.
 pub struct DdsRead;
@@ -85,9 +91,33 @@ impl Detect for DdsRead {
     }
 }
 
-fn mip_len(width: u32, height: u32, level: u32) -> u64 {
-    PixelFormat::Rgba8.mip_len(width >> level, height >> level)
-}
+/// Every format the encoder can write, to map DXGI formats back.
+const ALL_FORMATS: [PixelFormat; 24] = [
+    PixelFormat::R8,
+    PixelFormat::Rg8,
+    PixelFormat::Rgba8,
+    PixelFormat::Rgba8Srgb,
+    PixelFormat::Bgra8,
+    PixelFormat::R16,
+    PixelFormat::R16F,
+    PixelFormat::Rgba16F,
+    PixelFormat::R32F,
+    PixelFormat::Rgba32F,
+    PixelFormat::Bc1,
+    PixelFormat::Bc1Srgb,
+    PixelFormat::Bc2,
+    PixelFormat::Bc2Srgb,
+    PixelFormat::Bc3,
+    PixelFormat::Bc3Srgb,
+    PixelFormat::Bc4,
+    PixelFormat::Bc4Snorm,
+    PixelFormat::Bc5,
+    PixelFormat::Bc5Snorm,
+    PixelFormat::Bc6H,
+    PixelFormat::Bc6HSigned,
+    PixelFormat::Bc7,
+    PixelFormat::Bc7Srgb,
+];
 
 #[async_trait]
 impl ReadHandler for DdsRead {
@@ -104,36 +134,50 @@ impl ReadHandler for DdsRead {
         let dds = Dds::read(Cursor::new(&head)).map_err(|e| corrupt(format!("dds header: {e}")))?;
 
         let format = match &dds.header10 {
-            Some(h) => match h.dxgi_format {
-                DxgiFormat::R8G8B8A8_UNorm => PixelFormat::Rgba8,
-                DxgiFormat::B8G8R8A8_UNorm => PixelFormat::Bgra8,
-                other => return Err(unsupported("dds", &format!("pixel format {other:?}"))),
-            },
+            Some(h) => ALL_FORMATS
+                .into_iter()
+                .find(|f| dxgi_format(*f) == Some(h.dxgi_format))
+                .ok_or_else(|| unsupported("dds", &format!("pixel format {:?}", h.dxgi_format)))?,
             None => match dds.get_d3d_format() {
                 Some(D3DFormat::A8B8G8R8) => PixelFormat::Rgba8,
                 Some(D3DFormat::A8R8G8B8) => PixelFormat::Bgra8,
+                Some(D3DFormat::DXT1) => PixelFormat::Bc1,
+                Some(D3DFormat::DXT3) => PixelFormat::Bc2,
+                Some(D3DFormat::DXT5) => PixelFormat::Bc3,
+                Some(D3DFormat::L8) => PixelFormat::R8,
                 Some(other) => return Err(unsupported("dds", &format!("pixel format {other:?}"))),
                 None => return Err(unsupported("dds", "unrecognised pixel format")),
             },
         };
-        if dds.get_num_array_layers() != 1 || dds.header.depth.is_some_and(|d| d > 1) {
-            return Err(unsupported("dds", "arrays, cube maps and volumes"));
+        if dds.header.depth.is_some_and(|d| d > 1) {
+            return Err(unsupported("dds", "volume textures"));
         }
+        // A cube map is 6 faces per array element; layers are face-major within an element.
+        let layers = dds.get_num_array_layers().max(1);
+        let cube = dds.header10.as_ref().map_or(
+            dds.header.caps2.contains(ddsfile::Caps2::CUBEMAP),
+            |h| h.misc_flag.contains(ddsfile::MiscFlag::TEXTURECUBE),
+        );
+        let (array_len, faces) = if cube { (layers / 6, 6) } else { (layers, 1) };
 
         let (width, height) = (dds.get_width(), dds.get_height());
         let mip_count = dds.get_num_mipmap_levels().max(1);
         let mut offset = start + HEADER_LEN + if dds.header10.is_some() { HEADER10_LEN } else { 0 };
         let mut mips = Vec::new();
-        for level in 0..mip_count {
-            let len = mip_len(width, height, level);
-            mips.push((offset, len));
-            offset += len;
+        for _ in 0..layers {
+            let mut chain = Vec::new();
+            for level in 0..mip_count {
+                let len = format.mip_len(width >> level, height >> level);
+                chain.push((offset, len));
+                offset = offset.checked_add(len).ok_or_else(|| corrupt("dds: mip chain overflows"))?;
+            }
+            mips.push(chain);
         }
         if offset > start + total {
             return Err(corrupt("dds: file is shorter than its mip chain"));
         }
 
-        let info = BitmapInfo { width, height, depth: 1, array_len: 1, faces: 1, mip_count, format };
+        let info = BitmapInfo { width, height, depth: 1, array_len, faces, mip_count, format };
         Ok(Arc::new(DdsImage {
             info,
             format: FormatId::new("dds"),
@@ -183,6 +227,7 @@ impl ConvertHandler for DdsEncode {
     /// every viewer); everything else (BC, arrays, other formats) gets a DX10 header. All mips
     /// of every layer are written, layers outer and mips inner.
     async fn convert(&self, source: Value, target: &Target, _cx: &Cx) -> Result<Value> {
+        let options = TypedTarget::<DdsOptions>::parse(target)?;
         let bitmap = bitmap_of(&source)?;
         let info = bitmap.info();
         if info.faces != 1 || info.depth != 1 {
@@ -240,7 +285,7 @@ impl ConvertHandler for DdsEncode {
 
         let mut out = Vec::new();
         dds.write(&mut out).map_err(|e| Error::custom("dds encode", e))?;
-        let key = ValueKey::converted(Arc::new(source.key().clone()), target.format.unversioned(), &target.options);
+        let key = ValueKey::converted(Arc::new(source.key().clone()), target.format.unversioned(), options.normalized());
         Ok(Arc::new(BlobData::with_format(FormatId::new("dds"), Bytes::from(out), key)))
     }
 }

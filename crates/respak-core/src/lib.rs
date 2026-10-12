@@ -10,6 +10,7 @@ pub mod graph;
 pub mod mediator;
 pub mod plugin;
 pub mod resolve;
+pub mod target;
 pub mod value;
 pub mod volume;
 
@@ -24,4 +25,5 @@ pub use graph::{EdgeInfo, FormatGraph, FormatInfo, Path, Step, TargetInfo};
 pub use mediator::{Cx, Mediator, Target};
 pub use plugin::{CapId, FormatBuilder, Plugin, Registry};
 pub use resolve::Mounts;
+pub use target::TypedTarget;
 pub use value::{Data, FormatId, Value, ValueKey, Version};

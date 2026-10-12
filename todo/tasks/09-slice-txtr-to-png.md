@@ -1,5 +1,5 @@
 # 09 · Slice: BC decoding and target options (rpak texture → PNG)
-**Status:** blocked · **Depends on:** 08 · **See:** PROJECT.md §5.2, §5.5
+**Status:** done · **Depends on:** 08 · **See:** PROJECT.md §5.2, §5.5
 
 ## Goal
 ```
@@ -18,3 +18,8 @@ The PNG encoder from slice 05 learns to decode BC formats, and targets get their
 
 ## Demo
 The user converts real textures of several pixel formats and checks the PNGs.
+
+## Done
+- `respak-formats/src/bc.rs`: BC1–BC7 → RGBA8 via `bcdec_rs`; `png` encode decodes any block format. The `dds` reader accepts BC files, arrays and cube maps (layers are face-major).
+- `respak-core/src/target.rs`: `TypedTarget<T>` (defaults from `T::default()`, `InvalidOptions` on bad input, `normalized()` for value keys). `png` takes `mips: "first" | n`; `dds` rejects unknown options. `"all"` is `InvalidOptions` until composite outputs (slice 11).
+- Tests: `core/tests/options.rs`, `formats/tests/bc_png.rs`, CLI `an_rpak_bc1_texture_converts_to_png_and_honours_mips`.
