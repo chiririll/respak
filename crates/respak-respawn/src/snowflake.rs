@@ -225,7 +225,7 @@ impl<'a> Snow<'a> {
             let w = self.in32(cur + 4);
             self.w64(CURSOR, cur + 8);
             v |= w << (have + 32);
-            (have + 32 - n + 32, (w >> (n - (have + 32))) as u32)
+            (have + 64 - n, (w >> (n - (have + 32))) as u32)
         };
         self.w32(BITCNT, left);
         self.w32(BITBUF, rest);
