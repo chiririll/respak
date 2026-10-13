@@ -27,6 +27,7 @@ bytes = "1"
 
 thiserror = "2"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"

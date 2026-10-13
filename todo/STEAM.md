@@ -77,7 +77,7 @@ The Steam connection is opened **lazily**, only when something isn't cached. Wit
 - Chunks are identified by their content, so versions of a depot share most of them: switching to an older version downloads only what changed. Chunks are not shared across depots.
 - **Read back:** a cached chunk is checked (size + Adler32); a bad one is deleted and downloaded again.
 - **Eviction:** LRU by file modification time (a cache hit updates it). The cap is **8 GiB**, set with `--steam-cache-size`. The chunk directory is scanned once when the volume opens; after that the size is tracked in memory, never by walking the tree on every write.
-- **Known cost:** respak decompresses a compressed `.rpak` body whole (PROJECT.md §11). On Steam that means the whole `.rpak` is downloaded once; later runs read it from the chunk cache. Starpaks stay ranged.
+- **Known cost:** a compressed `.rpak` body is one RTech stream of output chunks (about 4 MiB each), decoded front to back. respak decodes only as far as a read needs (`rtech::decompress_prefix`): listing a pak reads the start of the file (a few MB), reading a page near the end reads most of it. Chunks already downloaded stay in the chunk cache. Starpaks stay ranged. (Before this, the whole `.rpak` was downloaded: 885 MB for `common.rpak`.)
 - **Reporting:** events and progress come in task 12. Until then, downloads show only as `tracing` logs, plus a summary at the end of each run: chunks downloaded, bytes downloaded, cache hits.
 - Steam and CDN errors reach core as `opendal::Error` (→ `Storage`), with a message that names the depot, manifest and file.
 
@@ -103,7 +103,7 @@ The rsx fork (`../rsx`, `src/core/steam/`, `src/game/rtech/steam_starpak_source.
 | 11b | `--steam/--branch/--depot`: PICS, depot keys, manifests, the chunk Operator, the cache | On an Apex version from before Oodle compression (pinned with `--depot ID=MANIFEST`): `discover paks/Win64/common.rpak --depth 1`, then convert a texture with streamed mips; the summary shows only a few MB downloaded, and a second run downloads nothing |
 
 - **Why the demo uses an older version:** respak can't decompress Oodle yet (`pak.rs`, `txtr.rs`), and current Apex probably uses it. Task 11c adds Oodle (`oozextract`) and repeats the demo on the current version.
-- **Tests:** proposed in each slice's sketch and agreed at the gate. Unit tests use synthetic data, not Steam: range → chunk mapping, cache store, verify, evict and rescan, the tree merge (order, case, `/`), token file and expiry handling. Live Steam tests use the user's account and run only when an environment variable is set; they never run in CI.
+- **Tests:** proposed in each slice's sketch and agreed at the gate. Unit tests use synthetic data, not Steam: range → chunk mapping, cache store, verify, evict and rescan, the tree merge (order, case, `/`), token file and expiry handling. Live Steam tests are integration tests (`crates/respak-steam/tests/live.rs`) on the user's account: they are `#[ignore]`d and also need `RESPAK_STEAM_LIVE=1`, they never run in CI, and **they (and any other command that talks to Steam) are never run without a need and the user's explicit permission**. They also run with `--test-threads=1`: Steam allows one session per account.
 - Each slice ends with the usual checks (`clippy -D warnings`, `cargo test --workspace`), and `cargo build -p respak-cli --no-default-features` must build without Steam code.
 
 ## 9. To verify during the slices

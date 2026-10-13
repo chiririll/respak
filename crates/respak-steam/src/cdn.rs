@@ -1,6 +1,6 @@
 //! The real [`ChunkSource`]: a chunk from a CDN server, decrypted, decompressed and checked.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -19,6 +19,9 @@ use crate::store::ChunkSource;
 /// A CDN auth token is renewed a little before Steam says it expires.
 const TOKEN_MARGIN: Duration = Duration::from_secs(60);
 
+/// A chunk download that takes longer than this counts as a failed server.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// What the CDN needs per `(depot, host)`.
 #[derive(Clone)]
 struct Token {
@@ -33,6 +36,8 @@ pub struct CdnSource {
     cdn: CdnClient,
     pool: OnceCell<CdnServerPool>,
     tokens: Mutex<HashMap<(u32, String), Token>>,
+    /// Depots for which Steam refused a token once: the other hosts are not asked (most CDN hosts need none).
+    tokenless: Mutex<HashSet<u32>>,
 }
 
 /// `?token` as the URL needs it (steamroom appends the token as it is).
@@ -47,7 +52,7 @@ fn as_query(token: String) -> String {
 impl CdnSource {
     /// A source for the depots whose keys are in `keys`.
     pub fn new(resolver: Arc<Resolver>, keys: HashMap<u32, DepotKey>) -> Result<Self> {
-        Ok(Self { resolver, keys, cdn: CdnClient::new()?, pool: OnceCell::new(), tokens: Mutex::default() })
+        Ok(Self { resolver, keys, cdn: CdnClient::new()?, pool: OnceCell::new(), tokens: Mutex::default(), tokenless: Mutex::default() })
     }
 
     async fn pool(&self) -> Result<&CdnServerPool> {
@@ -55,6 +60,9 @@ impl CdnSource {
     }
 
     async fn token(&self, depot: u32, host: &str) -> Option<String> {
+        if self.tokenless.lock().unwrap_or_else(|e| e.into_inner()).contains(&depot) {
+            return None;
+        }
         let key = (depot, host.to_string());
         let cached = self.tokens.lock().unwrap_or_else(|e| e.into_inner()).get(&key).cloned();
         if let Some(t) = cached.filter(|t| t.valid_until.is_none_or(|v| v > Instant::now())) {
@@ -70,7 +78,8 @@ impl CdnSource {
                 }),
             },
             Err(e) => {
-                tracing::debug!("no CDN auth token for {host}: {e}");
+                tracing::debug!("no CDN auth token for {host}: {e}; not asking for the depot's other hosts");
+                self.tokenless.lock().unwrap_or_else(|e| e.into_inner()).insert(depot);
                 Token { value: None, valid_until: Some(Instant::now() + TOKEN_MARGIN) }
             }
         };
@@ -91,7 +100,12 @@ impl ChunkSource for CdnSource {
                 tokio::time::sleep(wait).await;
             }
             let token = self.token(depot, &server.host).await;
-            let raw = match self.cdn.download_chunk(server, DepotId(depot), &ChunkId(chunk.sha), token.as_deref()).await {
+            let id = ChunkId(chunk.sha);
+            let download = self.cdn.download_chunk(server, DepotId(depot), &id, token.as_deref());
+            let downloaded = tokio::time::timeout(DOWNLOAD_TIMEOUT, download)
+                .await
+                .unwrap_or_else(|_| Err(steamroom::Error::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "timed out"))));
+            let raw = match downloaded {
                 Ok(raw) => raw,
                 Err(e) => {
                     let retry = match &e {

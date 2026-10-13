@@ -16,9 +16,10 @@
 //!
 //! # Cost
 //! An uncompressed pak is read with ranged reads: the tables, then only the header bytes asked
-//! for. An RTech-compressed pak is one stream: the first access reads the whole file and
-//! decompresses the whole body into memory (for a big pak that is the decompressed size), and the
-//! result is kept for the life of the container. A bounded streaming decoder is on the backlog.
+//! for. An RTech-compressed pak is a stream of output chunks decoded front to back: a read at
+//! offset `X` reads and decodes the stream up to the chunk containing `X` (never past it), and the
+//! decoded prefix is kept for the life of the container. Listing a pak decodes only its tables, so
+//! it costs the start of the file, not all of it; reading a page near the end costs the file.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -34,7 +35,7 @@ use respak_core::{
     magic, u16le, Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey,
     Version,
 };
-use tokio::sync::OnceCell;
+use tokio::sync::{Mutex, OnceCell};
 
 use crate::guid::string_to_guid;
 use crate::pak::{AssetEntry, PakHeader, Tables};
@@ -53,27 +54,62 @@ pub const MEM: &str = ".mem";
 enum Body {
     /// Stored as is: ranged reads of the file.
     Raw { op: Operator, path: String, start: u64 },
-    /// RTech-compressed: decompressed once, on first use.
-    Rtech { op: Operator, path: String, start: u64, header_len: usize, len: u64, cell: OnceCell<Bytes> },
+    /// RTech-compressed: the body is decoded front to back, only as far as reads need.
+    Rtech { op: Operator, path: String, start: u64, header_len: usize, len: u64, file_len: u64, state: Mutex<Progress> },
 }
 
+/// How far an RTech body has been read and decoded.
+#[derive(Default)]
+struct Progress {
+    /// The start of the file (header included) read so far.
+    input: Vec<u8>,
+    /// The decoded start of the body.
+    body: Bytes,
+    /// `body` is the whole body.
+    done: bool,
+}
+
+/// First read of a compressed pak, and the least growth of the input between decoding attempts.
+const MIN_INPUT: u64 = 1 << 20;
+
 impl Body {
-    async fn decompressed(&self) -> Result<&Bytes> {
-        let Self::Rtech { op, path, start, header_len, len, cell } = self else {
-            unreachable!("only compressed bodies are decompressed")
+    /// The decoded body, at least `upto` bytes of it (fewer only if the body is shorter).
+    async fn decoded(&self, upto: u64) -> Result<Bytes> {
+        let Self::Rtech { op, path, start, header_len, len, file_len, state } = self else {
+            unreachable!("only compressed bodies are decoded")
         };
-        cell.get_or_try_init(|| async {
-            // The compressed body is a single stream, so the whole file is needed.
-            let read = op.read_with(path);
-            let file = if *start == 0 { read.await? } else { read.range(*start..).await? };
-            let (file, header_len, len) = (file.to_bytes(), *header_len, *len);
-            tokio::task::spawn_blocking(move || {
-                rtech::decompress(&file, header_len, Some(len)).map(Bytes::from).map_err(|e| Error::custom("rtech", e))
+        let mut progress = state.lock().await;
+        while (progress.body.len() as u64) < upto && !progress.done {
+            // Decode a bit ahead, so a run of small reads does not decode again each time.
+            let want = upto.max(2 * progress.body.len() as u64).max(MIN_INPUT).min(*len);
+            let complete = progress.input.len() as u64 >= *file_len;
+            let (input, header_len) = (std::mem::take(&mut progress.input), *header_len);
+            let expected = *len;
+            let (input, result) = tokio::task::spawn_blocking(move || {
+                let result = rtech::decompress_prefix(&input, complete, header_len, Some(expected), want);
+                (input, result)
             })
             .await
-            .map_err(|e| Error::custom("decompression task", e))?
-        })
-        .await
+            .map_err(|e| Error::custom("decompression task", e))?;
+            progress.input = input;
+            match result {
+                Ok(prefix) => {
+                    progress.done = prefix.complete;
+                    progress.body = Bytes::from(prefix.body);
+                }
+                Err(rtech::RtechError::NeedInput { at_least }) => {
+                    let have = progress.input.len() as u64;
+                    let target = at_least.max(2 * have).max(MIN_INPUT).min(*file_len);
+                    if target <= have {
+                        return Err(corrupt("rpak: the compressed stream runs past the end of the file"));
+                    }
+                    let more = op.read_with(path).range(start + have..start + target).await?;
+                    progress.input.extend_from_slice(&more.to_bytes());
+                }
+                Err(e) => return Err(Error::custom("rtech", e)),
+            }
+        }
+        Ok(progress.body.clone())
     }
 
     /// `range` is relative to the start of the body (the byte after the header).
@@ -83,7 +119,7 @@ impl Body {
                 Ok(op.read_with(path).range(start + range.start..start + range.end).await?.to_bytes())
             }
             Self::Rtech { .. } => {
-                let body = self.decompressed().await?;
+                let body = self.decoded(range.end).await?;
                 let (s, e) = (usize::try_from(range.start), usize::try_from(range.end));
                 match (s, e) {
                     (Ok(s), Ok(e)) if s <= e && e <= body.len() => Ok(body.slice(s..e)),
@@ -427,16 +463,13 @@ impl ReadHandler for RpakRead {
                 start,
                 header_len,
                 len: header.body_len(),
-                cell: OnceCell::new(),
+                file_len: header.compressed_size,
+                state: Mutex::default(),
             }
         } else {
             Body::Raw { op: file.op.clone(), path: file.path.clone(), start: start + header_len as u64 }
         };
-        let table_bytes = if compressed {
-            body.decompressed().await?.clone()
-        } else {
-            body.read(0..header.tables_len()).await?
-        };
+        let table_bytes = body.read(0..header.tables_len()).await?;
         let tables = Tables::parse(&header, &table_bytes)?;
 
         let mut by_guid = HashMap::new();

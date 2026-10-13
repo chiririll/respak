@@ -18,6 +18,7 @@ Every slice ends with:
 - `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass; public items have docs.
 - `cargo tree -p respak-respawn` / `-p respak-formats` show no plugin-to-plugin dependency, and core has no format knowledge.
 - Fixtures are synthetic and generated in tests. No game files in the repo. No Steam or downloader code outside `respak-steam` ([STEAM.md](../STEAM.md)).
+- Live Steam tests and any run that talks to Steam are integration tests: never run them without a need and the user's explicit permission ([STEAM.md](../STEAM.md) §8).
 - Don't commit unless the user asks.
 
 ## Foundation (done)

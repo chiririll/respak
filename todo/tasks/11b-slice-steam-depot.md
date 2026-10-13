@@ -33,7 +33,7 @@ All synthetic, no Steam:
 Live (env var only): open a pinned depot, `stat` and ranged-read one file.
 
 ## Demo
-On an Apex version from before Oodle (pinned with `--depot ID=MANIFEST`): `discover paks/Win64/common.rpak --depth 1`, then convert a texture with streamed mips. The summary shows only the needed MB downloaded, and a second run downloads nothing.
+On an Apex version from before Oodle (pinned with `--depot ID=MANIFEST`): `discover paks/Win64/common.rpak --depth 1`, then convert a texture with streamed mips. The summary shows only the needed MB downloaded (listing a pak reads the start of the file, not all of it), and a second run downloads nothing.
 
 ## To verify
 Manifest magic constants against a real manifest; where steamroom unwraps the manifest zip; whether the Adler32 check covers decompressed data; that request codes for old manifests are granted (STEAM.md §9).
@@ -51,3 +51,11 @@ Manifest magic constants against a real manifest; where steamroom unwraps the ma
 - Learned: Steam allows one session per account, so two respak processes (or parallel live tests) using the same token kick each other off (`Disconnected`). Run live tests with `--test-threads=1`. The `discover ""` of the root is "not found" (core does not treat the empty path as a directory; not changed here).
 - Not done / left: reconnect after a dropped connection (the lazy client is opened once per run); the manifest magic constants were not a problem on a real manifest.
 - Still for the demo: an older manifest ID from before Oodle (SteamDB).
+
+## Added after the first demo attempt ("it downloads lots of chunks")
+- Cause: opening a compressed rpak decompressed its whole body (885 MB of `common.rpak` downloaded just to list it). Fixed: `rtech::decompress_prefix` decodes only the first N body bytes (stops at an output chunk boundary, `NeedInput` asks for more input instead of guessing), and `Body::decoded` in `rpak.rs` reads the file in growing ranges. Checked on the real 86 MB `ui.rpak` (prefix == start of the full body; 4 MiB needs 2 MiB of input) and live on Season 7 `common.rpak`: `discover --depth 1` downloads 4 chunks (3.6 MB) instead of 885 MB.
+- `--report FILE`: the JSON result goes to a file instead of stdout (`discover`, `convert`, `run`, `formats`).
+- `RUST_LOG` works in the CLI (`tracing-subscriber`, default `warn`).
+- CDN: no token lookup for the other hosts of a depot after Steam refused one; 30 s timeout per chunk download.
+- Not done: a synthetic multi-chunk RTech stream (no encoder); the prefix logic is tested on the real `ui.rpak` only (ignored test, needs local game files) plus the tiny-stream `NeedInput` test. Single-output-chunk streams are decoded whole.
+- Season 7 (manifest 6197768190074397522) is RTech v8, so it works without Oodle; Oodle's first appearance is still unknown (`seasons.json` in rsx lists a manifest per season).

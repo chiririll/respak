@@ -1,5 +1,6 @@
 //! The `respak` binary: builds Fs operators from `--root`/`--out`, registers plugins, calls `run`.
 
+use std::io::Write;
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -16,6 +17,11 @@ fn fs(root: &std::path::Path) -> anyhow::Result<Operator> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<ExitCode> {
+    // Logs go to stderr; `RUST_LOG=info` shows what Steam is doing, the default is warnings only.
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()))
+        .with_writer(std::io::stderr)
+        .init();
     let cli = Cli::parse();
     #[cfg(feature = "steam")]
     if let respak_cli::Command::Steam { command } = cli.command {
@@ -44,7 +50,18 @@ async fn main() -> anyhow::Result<ExitCode> {
     #[cfg(not(feature = "steam"))]
     let input = fs(cli.root.as_ref().ok_or_else(|| anyhow::anyhow!("--root is required"))?)?;
     let engine = Engine::builder().input(input).output(fs(out)?).plugin(FormatsPlugin).plugin(RespawnPlugin::new()).build()?;
-    let code = run(cli, &engine, &mut std::io::stdout(), &mut std::io::stderr()).await?;
+    let mut report: Box<dyn std::io::Write> = match &cli.report {
+        Some(path) => {
+            if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent)?;
+            }
+            Box::new(std::io::BufWriter::new(std::fs::File::create(path)?))
+        }
+        None => Box::new(std::io::stdout()),
+    };
+    let code = run(cli, &engine, &mut report, &mut std::io::stderr()).await?;
+    report.flush()?;
+    drop(report);
     #[cfg(feature = "steam")]
     if let Some(steam) = steam_input {
         let s = steam.stats();

@@ -1,9 +1,11 @@
-//! Live check against Steam with the user's own stored login. Never runs in CI:
-//! `RESPAK_STEAM_LIVE=1 cargo test -p respak-steam --test live -- --test-threads=1`
+//! Live check against Steam with the user's own stored login. Ignored by default, never runs in CI, and is not
+//! to be run without the user's explicit permission:
+//! `RESPAK_STEAM_LIVE=1 cargo test -p respak-steam --test live -- --ignored --test-threads=1`
 //! (Steam allows one session per account: parallel logons kick each other off) after `respak steam login` in the repo root
 //! (`RESPAK_STATE_DIR` overrides the `.respak` directory).
 
 #[tokio::test]
+#[ignore = "live Steam test: run only with the user's permission"]
 async fn stored_token_logs_on() {
     if std::env::var_os("RESPAK_STEAM_LIVE").is_none() {
         return;
@@ -16,6 +18,7 @@ async fn stored_token_logs_on() {
 /// Opens Apex's main depot (current manifest, or `RESPAK_STEAM_MANIFEST`), stats `paks/Win64/common.rpak`
 /// and reads its first bytes: only the first chunk may be downloaded.
 #[tokio::test]
+#[ignore = "live Steam test: run only with the user's permission"]
 async fn depot_stat_and_ranged_read() {
     if std::env::var_os("RESPAK_STEAM_LIVE").is_none() {
         return;

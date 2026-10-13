@@ -76,6 +76,13 @@ pub enum RtechError {
     /// The stream announces an output too large to allocate.
     #[error("RTech decompressed size {0} is too large")]
     TooLarge(u64),
+    /// Only for [`decompress_prefix`] on a partial input: the decoder needs at least this many bytes
+    /// of the file (counted from its start) to go on.
+    #[error("RTech stream needs at least {at_least} bytes of input")]
+    NeedInput {
+        /// A lower bound for the input length that lets the decoder make progress.
+        at_least: u64,
+    },
 }
 
 /// First `0x4E2` bytes of rsx's `s_PakFileCompressionLUT` (the remainder of the table is
@@ -240,12 +247,19 @@ struct Decoder<'a> {
     bits: u64,
     nb: u64,
     pos: u64,
+    /// The input is a prefix of the file: running out of it asks for more instead of padding with zeros.
+    partial: bool,
+    /// Stop at the first output chunk boundary at or after this absolute position.
+    stop_at: u64,
 }
 
 impl Decoder<'_> {
     /// Loads 8 bytes at `pos`, zero padded past the end (the original over-reads there).
     fn load64(&self, pos: u64) -> Result<u64, RtechError> {
         let len = self.data.len() as u64;
+        if self.partial && pos.saturating_add(8) > len {
+            return Err(RtechError::NeedInput { at_least: pos.saturating_add(8) });
+        }
         if pos > len.saturating_add(16) {
             return Err(RtechError::Truncated("read past end of input"));
         }
@@ -258,6 +272,21 @@ impl Decoder<'_> {
             buf[..s.len()].copy_from_slice(s);
         }
         Ok(u64::from_le_bytes(buf))
+    }
+
+    /// Whether the input cannot hold the current compressed chunk (plus the over-read slack after it,
+    /// unless the input is the whole file).
+    fn input_short(&self) -> bool {
+        let slack = if self.partial { 16 } else { 0 };
+        (self.data.len() as u64) < self.buffer_needed.saturating_add(slack)
+    }
+
+    fn short_error(&self) -> RtechError {
+        if self.partial {
+            RtechError::NeedInput { at_least: self.buffer_needed.saturating_add(16) }
+        } else {
+            RtechError::Truncated("compressed chunk")
+        }
     }
 
     /// Reads the extended length common to long literal runs and long matches (selector,
@@ -279,6 +308,7 @@ impl Decoder<'_> {
                 // The original tops the bit buffer up with one byte here.
                 let byte = match self.data.get(self.rd as usize) {
                     Some(b) => u64::from(*b),
+                    None if self.partial => return Err(RtechError::NeedInput { at_least: self.rd + 1 }),
                     None if self.rd <= self.data.len() as u64 + 16 => 0,
                     None => return Err(RtechError::Truncated("read past end of input")),
                 };
@@ -381,6 +411,9 @@ impl Decoder<'_> {
             if self.pos == size {
                 return Ok(());
             }
+            if self.pos >= self.stop_at && self.pos == self.decomp_stream {
+                return Ok(());
+            }
             if self.pos > self.decomp_stream {
                 return Err(RtechError::Corrupt("op crosses output chunk boundary"));
             }
@@ -408,8 +441,8 @@ impl Decoder<'_> {
                         self.comp_stream = self.comp_stream.wrapping_add(self.hdr_off);
                     }
                     self.decomp_stream = next;
-                    if (self.data.len() as u64) < self.buffer_needed {
-                        return Err(RtechError::Truncated("compressed chunk"));
+                    if self.input_short() {
+                        return Err(self.short_error());
                     }
                 }
                 limit = self.q70;
@@ -436,6 +469,51 @@ impl Decoder<'_> {
 /// Returns an error if the stream is truncated or corrupt, or if its decompressed size does
 /// not match `expected_len`. Never panics on malformed input.
 pub fn decompress(file: &[u8], header_len: usize, expected_len: Option<u64>) -> Result<Vec<u8>, RtechError> {
+    decompress_prefix(file, true, header_len, expected_len, u64::MAX).map(|p| p.body)
+}
+
+/// The start of a decompressed body.
+#[derive(Debug)]
+pub struct Prefix {
+    /// The decoded body bytes (after the pak header). At least `want` long unless the body is shorter;
+    /// the stream is cut at an output chunk boundary, so usually somewhat longer.
+    pub body: Vec<u8>,
+    /// Whether `body` is the whole body.
+    pub complete: bool,
+}
+
+/// Decodes only the first `want` bytes of the body (rounded up to an output chunk), from a prefix of
+/// the file. The stream is split into output chunks, each with its compressed size in front, so
+/// the decoder can stop at a chunk boundary and only needs the input up to there.
+///
+/// `file` is the file from its start; `input_complete` says it is the whole file. If it is not and
+/// the decoder needs more, the error is [`RtechError::NeedInput`]: read more and call again (the
+/// decoding restarts from the beginning, but costs no I/O). Streams with a single output chunk
+/// cannot be cut and are decoded whole.
+///
+/// # Errors
+///
+/// As [`decompress`], plus `NeedInput` when `input_complete` is false.
+pub fn decompress_prefix(
+    file: &[u8],
+    input_complete: bool,
+    header_len: usize,
+    expected_len: Option<u64>,
+    want: u64,
+) -> Result<Prefix, RtechError> {
+    decode(file, !input_complete, header_len, expected_len, want).map_err(|e| match e {
+        RtechError::Truncated(_) if !input_complete => RtechError::NeedInput { at_least: file.len() as u64 + 1 },
+        e => e,
+    })
+}
+
+fn decode(
+    file: &[u8],
+    partial: bool,
+    header_len: usize,
+    expected_len: Option<u64>,
+    want: u64,
+) -> Result<Prefix, RtechError> {
     // --- InitPakDecoder ---
     let hdr_end = header_len.checked_add(16).ok_or(RtechError::Truncated("stream header"))?;
     let hdr = file.get(header_len..hdr_end.min(file.len())).ok_or(RtechError::Truncated("stream header"))?;
@@ -510,23 +588,31 @@ pub fn decompress(file: &[u8], header_len: usize, expected_len: Option<u64>) -> 
         bits,
         nb: rem,
         pos: hl,
+        partial,
+        stop_at: hl.saturating_add(want),
     };
     if size - 1 > inv_out {
         dec.comp_stream = first.wrapping_sub(hdr_off);
         dec.decomp_stream = inv_out + 1;
     }
-    if (file.len() as u64) < dec.buffer_needed {
-        return Err(RtechError::Truncated("compressed chunk"));
+    if dec.input_short() {
+        return Err(dec.short_error());
     }
-    let total = usize::try_from(size).map_err(|_| RtechError::TooLarge(size))?;
+    // Only as much output as the wanted prefix needs, up to the end of the chunk it ends in.
+    let chunk = inv_out.wrapping_add(1);
+    let cuttable = inv_in != u64::MAX && chunk != 0 && size - 1 > inv_out;
+    let alloc = if want >= body_len || !cuttable { size } else { dec.stop_at.div_ceil(chunk).saturating_mul(chunk).min(size) };
+    let total = usize::try_from(alloc).map_err(|_| RtechError::TooLarge(size))?;
     dec.out.try_reserve_exact(total).map_err(|_| RtechError::TooLarge(size))?;
     dec.out.resize(total, 0);
 
     dec.run()?;
 
+    let complete = dec.pos == size;
     let mut out = dec.out;
+    out.truncate(dec.pos as usize);
     out.drain(..header_len);
-    Ok(out)
+    Ok(Prefix { body: out, complete })
 }
 
 #[cfg(test)]
@@ -630,5 +716,50 @@ mod tests {
         eprintln!("tables {tables:#x}, pages {pages_total:#x}, out {:#x}", out.len());
         assert!(tables + pages_total <= out.len() as u64);
         assert!(out.len() as u64 - tables - pages_total < out.len() as u64 / 4);
+    }
+
+    #[test]
+    fn a_partial_input_asks_for_more_instead_of_guessing() {
+        let t = tiny();
+        for len in 0..t.len() {
+            match decompress_prefix(&t[..len], false, 0, Some(4), u64::MAX) {
+                Err(RtechError::NeedInput { at_least }) => assert!(at_least > len as u64, "{len}: {at_least}"),
+                other => panic!("{len} bytes of input: {other:?}"),
+            }
+        }
+        let whole = decompress_prefix(&t, true, 0, Some(4), u64::MAX).unwrap();
+        assert_eq!((whole.body.as_slice(), whole.complete), (&b"ABCD"[..], true));
+    }
+
+    /// Prefixes of a real v8 pak: equal to the start of the whole body, and a small prefix needs only
+    /// a small part of the file.
+    #[test]
+    #[ignore = "needs local game files"]
+    fn ui_rpak_prefixes() {
+        let Ok(file) = std::fs::read(UI_RPAK) else {
+            eprintln!("ui.rpak not found, skipping");
+            return;
+        };
+        let dcmp = u64::from_le_bytes(file[0x30..0x38].try_into().unwrap());
+        let len = dcmp - 0x80;
+        let whole = decompress(&file, 0x80, Some(len)).unwrap();
+        for want in [1u64, 4096, 1 << 20, 10 << 20, len] {
+            let mut input = 1usize << 20;
+            let prefix = loop {
+                let part = &file[..input.min(file.len())];
+                match decompress_prefix(part, part.len() == file.len(), 0x80, Some(len), want) {
+                    Ok(p) => break p,
+                    Err(RtechError::NeedInput { at_least }) => input = (at_least as usize).max(input * 2),
+                    Err(e) => panic!("want {want}: {e}"),
+                }
+            };
+            assert!(prefix.body.len() as u64 >= want.min(len), "want {want}, got {}", prefix.body.len());
+            assert_eq!(prefix.body, whole[..prefix.body.len()], "want {want}");
+            assert_eq!(prefix.complete, prefix.body.len() as u64 == len);
+            eprintln!("want {want}: {} bytes decoded from {} of {} input bytes", prefix.body.len(), input.min(file.len()), file.len());
+            if want <= 1 << 20 {
+                assert!(input < file.len() / 4, "a small prefix should not need most of the file");
+            }
+        }
     }
 }

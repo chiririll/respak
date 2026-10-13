@@ -15,6 +15,9 @@ pub struct Cli {
     /// Output directory (required by every command except `steam`).
     #[arg(long)]
     pub out: Option<PathBuf>,
+    /// Write the JSON result to this file instead of stdout (errors still go to stderr).
+    #[arg(long, value_name = "FILE")]
+    pub report: Option<PathBuf>,
     /// Read the input from Steam depots of this app id instead of `--root` (needs `--depot`).
     #[cfg(feature = "steam")]
     #[arg(long, value_name = "APP", conflicts_with = "root", requires = "depot")]
