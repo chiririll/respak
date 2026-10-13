@@ -19,6 +19,14 @@ pub struct Cli {
     /// Output directory (required by every command except `steam`).
     #[arg(long)]
     pub out: Option<PathBuf>,
+    /// Where assets that a pak refers to but does not contain are looked for, after the pak itself
+    /// and the `common.rpak` beside it: a glob relative to `--root`, e.g. `paks/Win64/*.rpak`.
+    /// Repeat for several. Nothing else is ever scanned.
+    #[arg(long, value_name = "GLOB")]
+    pub search: Vec<String>,
+    /// Directory for the plugin cache (e.g. the guid -> pak index); created if missing.
+    #[arg(long, value_name = "DIR")]
+    pub cache: Option<PathBuf>,
     /// Write the JSON result to this file instead of stdout (errors still go to stderr).
     #[arg(long, value_name = "FILE")]
     pub report: Option<PathBuf>,

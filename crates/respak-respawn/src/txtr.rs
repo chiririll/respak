@@ -365,7 +365,7 @@ impl Detect for TxtrRead {
 }
 
 /// The NUL-terminated name at `.mem` offset `at`, if it fits in 512 bytes.
-async fn read_name(volume: &Operator, at: u64, mem_len: u64) -> Option<String> {
+pub(crate) async fn read_name(volume: &Operator, at: u64, mem_len: u64) -> Option<String> {
     if at >= mem_len {
         return None;
     }

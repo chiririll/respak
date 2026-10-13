@@ -73,6 +73,11 @@ impl Mediator {
         self
     }
 
+    /// The `cache_version` the plugin `id` declared (0 if unknown).
+    pub(crate) fn cache_version(&self, id: &str) -> u32 {
+        self.registry.cache_versions.get(id).copied().unwrap_or(0)
+    }
+
     /// Sends `event` to every subscriber.
     pub fn publish(&self, event: Event) {
         self.events.publish(event)
@@ -314,6 +319,12 @@ pub struct Cx {
     pub cancel: CancellationToken,
     /// Bounds for `blocking` and `io`.
     limits: Arc<Limits>,
+    /// Values requested by the converters of the current output (see `scoped`).
+    linked: Arc<std::sync::Mutex<Vec<crate::engine::LinkedValue>>>,
+    /// The plugin cache operator, if the host gave one.
+    cache: Option<Operator>,
+    /// Requests being served on the way to this one, outermost first (PROJECT.md §5.6).
+    chain: Arc<Vec<String>>,
 }
 
 /// Semaphores behind `Cx::blocking` and `Cx::io`.
@@ -327,9 +338,58 @@ impl Cx {
     pub fn new(mediator: Mediator, input: Operator, output: Operator) -> Self {
         Self { mediator, input, output, mounts: Arc::default(),
             written: Arc::default(),
+            linked: Arc::default(),
+            cache: None,
+            chain: Arc::default(),
             cancel: CancellationToken::new(),
             limits: Arc::new(Limits { blocking: Semaphore::new(Semaphore::MAX_PERMITS), io: Semaphore::new(Semaphore::MAX_PERMITS) }),
         }
+    }
+
+    /// This context with its own, empty list of linked values: one per top-level output.
+    pub(crate) fn scoped(&self) -> Self {
+        let mut next = self.clone();
+        next.linked = Arc::default();
+        next
+    }
+
+    /// Notes that the converter running asked for `key` converted to `format`, once.
+    pub(crate) fn link(&self, key: String, format: String) {
+        let value = crate::engine::LinkedValue { key, format };
+        let mut linked = self.linked.lock().unwrap();
+        if !linked.contains(&value) {
+            linked.push(value);
+        }
+    }
+
+    /// The values linked so far in this scope.
+    pub(crate) fn dependencies(&self) -> Vec<crate::engine::LinkedValue> {
+        self.linked.lock().unwrap().clone()
+    }
+
+    /// Uses `op` as the plugin cache.
+    pub fn with_cache(mut self, op: Operator) -> Self {
+        self.cache = Some(op);
+        self
+    }
+
+    /// Plugin `plugin`'s part of the plugin cache (PROJECT.md §7), namespaced by its id and
+    /// `cache_version`. `None` if the host configured no cache; plugins must work without it.
+    pub fn cache(&self, plugin: &str) -> Option<crate::cache::PluginCache> {
+        let op = self.cache.clone()?;
+        Some(crate::cache::PluginCache::new(op, plugin, self.mediator.cache_version(plugin), self.mediator.clone()))
+    }
+
+    /// The requests being served on the way to this one, outermost first.
+    pub fn chain(&self) -> &[String] {
+        &self.chain
+    }
+
+    /// This context with `key` appended to the call chain.
+    pub(crate) fn pushed(&self, key: String) -> Self {
+        let mut next = self.clone();
+        next.chain = Arc::new(self.chain.iter().cloned().chain([key]).collect());
+        next
     }
 
     /// Uses `cancel` as this call's token.

@@ -40,7 +40,7 @@ async fn every_version_is_detected_and_listed() {
             [
                 ("common.rpak/0x00000000000000FF.ui", Some("rpak.asset"), Some("2"), Some("ui")),
                 ("common.rpak/0x1111222233334444.txtr", Some("txtr"), Some("10"), Some("txtr")),
-                ("common.rpak/0xAAAABBBBCCCCDDDD.matl", Some("rpak.asset"), Some("15"), Some("matl")),
+                ("common.rpak/0xAAAABBBBCCCCDDDD.matl", Some("matl"), Some("15"), Some("matl")),
             ],
             "v{version}"
         );

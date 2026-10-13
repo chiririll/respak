@@ -43,7 +43,7 @@ Every slice ends with:
 | 11b | [Steam depots as input](11b-slice-steam-depot.md) | `--steam … convert`, only the needed chunks downloaded | 11a | in-progress |
 | 11c | [Oodle decompression](11c-slice-oodle.md) | current Apex textures over Steam | 11b | in-progress |
 | 12 | [Events, progress, cancellation](12-slice-events-cancel.md) | progress + Ctrl-C | 11 | in-progress |
-| 13 | [Linking: a material with its textures](13-slice-linking-material.md) | material + textures | 12 | blocked |
+| 13 | [Linking: a material with its textures](13-slice-linking-material.md) | material + textures | 12 | in-progress |
 | 14 | [Backlog](14-backlog.md) | — | — | blocked |
 
 Respawn format code comes from rsx: reviewed first, then ported (PROJECT.md §12).

@@ -72,7 +72,15 @@ async fn main() -> anyhow::Result<ExitCode> {
     };
     #[cfg(not(feature = "steam"))]
     let input = fs(cli.root.as_ref().ok_or_else(|| anyhow::anyhow!("--root is required"))?)?;
-    let engine = Engine::builder().input(input).output(fs(out)?).plugin(FormatsPlugin).plugin(RespawnPlugin::new()).build()?;
+    let mut builder = Engine::builder()
+        .input(input)
+        .output(fs(out)?)
+        .plugin(FormatsPlugin)
+        .plugin(RespawnPlugin::new().search(cli.search.clone()));
+    if let Some(dir) = &cli.cache {
+        builder = builder.cache(fs(dir)?);
+    }
+    let engine = builder.build()?;
     let mut report: Box<dyn std::io::Write> = match &cli.report {
         Some(path) => {
             if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {

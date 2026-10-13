@@ -26,7 +26,7 @@ impl Env {
         let request: ConvertRequest = serde_json::from_str(&json).unwrap();
         let report = self.engine.convert(&request, &respak_core::CancellationToken::new()).await.unwrap();
         match report.outputs.into_iter().next().unwrap().result {
-            OutputResult::Ok { files } => Ok(self.output.read(&files[0]).await.unwrap().to_vec()),
+            OutputResult::Ok { files, .. } => Ok(self.output.read(&files[0]).await.unwrap().to_vec()),
             OutputResult::Err { error } => Err(clone_kind(error.kind())),
         }
     }

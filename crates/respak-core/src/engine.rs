@@ -126,6 +126,15 @@ pub struct OutputReport {
     pub result: OutputResult,
 }
 
+/// A value a converter needed to produce its output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LinkedValue {
+    /// Key of the value that was converted.
+    pub key: String,
+    /// The format it was converted to.
+    pub format: String,
+}
+
 /// `{ "Ok": { "files": [..] } }` or `{ "Err": { "error": {..} } }`
 #[derive(Debug, Serialize)]
 pub enum OutputResult {
@@ -133,6 +142,9 @@ pub enum OutputResult {
     Ok {
         /// Paths written on the output operator.
         files: Vec<String>,
+        /// The values this output's converters asked the mediator for directly (e.g. a
+        /// material's textures), each once, in request order.
+        dependencies: Vec<LinkedValue>,
     },
     /// Failure of this output only.
     Err {
@@ -155,6 +167,7 @@ fn with_extension(path: &str, ext: &str) -> String {
 pub struct EngineBuilder {
     input: Option<Operator>,
     output: Option<Operator>,
+    cache: Option<Operator>,
     plugins: Vec<Box<dyn Plugin>>,
     max_concurrency: Option<usize>,
     middleware: Vec<Arc<dyn Middleware>>,
@@ -204,6 +217,11 @@ impl EngineBuilder {
         self.output = Some(op);
         self
     }
+    /// Where plugins keep cached data (optional).
+    pub fn cache(mut self, op: Operator) -> Self {
+        self.cache = Some(op);
+        self
+    }
     /// Adds a plugin.
     pub fn plugin(mut self, p: impl Plugin + 'static) -> Self {
         self.plugins.push(Box::new(p));
@@ -227,6 +245,7 @@ impl EngineBuilder {
                 .with_middleware(self.middleware),
             input,
             output,
+            cache: self.cache,
             max_concurrency: self.max_concurrency.unwrap_or(4),
             limits: (self.blocking_limit, self.io_limit),
         })
@@ -238,6 +257,7 @@ pub struct Engine {
     mediator: Mediator,
     input: Operator,
     output: Operator,
+    cache: Option<Operator>,
     max_concurrency: usize,
     limits: (Option<usize>, Option<usize>),
 }
@@ -340,6 +360,10 @@ impl Engine {
 
     fn cx(&self, cancel: &CancellationToken) -> Cx {
         let cx = Cx::new(self.mediator.clone(), self.input.clone(), self.output.clone()).with_cancel(cancel.clone());
+        let cx = match &self.cache {
+            Some(op) => cx.with_cache(op.clone()),
+            None => cx,
+        };
         match self.limits {
             (None, None) => cx,
             (blocking, io) => cx.with_limits(blocking.unwrap_or(usize::MAX), io.unwrap_or(usize::MAX)),
@@ -396,12 +420,13 @@ impl Engine {
             .map(|job| {
                 let (cx, done) = (&cx, &done);
                 async move {
+                    let scoped = cx.scoped();
                     let result = match job.error {
                         Some(error) => Err(error),
-                        None => self.convert_one(job.out, &job.from, job.format, cx).await,
+                        None => self.convert_one(job.out, &job.from, job.format, &scoped).await,
                     };
                     let result = match result {
-                        Ok(files) => OutputResult::Ok { files },
+                        Ok(files) => OutputResult::Ok { files, dependencies: scoped.dependencies() },
                         Err(error) => OutputResult::Err { error },
                     };
                     cx.mediator.publish(Event::Progress {

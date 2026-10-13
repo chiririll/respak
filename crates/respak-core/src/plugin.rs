@@ -10,6 +10,11 @@ use crate::error::{Error, ErrorKind, Result};
 pub trait Plugin: Send + Sync {
     /// Unique plugin id, e.g. `formats`.
     fn id(&self) -> &str;
+    /// Version of the data this plugin keeps in the plugin cache; bump it when the cached schema
+    /// changes (the cache is namespaced by plugin id and this number).
+    fn cache_version(&self) -> u32 {
+        0
+    }
     /// Declares the plugin's formats and edges.
     fn register(&self, r: &mut Registry);
 }
@@ -77,6 +82,7 @@ pub struct Registry {
     next_order: usize,
     last_edge: Option<LastEdge>,
     current_plugin: String,
+    pub(crate) cache_versions: std::collections::HashMap<String, u32>,
 }
 
 impl Registry {
@@ -88,12 +94,14 @@ impl Registry {
             next_order: 0,
             last_edge: None,
             current_plugin: String::new(),
+            cache_versions: Default::default(),
         }
     }
 
     /// Runs `plugin.register`, tagging everything it adds with the plugin's id.
     pub fn add(&mut self, plugin: &dyn Plugin) {
         self.current_plugin = plugin.id().to_owned();
+        self.cache_versions.insert(self.current_plugin.clone(), plugin.cache_version());
         plugin.register(self);
     }
 

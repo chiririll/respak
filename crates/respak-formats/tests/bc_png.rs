@@ -55,7 +55,7 @@ async fn to_png(
     )
     .unwrap();
     match env.0.convert(&request, &respak_core::CancellationToken::new()).await.unwrap().outputs.remove(0).result {
-        OutputResult::Ok { files } => Ok(env.2.read(&files[0]).await.unwrap().to_vec()),
+        OutputResult::Ok { files, .. } => Ok(env.2.read(&files[0]).await.unwrap().to_vec()),
         OutputResult::Err { error } => Err(match error.kind() {
             ErrorKind::InvalidOptions { message } => ErrorKind::InvalidOptions { message: message.clone() },
             other => ErrorKind::Custom { source: None, message: other.to_string() },
@@ -162,7 +162,7 @@ async fn mips_all_writes_a_folder_with_one_png_per_mip() {
     )
     .unwrap();
     let report = env.0.convert(&request, &respak_core::CancellationToken::new()).await.unwrap();
-    let OutputResult::Ok { files } = &report.outputs[0].result else { panic!("{:?}", report.outputs[0].result) };
+    let OutputResult::Ok { files, .. } = &report.outputs[0].result else { panic!("{:?}", report.outputs[0].result) };
     assert_eq!(files, &["t/mip0.png", "t/mip1.png"]);
     let (w, h, px) = decode(&env.2.read("t/mip0.png").await.unwrap().to_vec());
     assert_eq!((w, h, &px[..4]), (8, 8, &[255, 0, 0, 255][..]));

@@ -49,7 +49,7 @@ async fn run(env: &Env, json: &str) -> Vec<(String, std::result::Result<Vec<Stri
             (
                 o.from,
                 match o.result {
-                    OutputResult::Ok { files } => Ok(files),
+                    OutputResult::Ok { files, .. } => Ok(files),
                     OutputResult::Err { error } => Err(error.kind().name()),
                 },
             )

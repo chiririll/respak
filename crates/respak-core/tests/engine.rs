@@ -110,7 +110,7 @@ async fn converts_through_a_capability_edge_and_defaults_the_output_path() {
     env.input.write("dir.v2/pic.aa", "AAAA").await.unwrap();
     let report = env.engine.convert(&one("dir.v2/pic.aa", "beta"), &respak_core::CancellationToken::new()).await.unwrap();
     match &report.outputs[0].result {
-        OutputResult::Ok { files } => assert_eq!(files, &["dir.v2/pic.bb"]),
+        OutputResult::Ok { files, .. } => assert_eq!(files, &["dir.v2/pic.bb"]),
         OutputResult::Err { error } => panic!("{error}"),
     }
     assert_eq!(env.output.read("dir.v2/pic.bb").await.unwrap().to_vec(), b"beta-bitmap");

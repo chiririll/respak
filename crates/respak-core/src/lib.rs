@@ -1,6 +1,7 @@
 //! respak-core: mediator, format graph, capabilities, volumes and the engine.
 
 
+pub mod cache;
 pub mod capability;
 pub mod detect;
 pub mod discover;
@@ -17,11 +18,12 @@ pub mod target;
 pub mod value;
 pub mod volume;
 
+pub use cache::PluginCache;
 pub use capability::Cap;
 pub use detect::{magic, u16le, u32le, within, ConvertHandler, Detect, Detected, Probe, ReadHandler};
 pub use discover::{Alternative, DiscoverOptions, Discovery, DiscoveryEntry};
 pub use engine::{
-    ConvertReport, ConvertRequest, Engine, EngineBuilder, FromSpec, OutputReport, OutputRequest, OutputResult,
+    ConvertReport, ConvertRequest, Engine, EngineBuilder, FromSpec, LinkedValue, OutputReport, OutputRequest, OutputResult,
     SourceSpec, TargetSpec,
 };
 pub use event::{Event, Events, LogSubscriber};

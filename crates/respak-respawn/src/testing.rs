@@ -416,3 +416,163 @@ pub fn oodle_pak(plain: &[u8], restart_blocks: usize, pad_to: usize) -> Vec<u8> 
     out.extend_from_slice(&stream);
     out
 }
+
+// ---- general paks, materials, shaders ---------------------------------------------------------
+
+/// Builds a pak with arbitrary assets: page 0 holds the headers, page 1 everything else.
+#[derive(Default)]
+pub struct PakBuilder {
+    heads: Vec<u8>,
+    misc: Vec<u8>,
+    pointers: Vec<(u32, u32)>,
+    assets: Vec<RawAsset>,
+}
+
+impl PakBuilder {
+    /// An empty pak.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn align(&mut self) {
+        while !self.misc.len().is_multiple_of(16) {
+            self.misc.push(0);
+        }
+    }
+
+    /// Appends `bytes` to page 1 (16-byte aligned); returns their offset in the page.
+    pub fn data(&mut self, bytes: &[u8]) -> u32 {
+        self.align();
+        let at = self.misc.len() as u32;
+        self.misc.extend_from_slice(bytes);
+        self.align();
+        at
+    }
+
+    /// Appends a NUL-terminated string to page 1; returns its offset in the page.
+    pub fn string(&mut self, s: &str) -> u32 {
+        self.data(&[s.as_bytes(), &[0]].concat())
+    }
+
+    /// The `.mem` offset of page-1 offset `at`, once the pak is built (page 0 is the headers,
+    /// so this is only valid after all assets are added: call it from tests via the built size).
+    pub fn page1_at(&self, at: u32) -> u64 {
+        self.heads.len() as u64 + u64::from(at)
+    }
+
+    /// Makes the 8 bytes at page-1 offset `slot` a pointer to page-1 offset `target`.
+    pub fn data_pointer(&mut self, slot: u32, target: u32) {
+        self.misc[slot as usize..slot as usize + 4].copy_from_slice(&1u32.to_le_bytes());
+        self.misc[slot as usize + 4..slot as usize + 8].copy_from_slice(&target.to_le_bytes());
+        self.pointers.push((1, slot));
+    }
+
+    /// Adds an asset. `pointers` are `(slot offset in header, target offset in page 1)`; `data`
+    /// is the page-1 offset of the asset's CPU data.
+    pub fn asset(&mut self, guid: u64, kind: &[u8; 4], version: u32, mut header: Vec<u8>, pointers: &[(usize, u32)], data: Option<u32>) {
+        for &(slot, target) in pointers {
+            header[slot..slot + 4].copy_from_slice(&1u32.to_le_bytes());
+            header[slot + 4..slot + 8].copy_from_slice(&target.to_le_bytes());
+        }
+        let head_offset = self.heads.len() as u32;
+        for &(slot, _) in pointers {
+            self.pointers.push((0, head_offset + slot as u32));
+        }
+        let header_size = header.len() as u32;
+        self.heads.extend_from_slice(&header);
+        while !self.heads.len().is_multiple_of(16) {
+            self.heads.push(0);
+        }
+        self.assets.push(RawAsset {
+            guid,
+            kind: *kind,
+            version,
+            head: (0, head_offset),
+            data: data.map(|d| (1, d)),
+            header_size,
+            starpak: -1,
+            opt_starpak: -1,
+        });
+    }
+
+    /// A `matl` of asset version 16 (240-byte header) with the given texture slots (0 = empty).
+    pub fn matl(&mut self, guid: u64, name: &str, shader_set: u64, textures: &[u64]) {
+        let mut h = vec![0u8; 240];
+        put(&mut h, 0x10, &guid.to_le_bytes());
+        put(&mut h, 0x58, &shader_set.to_le_bytes());
+        put(&mut h, 0x72, &512u16.to_le_bytes());
+        put(&mut h, 0x74, &256u16.to_le_bytes());
+        put(&mut h, 0x76, &1u16.to_le_bytes());
+        let name_at = self.string(name);
+        let array: Vec<u8> = textures.iter().flat_map(|g| g.to_le_bytes()).chain([0; 8]).collect();
+        let array_at = self.data(&array);
+        self.asset(
+            guid,
+            b"matl",
+            16,
+            h,
+            &[(0x18, name_at), (0x60, array_at), (0x68, array_at + 8 * textures.len() as u32)],
+            None,
+        );
+    }
+
+    /// A `shds` (asset version 12, 80-byte header) whose pixel shader is `pixel`.
+    pub fn shds(&mut self, guid: u64, pixel: u64) {
+        let mut h = vec![0u8; 80];
+        put(&mut h, 0x48, &pixel.to_le_bytes());
+        self.asset(guid, b"shds", 12, h, &[], None);
+    }
+
+    /// A `shdr` (asset version 12) whose first variant is `bytecode`.
+    pub fn shdr(&mut self, guid: u64, bytecode: &[u8]) {
+        let code_at = self.data(bytecode);
+        let entry = vec![0u8; 16];
+        let entry_at = self.data(&entry);
+        self.data_pointer(entry_at, code_at);
+        self.misc[entry_at as usize + 8..entry_at as usize + 12].copy_from_slice(&(bytecode.len() as i32).to_le_bytes());
+        self.asset(guid, b"shdr", 12, vec![0u8; 32], &[], Some(entry_at));
+    }
+
+    /// The pak file.
+    pub fn build(self, pak_version: u16) -> Vec<u8> {
+        build_raw(pak_version, &[self.heads, self.misc], &self.pointers, &self.assets)
+    }
+}
+
+/// A DXBC blob whose RDEF chunk declares `(name, resource type, bind point)`; type 2 is a texture.
+pub fn dxbc_blob(resources: &[(&str, u32, u32)]) -> Vec<u8> {
+    let table = 0x1C_u32;
+    let names_at = table + 32 * resources.len() as u32;
+    let mut rdef = vec![0u8; names_at as usize];
+    rdef[8..12].copy_from_slice(&(resources.len() as u32).to_le_bytes());
+    rdef[12..16].copy_from_slice(&table.to_le_bytes());
+    let mut names = Vec::new();
+    for (i, (name, ty, bind)) in resources.iter().enumerate() {
+        let e = table as usize + i * 32;
+        rdef[e..e + 4].copy_from_slice(&(names_at + names.len() as u32).to_le_bytes());
+        rdef[e + 4..e + 8].copy_from_slice(&ty.to_le_bytes());
+        rdef[e + 20..e + 24].copy_from_slice(&bind.to_le_bytes());
+        names.extend_from_slice(name.as_bytes());
+        names.push(0);
+    }
+    rdef.extend(names);
+
+    // Two chunks: something else first, then RDEF.
+    let other = [0xAAu8; 4];
+    let mut out = b"DXBC".to_vec();
+    out.extend([0u8; 16]);
+    out.extend(1u32.to_le_bytes());
+    out.extend(0u32.to_le_bytes());
+    out.extend(2u32.to_le_bytes());
+    let first = 0x28u32;
+    let second = first + 8 + other.len() as u32;
+    out.extend(first.to_le_bytes());
+    out.extend(second.to_le_bytes());
+    out.extend(b"SFI0");
+    out.extend((other.len() as u32).to_le_bytes());
+    out.extend(other);
+    out.extend(b"RDEF");
+    out.extend((rdef.len() as u32).to_le_bytes());
+    out.extend(rdef);
+    out
+}

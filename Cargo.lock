@@ -2284,6 +2284,7 @@ dependencies = [
  "opendal",
  "respak-core",
  "respak-respawn",
+ "serde",
  "serde_json",
  "thiserror",
  "tokio",

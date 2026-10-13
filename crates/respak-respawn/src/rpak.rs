@@ -40,7 +40,7 @@ use tokio::sync::{Mutex, OnceCell};
 
 use crate::guid::string_to_guid;
 use crate::oodle::{self, OodleError, Scanner};
-use crate::pak::{AssetEntry, PakHeader, Tables};
+use crate::pak::{AssetEntry, PagePtr, PakHeader, Tables};
 use crate::rtech;
 use crate::starpak::{self, Starpak, StarpakEntry};
 
@@ -458,6 +458,7 @@ impl Container for RpakData {
             stream: has_stream.then(|| format!("{}.stream", Inner::file_name(&self.inner.tables.assets[index]))),
             opt: has_opt.then(|| format!("{}.opt", Inner::file_name(&self.inner.tables.assets[index]))),
             data_mem_offset,
+            inner: Pages(self.inner.clone()),
         }))
     }
 }
@@ -493,12 +494,35 @@ pub struct RpakAsset {
     pub opt: Option<String>,
     /// Offset in `.mem` of the asset's CPU data, if it has any.
     pub data_mem_offset: Option<u64>,
+    inner: Pages,
+}
+
+/// The pak a [`RpakAsset`] came from, for resolving pointers.
+struct Pages(Arc<Inner>);
+
+impl std::fmt::Debug for Pages {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Pages")
+    }
 }
 
 impl RpakAsset {
     /// The asset header with pointers relocated, as served by the volume.
     pub async fn read_header(&self) -> Result<Bytes> {
         Ok(self.volume.read(&self.header_path).await?.to_bytes())
+    }
+
+    /// The `.mem` offset a pointer stored inside page data points to. Only the asset header is
+    /// relocated by the volume; a pointer in `.mem` is still the stored `{i32 page, i32 offset}`.
+    /// `None` for a null pointer or one that leaves the pages.
+    pub fn mem_offset_of(&self, slot: [u8; 8]) -> Option<u64> {
+        let page = u32::from_le_bytes(slot[..4].try_into().expect("4 bytes"));
+        let offset = u32::from_le_bytes(slot[4..].try_into().expect("4 bytes"));
+        let ptr = PagePtr { page, offset };
+        if ptr.is_null() {
+            return None;
+        }
+        self.inner.0.tables.mem_offset(ptr)
     }
 
     /// `len` bytes of the flat page memory at `offset`.

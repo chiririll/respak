@@ -159,7 +159,7 @@ pub fn one(from: &str, to: &str) -> ConvertRequest {
 pub fn error_kind(result: &OutputResult) -> &ErrorKind {
     match result {
         OutputResult::Err { error } => error.kind(),
-        OutputResult::Ok { files } => panic!("expected an error, got files {files:?}"),
+        OutputResult::Ok { files, .. } => panic!("expected an error, got files {files:?}"),
     }
 }
 

@@ -22,3 +22,6 @@ futures.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["time"] }
