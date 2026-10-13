@@ -7,6 +7,7 @@ mod png;
 use respak_core::value::FileData;
 use respak_core::{capability::Bitmap, Error, ErrorKind, Plugin, Registry, Result, Value};
 
+pub use bc::decode_rgba8;
 pub use dds::{DdsEncode, DdsImage, DdsOptions, DdsRead};
 pub use png::{Mips, PngEncode, PngImage, PngOptions, PngRead};
 

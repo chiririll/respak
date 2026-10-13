@@ -7,7 +7,8 @@ Each item becomes its own vertical slice (README: how a slice works), ending in 
 - model (`rmdl`) → Cast, including its streamed vertex data (`Mesh` / `Skeleton`)
 - animation sequence (`aseq`), anim rig (`arig`) → `Animation`
 - datatable (`dtbl`) → CSV/JSON → `Table`
-- UI image / atlas (`uimg`)
+- UI image atlas (`uimg`, rsx `'gmiu'`, `ui_image_atlas.cpp`): atlas texture by guid + per-sprite UV rects; export as image + JSON with an option to slice into sprites
+- uiia / Snowflake follow-ups: `snowflake::decompress` is verified on one real stream (the high resolution of `ui_main_menu`); txtr streamed mips with codec 2 still say `UnsupportedVersion` (one-line wiring, untested on real data); Oodle/RTech high-resolution uiia data is untested (rsx decodes to `streamedSize` bytes, a likely bug); the Snowflake multi-block path (blocks over the block size, 16 MiB here) has no real-data test
 - shaders, settings, subtitles, localization
 - Respawn VPK
 - … every kind rsx supports

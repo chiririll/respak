@@ -12,8 +12,11 @@ mod pak;
 mod rpak;
 mod rtech;
 mod shader;
+mod snowflake;
 mod starpak;
 mod txtr;
+mod uiia;
+mod uiia_json;
 #[cfg(feature = "testing")]
 pub mod testing;
 
@@ -31,6 +34,8 @@ pub use pak::{AssetEntry, PagePtr, PakHeader, Tables};
 pub use rpak::{RpakAsset, RpakData, RpakRead, MEM};
 pub use starpak::{Starpak, StarpakData, StarpakEntry, StarpakRead};
 pub use txtr::{pixel_format, TxtrAsset, TxtrHeader, TxtrRead};
+pub use uiia::{Quality, Resolution, UiiaAsset, UiiaHeader, UiiaRead};
+pub use uiia_json::{UiiaJsonEncode, UiiaJsonOptions};
 
 /// Registers the Respawn formats.
 #[derive(Debug, Default)]
@@ -94,5 +99,13 @@ impl Plugin for RespawnPlugin {
             .extensions(["txtr"])
             .provides::<dyn Bitmap>()
             .provides::<dyn Metadata>();
+        r.format("uiia")
+            .label("Respawn UI image")
+            .from("rpak.asset", UiiaRead)
+            .extensions(["uiia"])
+            .provides::<dyn Bitmap>()
+            .provides::<dyn Metadata>()
+            .to("uiia.json", UiiaJsonEncode);
+        r.format("uiia.json").label("UI image (JSON)").extensions(["json"]);
     }
 }

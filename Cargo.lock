@@ -2283,6 +2283,7 @@ dependencies = [
  "oozextract",
  "opendal",
  "respak-core",
+ "respak-formats",
  "respak-respawn",
  "serde",
  "serde_json",
