@@ -34,7 +34,7 @@ use respak_core::capability::{Bitmap, BitmapInfo, Dependency, Metadata, PixelFor
 use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version};
 
 use crate::rpak::{RpakAsset, MEM};
-use crate::rtech;
+use crate::{oodle, rtech};
 
 fn corrupt(context: impl Into<String>) -> Error {
     Error::new(ErrorKind::Corrupt { context: context.into() })
@@ -309,7 +309,12 @@ impl Bitmap for TxtrAsset {
                 Ok(Bytes::from(decoded))
             }
             2 => Err(unsupported("Snowflake-compressed streamed mips")),
-            _ => Err(unsupported("Oodle-compressed streamed mips (no Oodle codec available)")),
+            3 => {
+                // The padded block holds the stream and zeros after it.
+                let decoded = oodle::decompress(&block, mip.len).map_err(|e| Error::custom("oodle", e))?;
+                Ok(Bytes::from(decoded))
+            }
+            _ => Err(unsupported("streamed mips with an unknown codec")),
         }
     }
 }

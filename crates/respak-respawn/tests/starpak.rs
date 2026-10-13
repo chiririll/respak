@@ -159,21 +159,49 @@ async fn a_starpak_index_past_the_list_is_corrupt() {
     assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
 }
 
-#[tokio::test]
-async fn compressed_mips_with_a_codec_we_lack_say_so_on_read() {
-    let env = env();
+/// Version 10 `spec` whose streamed mip 2 (16x16, 1024 bytes) is in a 4096-byte block with
+/// `codec`; mip 1 stays plain.
+async fn put_with_block(env: &Env, codec: u16, block: Vec<u8>) {
     let mut t = spec(10);
-    // streamed mip 1 is Oodle (3) with a 4096-byte block (size field 0); mip 2 is plain
-    t.codecs = 3 << 2;
-    t.compressed = [0, 0, 0, 0, 0, 0, 0];
-    put(&env, &t, true, true).await;
-    // layout: mip 1's block is 4096, then mip 2 (1024 padded): the entry is large enough
+    t.codecs = codec << 4;
+    let mut entry = fill(32 * 32 * 4, 20);
+    let mut block = block;
+    block.resize(4096, 0);
+    entry.extend(block);
+    env.input.write(PAK, build_tex_pak(8, std::slice::from_ref(&t))).await.unwrap();
+    env.input.write(STREAMED, build_starpak(&[(0x1000, entry)])).await.unwrap();
+    env.input.write(OPT, build_starpak(&[(0x1000, fill(64 * 64 * 4, 10))])).await.unwrap();
+}
+
+#[tokio::test]
+async fn an_oodle_mip_in_a_padded_block_decodes_to_its_length() {
+    let env = env();
+    put_with_block(&env, 3, oodle_stored(&fill(16 * 16 * 4, 30), 0)).await;
     let v = texture_on(&env.input, GUID).await.unwrap();
     let bmp = v.as_bitmap().unwrap();
-    let err = bmp.read_mip(1, 0).await.unwrap_err();
+    assert_eq!(bmp.read_mip(2, 0).await.unwrap(), Bytes::from(fill(16 * 16 * 4, 30)));
+    // the plain neighbours are untouched
+    assert_eq!(bmp.read_mip(1, 0).await.unwrap(), Bytes::from(fill(32 * 32 * 4, 20)));
+}
+
+#[tokio::test]
+async fn a_broken_oodle_mip_is_corrupt_and_other_codecs_say_so() {
+    let env = env();
+    let stream = oodle_stored(&fill(16 * 16 * 4, 30), 0);
+    // a block that claims more compressed bytes than the padded block holds
+    put_with_block(&env, 3, vec![0x8C, 0x06, 0x03, 0xFF, 0xFE]).await;
+    let v = texture_on(&env.input, GUID).await.unwrap();
+    let err = v.as_bitmap().unwrap().read_mip(2, 0).await.unwrap_err();
+    assert!(err.to_string().contains("oodle"), "{err}");
+    // not a stream at all
+    put_with_block(&env, 3, vec![0xFF; 100]).await;
+    let v = texture_on(&env.input, GUID).await.unwrap();
+    assert!(v.as_bitmap().unwrap().read_mip(2, 0).await.is_err());
+    // Snowflake
+    put_with_block(&env, 2, stream).await;
+    let v = texture_on(&env.input, GUID).await.unwrap();
+    let err = v.as_bitmap().unwrap().read_mip(2, 0).await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::UnsupportedVersion { .. }), "{err}");
-    // an uncompressed neighbour still reads
-    assert_eq!(bmp.read_mip(0, 0).await.unwrap().len(), 64 * 64 * 4);
 }
 
 #[tokio::test]

@@ -41,7 +41,7 @@ Every slice ends with:
 | 11 | [Batch requests, globs, composite outputs](11-slice-batch-requests.md) | `run request.json` | 10 | done |
 | 11a | [Steam login](11a-slice-steam-login.md) | `steam login --qr`, token reused | 11 | done |
 | 11b | [Steam depots as input](11b-slice-steam-depot.md) | `--steam … convert`, only the needed chunks downloaded | 11a | in-progress |
-| 11c | [Oodle decompression](11c-slice-oodle.md) | current Apex textures over Steam | 11b | todo |
+| 11c | [Oodle decompression](11c-slice-oodle.md) | current Apex textures over Steam | 11b | in-progress |
 | 12 | [Events, progress, cancellation](12-slice-events-cancel.md) | progress + Ctrl-C | 11 | todo |
 | 13 | [Linking: a material with its textures](13-slice-linking-material.md) | material + textures | 12 | blocked |
 | 14 | [Backlog](14-backlog.md) | — | — | blocked |

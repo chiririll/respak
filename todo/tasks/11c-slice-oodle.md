@@ -1,5 +1,5 @@
 # 11c · Slice: Oodle decompression
-**Status:** todo · **Depends on:** 11b (real Oodle data comes from Steam) · **See:** PROJECT.md §3, §6, §12
+**Status:** in-progress · **Depends on:** 11b (real Oodle data comes from Steam) · **See:** PROJECT.md §3, §6, §12
 
 ## Goal
 Oodle-compressed paks and streamed mips work, so the current Apex version converts:
@@ -33,6 +33,17 @@ respak --steam 1172470 --depot 1172471 --out out convert paks/Win64/common.rpak/
   - Pak body: a `Body::Oodle` variant in `rpak.rs` next to `Body::Rtech`, decoding `file[header_len .. header_len + cmp_size]` whole (the same cost as RTech, PROJECT.md §11). The rejection at `pak.rs:242-244` goes away. `rpak.rs:418` computes `needed` from `compressed_size`; fix that for Oodle's body-only size.
   - txtr: codec 3 at `txtr.rs:312` decodes the padded block to `mip.len`.
 
+## Findings (check on a real pak, 2026-10-13)
+`common.rpak` (v8, flags `0x220`, 690 MB, 1.56 GB decoded) is Leviathan, no block checksums. `oozextract` alone fails on it; two things are needed:
+- **Restart points.** Every 16 MiB (64 blocks) the block header has the restart bit (`0x80` in byte 0) and the window starts anew. `oozextract` ignores that bit for Kraken/Mermaid/Leviathan. So `oodle::decompress` walks the block headers (2-byte block header + 3-byte quantum header, which gives the compressed size), cuts the stream at the restart points and decodes each segment on its own into `out[seg_start..seg_end]`. Segments are independent: decode on demand.
+- **Upstream bug.** `leviathan.rs:545` rejects a literal run that ends exactly at the match zone end (`Expected 8 < 8`). Fixed in our fork `github.com/chiririll/oozextract`, branch `respak` (on top of upstream `dev`, which has the tail over-read fix), pinned by rev in the workspace `Cargo.toml`. To report upstream.
+- Whole body decoded in about 5 s. Downloading: the headers are spread over the file, so finding segment k reads all of the file before it. A prefix is enough (like RTech), not a slice from the middle; cache the scan.
+
+## Decisions at the gate
+- Oodle is called directly, like RTech (no codec edge from PROJECT.md §6).
+- No comparison with rsx output in the live test or the demo: the live check uses sanity checks (decoded length, tables parse, a valid PNG).
+- Research files (real paks) live in `.respak/research/` (git-ignored); never used by tests.
+
 ## Scope
 `oodle::decompress`; the Oodle pak body; Oodle streamed mips. zstd stays unsupported; Snowflake is still open.
 
@@ -42,14 +53,19 @@ Model, wrap and uiia Oodle data (with those kinds, task 14).
 ## Open question (decide at the sketch)
 PROJECT.md §6 says codecs are shared mediator edges (`compressed → blob`), but none is registered: RTech is called directly (`rpak.rs:71`, `txtr.rs:308`). Should Oodle follow RTech (a direct call), or should this slice turn both into the edge §6 describes? Edges are dispatched by format, so that would also mean one handler switching on `codec`, or one format per codec.
 
-## Tests (proposed, to agree at the gate)
-- **Hand-built streams** (no compressor needed: a Kraken block header marked "stored", then raw bytes, as in oozextract's own tests):
-  - a txtr codec-3 mip in a 4096-byte padded block decodes to exactly `mip.len`;
-  - a v8 pak with flag `1 << 9` lists its assets and serves an asset (body-only size, the `needed` fix).
-- **Bad input:** a truncated stream or a wrong decoded length → `Corrupt`, no panic.
-- **Real streams (needs your approval at the gate):** small Kraken, Mermaid and Leviathan streams of synthetic data, generated once offline with the rarten/ooz `-z` compressor and committed as bytes, with a hash of the decoded output. The input is above 256 KiB so it crosses a block boundary. These are generated data, not game files, but they are not "generated in tests".
+## Tests (agreed at the gate)
+Built (all pass):
+- `oodle` unit tests on hand-built stored streams: round trip across blocks, restart bits cut segments, padding after the stream is ignored, a partial input asks for more, truncated or wrong-length input is `Corrupt`, garbage never panics, checksums and other decoders are `Unsupported`.
+- rpak (v7, v8; restart every block, every 2 blocks, never): an Oodle pak (body-only size) lists its assets and serves them; a short file or a bad stream is `Corrupt`.
+- `Body::Oodle` (unit): a read across segments is right; a read in the last segment decodes only that segment; a stream that ends early is `Corrupt`, the part before the cut still reads.
+- txtr codec 3: a stored stream in a 4096-byte padded block decodes to exactly `mip.len`; a short or bad stream fails with "oodle"; Snowflake (codec 2) is still `UnsupportedVersion`.
 - zstd paks still give `UnsupportedVersion`.
-- **Live** (env var, through 11b): one current-Apex texture with Oodle mips matches rsx's output.
+
+Not done:
+- **Real compressed streams as fixtures.** There is no compressor here (rarten/ooz `-z`), and the stored streams do not exercise the Leviathan decoder or the restart fix. What covers them now is the research run on a real pak (below), which is not in the test suite. Needs your call: generate small Kraken/Mermaid/Leviathan fixtures offline and commit them, or leave it.
+- **Live** (env var, through 11b): one current-Apex texture with Oodle *streamed* mips. Needs your permission to run against Steam.
+
+Research run (not a test, real file in `.respak/research/`, git-ignored): `common.rpak` (690 MB, 180 958 assets) lists in 0.9 s; a permanent-mip texture converts to a correct PNG.
 
 ## Demo
 The user converts textures from the **current** Apex version over Steam and compares them with rsx.

@@ -76,6 +76,48 @@ async fn an_asset_path_resolves_and_its_header_is_served_with_ranged_reads() {
 }
 
 #[tokio::test]
+async fn oodle_paks_list_their_assets_and_serve_them() {
+    // Body-only compressed size, several blocks, a restart in the middle.
+    for (version, restart_blocks) in [(7u16, 0usize), (8, 0), (8, 1), (7, 2)] {
+        let env = env();
+        let pak = oodle_pak(&build_pak(version, &assets()), restart_blocks, 700_000);
+        env.input.write("p/common.rpak", pak).await.unwrap();
+
+        let d = env.engine.discover("p/common.rpak", &depth(1)).await.unwrap();
+        assert_eq!(d.entries.len(), 3, "v{version}/{restart_blocks}");
+        let cx = respak_core::Cx::new(
+            {
+                let mut r = respak_core::Registry::new();
+                r.add(&respak_respawn::RespawnPlugin::new());
+                respak_core::Mediator::new(r)
+            },
+            env.input.clone(),
+            env.input.clone(),
+        );
+        let pak = cx.mediator.open("p/common.rpak", &cx).await.unwrap();
+        let pak = cx.mediator.mount(pak, &cx).await.unwrap();
+        let volume = pak.as_container().unwrap().volume();
+        assert_eq!(volume.read("0x1111222233334444.txtr").await.unwrap().to_vec(), b"TEXTURE-HEADER-BYTES");
+        assert_eq!(volume.read("0xAAAABBBBCCCCDDDD.matl").await.unwrap().to_vec(), b"material header");
+    }
+}
+
+#[tokio::test]
+async fn oodle_paks_with_a_short_file_or_bad_stream_are_corrupt() {
+    let env = env();
+    let pak = oodle_pak(&build_pak(8, &assets()), 0, 700_000);
+    env.input.write("short.rpak", pak[..pak.len() - 10].to_vec()).await.unwrap();
+    let err = env.engine.discover("short.rpak", &depth(1)).await.unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
+
+    let mut bad = pak.clone();
+    bad[0x80] = 0xFF; // the first block header
+    env.input.write("bad.rpak", bad).await.unwrap();
+    let err = env.engine.discover("bad.rpak", &depth(1)).await.unwrap_err();
+    assert!(err.to_string().contains("oodle"), "{err}");
+}
+
+#[tokio::test]
 async fn a_name_resolves_through_its_hashed_guid() {
     let env = env();
     let guid = string_to_guid("texture/foo");
@@ -117,7 +159,6 @@ async fn unsupported_paks_say_why() {
             b
         }, "9"),
         ("patch.rpak", build_pak_with(8, &assets(), &Options { patch_count: 1, ..Default::default() }), "patch"),
-        ("oodle.rpak", build_pak_with(8, &assets(), &Options { flags: 1 << 9, ..Default::default() }), "Oodle"),
         ("zstd.rpak", build_pak_with(7, &assets(), &Options { flags: 1 << 15, ..Default::default() }), "zstd"),
     ];
     for (name, bytes, why) in cases {

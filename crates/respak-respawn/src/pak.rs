@@ -239,12 +239,9 @@ impl PakHeader {
         if h.flags & FLAG_ZSTD != 0 {
             return Err(unsupported(format!("{version} (zstd compression)")));
         }
-        if h.flags & FLAG_OODLE != 0 {
-            return Err(unsupported(format!("{version} (Oodle compression, no Oodle codec available)")));
-        }
         if version == 6 {
             // v6 has no compression.
-            h.flags &= !FLAG_RTECH;
+            h.flags &= !(FLAG_RTECH | FLAG_OODLE);
         }
         if h.decompressed_size < h.header_len as u64 {
             return Err(corrupt("rpak: decompressed size is smaller than the header"));
@@ -256,9 +253,15 @@ impl PakHeader {
         Ok(h)
     }
 
-    /// Whether the body is RTech-compressed.
+    /// Whether the body is Oodle-compressed. Then `compressed_size` is the size of the compressed
+    /// body alone, without the header.
+    pub fn is_oodle(&self) -> bool {
+        self.flags & FLAG_OODLE != 0
+    }
+
+    /// Whether the body is RTech-compressed. Then `compressed_size` includes the header.
     pub fn is_rtech(&self) -> bool {
-        self.flags & FLAG_RTECH != 0
+        self.flags & FLAG_RTECH != 0 && !self.is_oodle()
     }
 
     /// Size of the (decompressed) body, i.e. the image minus the header.

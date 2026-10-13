@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 respak-core.workspace = true
 thiserror.workspace = true
+oozextract.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 opendal.workspace = true

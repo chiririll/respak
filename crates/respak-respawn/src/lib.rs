@@ -3,6 +3,7 @@
 //! The format code is ported from the C++ tool rsx (AGPL-3.0); each module names its sources.
 
 mod guid;
+mod oodle;
 mod pak;
 mod rpak;
 mod rtech;
