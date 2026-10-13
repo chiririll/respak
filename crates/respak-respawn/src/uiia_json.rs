@@ -5,7 +5,8 @@
 //! `uiia.json`:
 //! `name`, `guid`, `version`, `width`, `height` (of the image written), `quality` (`high` from the
 //! starpak, `low` from the pak), `lowResolution` / `highResolution` (`width`, `height`, `tilesX`,
-//! `tilesY`), `streamedSize`, `compression`, `flags` and `image` (the file). Guids are
+//! `tilesY`), `streamedSize`, `compression`, `canvas` (`width`, `height`, `origin`, `extent` as a fraction of the
+//! canvas, `texelOffset`, `scale`: where the image sits on its virtual canvas), `flags` and `image` (the file). Guids are
 //! `0x`-prefixed hex.
 
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 
 use crate::matl_json::TextureTarget;
-use crate::uiia::{Quality, Resolution, UiiaAsset};
+use crate::uiia::{Quality, Resolution, UiiaAsset, UiiaHeader};
 
 /// Options of the `uiia.json` target: `{"type":"uiia.json","image":{"type":"dds"}}`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -38,6 +39,24 @@ fn custom(message: impl Into<String>) -> Error {
 
 fn resolution(r: &Resolution) -> Json {
     json!({ "width": r.width, "height": r.height, "tilesX": r.tiles_x, "tilesY": r.tiles_y })
+}
+
+/// The virtual canvas the image is placed on (see `UiiaHeader::layout`), in pixels of the high
+/// resolution; `null` when the header carries no layout.
+fn canvas(h: &UiiaHeader) -> Json {
+    let l = h.layout.map(f64::from);
+    if l[6] <= 0.0 || l[7] <= 0.0 {
+        return Json::Null;
+    }
+    let (w, ht) = (f64::from(h.high.width), f64::from(h.high.height));
+    json!({
+        "width": (l[6] * (w - 1.0)).round(),
+        "height": (l[7] * (ht - 1.0)).round(),
+        "origin": [l[0], l[1]],
+        "extent": [l[2], l[3]],
+        "texelOffset": [l[4], l[5]],
+        "scale": [l[6], l[7]],
+    })
 }
 
 #[async_trait]
@@ -84,6 +103,7 @@ impl ConvertHandler for UiiaJsonEncode {
             "highResolution": resolution(&h.high),
             "streamedSize": h.streamed_size,
             "compression": h.codec(),
+            "canvas": canvas(h),
             "flags": format!("0x{:02X}", h.flags),
             "image": file,
         });

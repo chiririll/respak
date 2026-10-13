@@ -104,7 +104,7 @@ impl Resolution {
 }
 
 /// The decoded header and CPU data of a UI image.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UiiaHeader {
     /// `rpak.asset` version (2).
     pub version: u32,
@@ -116,6 +116,10 @@ pub struct UiiaHeader {
     pub low: Resolution,
     /// The high resolution (in the starpak).
     pub high: Resolution,
+    /// The eight floats at header 0x20, four x/y pairs placing the image on a virtual canvas:
+    /// origin, size as a fraction of the canvas, half-texel offset (`-0.5 / (size - 1)`) and
+    /// `canvas size / (image size - 1)`.
+    pub layout: [f32; 8],
 }
 
 impl UiiaHeader {
@@ -136,7 +140,8 @@ impl UiiaHeader {
                 return Err(corrupt(format!("uiia {what} resolution {}x{} is not usable", r.width, r.height)));
             }
         }
-        Ok(Self { version, flags, streamed_size: u64::from(le16(header, 0x10)) << 12, low, high })
+        let layout = std::array::from_fn(|i| f32::from_le_bytes([header[0x20 + 4 * i], header[0x21 + 4 * i], header[0x22 + 4 * i], header[0x23 + 4 * i]]));
+        Ok(Self { version, flags, streamed_size: u64::from(le16(header, 0x10)) << 12, low, high, layout })
     }
 
     /// The codec of the streamed data: 0 none, 1 RTech, 2 Snowflake, 3 Oodle.
@@ -545,6 +550,7 @@ mod tests {
             streamed_size: 0,
             low: Resolution::new(31, 31, 0xC0),
             high: Resolution::new(31, 31, 0xC0),
+            layout: [0.0; 8],
         };
         let res = h.low;
         let t = tiles(&h, Quality::Low, &res, &[]).unwrap();
@@ -561,6 +567,7 @@ mod tests {
             streamed_size: 0,
             low: Resolution::new(62, 31, 0xC0),
             high: Resolution::new(62, 31, 0xC0),
+            layout: [0.0; 8],
         };
         let mut data = Vec::new();
         data.extend_from_slice(&(BC1_OP << 24 | 8).to_le_bytes());
