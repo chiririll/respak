@@ -38,8 +38,8 @@ Every slice ends with:
 | 09 | [BC decoding and target options](09-slice-txtr-to-png.md) | `convert …/foo.txtr --to png` | 08 | done |
 | 10 | [Streamed mips from starpaks](10-slice-streamed-mips.md) | full-size texture, byte count | 09 | done |
 | 11 | [Batch requests, globs, composite outputs](11-slice-batch-requests.md) | `run request.json` | 10 | done |
-| 11a | [Steam login](11a-slice-steam-login.md) | `steam login --qr`, token reused | 11 | todo |
-| 11b | [Steam depots as input](11b-slice-steam-depot.md) | `--steam … convert`, only the needed chunks downloaded | 11a | todo |
+| 11a | [Steam login](11a-slice-steam-login.md) | `steam login --qr`, token reused | 11 | done |
+| 11b | [Steam depots as input](11b-slice-steam-depot.md) | `--steam … convert`, only the needed chunks downloaded | 11a | in-progress |
 | 11c | [Oodle decompression](11c-slice-oodle.md) | current Apex textures over Steam | 11b | todo |
 | 12 | [Events, progress, cancellation](12-slice-events-cancel.md) | progress + Ctrl-C | 11 | todo |
 | 13 | [Linking: a material with its textures](13-slice-linking-material.md) | material + textures | 12 | blocked |

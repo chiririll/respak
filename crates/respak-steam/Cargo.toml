@@ -1,0 +1,31 @@
+[package]
+name = "respak-steam"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pinned to a git rev: the "mobile confirmation alongside Steam Guard codes" auth fix is not in 0.3.0 (todo/STEAM.md §2).
+steamroom = { git = "https://github.com/landaire/steamroom", rev = "4dd310cb98d94f2acb99ea62d5996284bd080bca" }
+prost = "0.14"
+base64 = "0.22"
+qrcode = "0.14"
+rpassword = "7"
+respak-core.workspace = true
+opendal.workspace = true
+bytes.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+zip = { version = "8", default-features = false, features = ["deflate"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

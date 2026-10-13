@@ -9,12 +9,29 @@ use respak_core::{ConvertReport, ConvertRequest, DiscoverOptions, Engine, Error,
 /// `respak --root <dir> --out <dir> <command>`
 #[derive(Debug, Parser)]
 pub struct Cli {
-    /// Input root directory.
+    /// Input root directory (required by every command except `steam`).
     #[arg(long)]
-    pub root: PathBuf,
-    /// Output directory.
+    pub root: Option<PathBuf>,
+    /// Output directory (required by every command except `steam`).
     #[arg(long)]
-    pub out: PathBuf,
+    pub out: Option<PathBuf>,
+    /// Read the input from Steam depots of this app id instead of `--root` (needs `--depot`).
+    #[cfg(feature = "steam")]
+    #[arg(long, value_name = "APP", conflicts_with = "root", requires = "depot")]
+    pub steam: Option<u32>,
+    /// Steam branch whose current manifests `--depot ID` takes.
+    #[cfg(feature = "steam")]
+    #[arg(long, default_value = "public", requires = "steam")]
+    pub branch: String,
+    /// A depot to read: `ID` (the branch's current manifest) or `ID=MANIFEST`. Repeat for several;
+    /// on a path collision the later one wins.
+    #[cfg(feature = "steam")]
+    #[arg(long, value_name = "ID[=MANIFEST]", requires = "steam")]
+    pub depot: Vec<respak_steam::DepotSpec>,
+    /// Cap of the Steam chunk cache in `.respak/steam/chunks`, e.g. `500MiB` or `8GiB` (default 8GiB).
+    #[cfg(feature = "steam")]
+    #[arg(long, value_name = "SIZE", value_parser = parse_size, requires = "steam")]
+    pub steam_cache_size: Option<u64>,
     /// What to do.
     #[command(subcommand)]
     pub command: Command,
@@ -23,6 +40,13 @@ pub struct Cli {
 /// Commands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Steam account: log in once, the stored token is reused.
+    #[cfg(feature = "steam")]
+    Steam {
+        /// What to do.
+        #[command(subcommand)]
+        command: SteamCommand,
+    },
     /// Print the format graph as JSON.
     Formats,
     /// Print what each path is and which formats it can be converted to, as JSON.
@@ -52,6 +76,68 @@ pub enum Command {
     },
 }
 
+/// `500MiB`, `8GiB`, `2GB`, `1024` (bytes): binary units for `KiB`/`MiB`/`GiB`/`TiB`, decimal for `KB`/`MB`/`GB`/`TB`.
+pub fn parse_size(text: &str) -> Result<u64, String> {
+    let text = text.trim();
+    let split = text.find(|c: char| !c.is_ascii_digit()).unwrap_or(text.len());
+    let (digits, unit) = text.split_at(split);
+    let number: u64 = digits.parse().map_err(|_| format!("`{text}` is not a size (try 500MiB or 8GiB)"))?;
+    let factor: u64 = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1,
+        "kb" => 1_000,
+        "mb" => 1_000_000,
+        "gb" => 1_000_000_000,
+        "tb" => 1_000_000_000_000,
+        "k" | "kib" => 1 << 10,
+        "m" | "mib" => 1 << 20,
+        "g" | "gib" => 1 << 30,
+        "t" | "tib" => 1 << 40,
+        other => return Err(format!("unknown size unit `{other}` in `{text}`")),
+    };
+    number.checked_mul(factor).ok_or_else(|| format!("`{text}` is too large"))
+}
+
+/// `respak steam <command>`.
+#[cfg(feature = "steam")]
+#[derive(Debug, Subcommand)]
+pub enum SteamCommand {
+    /// Log in to Steam and store a refresh token in `.respak/account.json`.
+    Login {
+        /// Scan a QR code with the Steam mobile app.
+        #[arg(long, conflicts_with = "user", required_unless_present = "user")]
+        qr: bool,
+        /// Log in with this account name (password prompt, then Steam Guard).
+        #[arg(long)]
+        user: Option<String>,
+    },
+    /// Delete the stored login.
+    Logout,
+}
+
+/// Runs a `steam` command; the state directory is `.respak` in the working directory.
+#[cfg(feature = "steam")]
+pub async fn run_steam(command: SteamCommand, out: &mut impl Write) -> anyhow::Result<ExitCode> {
+    use respak_steam::AccountStore;
+    let store = AccountStore::new(".respak");
+    match command {
+        SteamCommand::Login { qr, user } => {
+            let account = match user {
+                Some(name) if !qr => respak_steam::login_user(&store, &name).await?,
+                _ => respak_steam::login_qr(&store, out).await?,
+            };
+            writeln!(out, "Logged in as {} (steam id {}). Token stored in {}.", account.account_name, account.steam_id, store.path().display())?;
+        }
+        SteamCommand::Logout => {
+            if store.delete()? {
+                writeln!(out, "Logged out: {} deleted.", store.path().display())?;
+            } else {
+                writeln!(out, "Not logged in.")?;
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 /// Runs a command; the JSON report goes to `out`, error messages to `err`. The exit code is
 /// non-zero if any output failed. An unusable command line (malformed `--to`) is an `Err`.
 pub async fn run(
@@ -61,6 +147,8 @@ pub async fn run(
     err: &mut impl Write,
 ) -> anyhow::Result<ExitCode> {
     match cli.command {
+        #[cfg(feature = "steam")]
+        Command::Steam { command } => run_steam(command, out).await,
         Command::Formats => {
             serde_json::to_writer_pretty(&mut *out, &engine.formats())?;
             writeln!(out)?;
