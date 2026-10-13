@@ -23,6 +23,9 @@ pub enum Error {
     /// A chunk, key or manifest could not be fetched, decoded or checked.
     #[error("{0}")]
     Fetch(String),
+    /// The cancellation token was triggered.
+    #[error("cancelled")]
+    Cancelled,
     /// Reading from the terminal failed.
     #[error("terminal: {0}")]
     Io(#[from] std::io::Error),

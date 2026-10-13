@@ -153,6 +153,11 @@ pub fn event_line(event: &Event) -> Option<String> {
         Event::Progress { task, done, total } => Some(format!("[{done}/{total}] {task}")),
         Event::InputOpened { path, entries } => Some(format!("opened {path} ({entries} entries)")),
         Event::OutputWritten { path } => Some(format!("wrote {path}")),
+        Event::Custom { source, name, data } if source == "steam" => match name.as_str() {
+            "depot" => Some(format!("steam: depot {} manifest {} ({} files)", data["depot"], data["manifest"], data["files"])),
+            "chunk" => Some(format!("steam: {} chunks, {} bytes downloaded", data["chunks"], data["bytes"])),
+            _ => None,
+        },
         _ => None,
     }
 }

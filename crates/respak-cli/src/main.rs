@@ -30,6 +30,20 @@ async fn main() -> anyhow::Result<ExitCode> {
     let Some(out) = &cli.out else {
         anyhow::bail!("--out is required");
     };
+    // The first Ctrl-C asks the call to stop and report what finished; a second one aborts.
+    let cancel = CancellationToken::new();
+    tokio::spawn({
+        let cancel = cancel.clone();
+        async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                eprintln!("cancelling... (Ctrl-C again to abort)");
+                cancel.cancel();
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    std::process::exit(130);
+                }
+            }
+        }
+    });
     #[cfg(feature = "steam")]
     let mut steam_input = None;
     #[cfg(feature = "steam")]
@@ -39,7 +53,16 @@ async fn main() -> anyhow::Result<ExitCode> {
         if let Some(cap) = cli.steam_cache_size {
             options.cache_cap = cap;
         }
-        let opened = respak_steam::open(options).await?;
+        let events = respak_core::Events::new(respak_core::event::DEFAULT_EVENT_CAPACITY);
+        let mut rx = events.subscribe();
+        tokio::spawn(async move {
+            while let Ok(event) = rx.recv().await {
+                if let Some(line) = respak_cli::event_line(&event) {
+                    eprintln!("{line}");
+                }
+            }
+        });
+        let opened = respak_steam::open(options, &cancel, &events).await?;
         let operator = opened.operator.clone();
         steam_input = Some(opened);
         operator
@@ -59,20 +82,6 @@ async fn main() -> anyhow::Result<ExitCode> {
         }
         None => Box::new(std::io::stdout()),
     };
-    // The first Ctrl-C asks the call to stop and report what finished; a second one aborts.
-    let cancel = CancellationToken::new();
-    tokio::spawn({
-        let cancel = cancel.clone();
-        async move {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                eprintln!("cancelling... (Ctrl-C again to abort)");
-                cancel.cancel();
-                if tokio::signal::ctrl_c().await.is_ok() {
-                    std::process::exit(130);
-                }
-            }
-        }
-    });
     let code = run_with_events(cli, &engine, &cancel, &mut report, &mut std::io::stderr(), &mut std::io::stderr()).await?;
     report.flush()?;
     drop(report);

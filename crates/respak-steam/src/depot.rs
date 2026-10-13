@@ -50,6 +50,9 @@ impl VolumeSource for DepotSource {
     async fn read(&self, path: &str, range: Range<u64>) -> respak_core::Result<Bytes> {
         let f = self.tree.file(path).ok_or_else(|| not_found(path))?;
         self.store.read(f.depot, &f.file.chunks, range).await.map_err(|e| {
+            if matches!(e, crate::Error::Cancelled) {
+                return Error::new(ErrorKind::Cancelled);
+            }
             let message = format!("steam depot {} manifest {} file {}: {e}", f.depot, f.manifest, f.file.path);
             Error::new(ErrorKind::Storage(opendal::Error::new(opendal::ErrorKind::Unexpected, message)))
         })

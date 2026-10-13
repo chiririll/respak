@@ -26,7 +26,12 @@ async fn depot_stat_and_ranged_read() {
     let state = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.respak"));
     let manifest = std::env::var("RESPAK_STEAM_MANIFEST").ok().and_then(|m| m.parse().ok());
     let depots = vec![respak_steam::DepotSpec { depot: 1172471, manifest }];
-    let input = respak_steam::open(respak_steam::SteamOptions::new(1172470, depots, state)).await.expect("open the depot");
+    let input = respak_steam::open(
+        respak_steam::SteamOptions::new(1172470, depots, state),
+        &respak_core::CancellationToken::new(),
+        &respak_core::Events::new(16),
+    )
+    .await.expect("open the depot");
     let stat = input.operator.stat("Paks/Win64/common.rpak").await.expect("stat");
     assert!(stat.content_length() > 1 << 20);
     let head = input.operator.read_with("paks/win64/COMMON.RPAK").range(0..4).await.expect("read").to_vec();

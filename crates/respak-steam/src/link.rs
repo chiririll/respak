@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use opendal::Operator;
+use respak_core::{CancellationToken, Event, Events};
 use steamroom::apps::AppDetails;
 use steamroom::cdn::{CdnClient, CdnServerPool};
 use steamroom::client::{LoggedIn, SteamClient};
@@ -186,6 +187,14 @@ impl Resolver {
     }
 }
 
+/// `future`, unless `cancel` is triggered first.
+async fn cancellable<T>(cancel: &CancellationToken, future: impl std::future::Future<Output = Result<T>>) -> Result<T> {
+    tokio::select! {
+        result = future => result,
+        () = cancel.cancelled() => Err(Error::Cancelled),
+    }
+}
+
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let io = |e: std::io::Error| Error::Account { path: path.display().to_string(), message: e.to_string() };
     std::fs::create_dir_all(path.parent().expect("state files have a parent")).map_err(io)?;
@@ -242,7 +251,7 @@ fn files_of(manifest: &DepotManifest) -> Vec<DepotFile> {
 
 /// Opens the depots: keys and manifests from `.respak/steam/`, else from Steam (logging on with the
 /// stored token; failing with `NeedLogin` rather than prompting).
-pub async fn open(options: SteamOptions) -> Result<SteamInput> {
+pub async fn open(options: SteamOptions, cancel: &CancellationToken, events: &Events) -> Result<SteamInput> {
     let steam_dir = options.state_dir.join("steam");
     let resolver = Arc::new(Resolver {
         accounts: AccountStore::new(&options.state_dir),
@@ -254,37 +263,47 @@ pub async fn open(options: SteamOptions) -> Result<SteamInput> {
     let mut tree = DepotTree::default();
     let mut keys = HashMap::new();
     for spec in &options.depots {
+        if cancel.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
         let depot = spec.depot;
         let key_path = steam_dir.join("keys").join(format!("{depot}.key"));
         let key = match read_cached(&key_path).and_then(|b| <[u8; 32]>::try_from(b).ok()) {
             Some(raw) => DepotKey(raw),
             None => {
-                let key = resolver.depot_key(depot).await?;
+                let key = cancellable(cancel, resolver.depot_key(depot)).await?;
                 write_atomic(&key_path, &key.0)?;
                 key
             }
         };
         let manifest_id = match spec.manifest {
             Some(id) => id,
-            None => resolver.current_manifest(depot).await?,
+            None => cancellable(cancel, resolver.current_manifest(depot)).await?,
         };
         let manifest_path = steam_dir.join("manifests").join(format!("{depot}_{manifest_id}.manifest"));
         let cached = read_cached(&manifest_path).and_then(|b| parse_manifest(&b, &key).ok());
         let manifest = match cached {
             Some(m) => m,
             None => {
-                let bytes = resolver.download_manifest(depot, manifest_id).await?;
+                let bytes = cancellable(cancel, resolver.download_manifest(depot, manifest_id)).await?;
                 let manifest = parse_manifest(&bytes, &key)?;
                 write_atomic(&manifest_path, &bytes)?;
                 manifest
             }
         };
         tracing::info!("depot {depot} manifest {manifest_id}: {} files", manifest.files.len());
+        events.publish(Event::Custom {
+            source: "steam".into(),
+            name: "depot".into(),
+            data: serde_json::json!({ "depot": depot, "manifest": manifest_id, "files": manifest.files.len() }),
+        });
         tree.add(depot, manifest_id, files_of(&manifest));
         keys.insert(depot, key);
     }
     let cache = ChunkCache::open(steam_dir.join("chunks"), options.cache_cap)?;
-    let store = Arc::new(ChunkStore::new(cache, Arc::new(CdnSource::new(resolver, keys)?), PARALLEL_FETCHES));
+    let store = ChunkStore::new(cache, Arc::new(CdnSource::new(resolver, keys)?), PARALLEL_FETCHES)
+        .with_cancel_events(cancel.clone(), events.clone());
+    let store = Arc::new(store);
     let operator = DepotSource::new(tree, store.clone()).into_operator();
     Ok(SteamInput { operator, store })
 }

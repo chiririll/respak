@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::future::{try_join_all, BoxFuture, Shared};
 use futures::FutureExt;
+use respak_core::{CancellationToken, Event, Events};
 use tokio::sync::Semaphore;
 
 use crate::cache::ChunkCache;
@@ -41,6 +42,8 @@ type Fetched = Shared<BoxFuture<'static, std::result::Result<Bytes, String>>>;
 struct Inner {
     cache: ChunkCache,
     source: Arc<dyn ChunkSource>,
+    cancel: CancellationToken,
+    events: Events,
     permits: Semaphore,
     inflight: Mutex<HashMap<Key, Fetched>>,
     downloaded: AtomicU64,
@@ -54,18 +57,35 @@ pub struct ChunkStore {
     inner: Arc<Inner>,
 }
 
+/// What `load` fails with when the token is triggered; `get_one` turns it into [`Error::Cancelled`].
+const CANCELLED: &str = "cancelled";
+
 async fn load(inner: Arc<Inner>, depot: u32, chunk: ChunkRef) -> std::result::Result<Bytes, String> {
+    if inner.cancel.is_cancelled() {
+        return Err(CANCELLED.into());
+    }
     if let Some(data) = inner.cache.get(depot, &chunk).await {
         inner.hits.fetch_add(1, Ordering::Relaxed);
         return Ok(data);
     }
-    let _permit = inner.permits.acquire().await.map_err(|e| e.to_string())?;
-    let (data, downloaded) =
-        inner.source.fetch(depot, &chunk).await.map_err(|e| format!("depot {depot} chunk {}: {e}", chunk.hex()))?;
-    inner.downloaded.fetch_add(1, Ordering::Relaxed);
-    inner.bytes.fetch_add(downloaded, Ordering::Relaxed);
+    let _permit = tokio::select! {
+        permit = inner.permits.acquire() => permit.map_err(|e| e.to_string())?,
+        () = inner.cancel.cancelled() => return Err(CANCELLED.into()),
+    };
+    let fetched = tokio::select! {
+        fetched = inner.source.fetch(depot, &chunk) => fetched,
+        () = inner.cancel.cancelled() => return Err(CANCELLED.into()),
+    };
+    let (data, downloaded) = fetched.map_err(|e| format!("depot {depot} chunk {}: {e}", chunk.hex()))?;
+    let count = inner.downloaded.fetch_add(1, Ordering::Relaxed) + 1;
+    let bytes = inner.bytes.fetch_add(downloaded, Ordering::Relaxed) + downloaded;
+    inner.events.publish(Event::Custom {
+        source: "steam".into(),
+        name: "chunk".into(),
+        data: serde_json::json!({ "depot": depot, "chunk": chunk.hex(), "downloaded": downloaded, "chunks": count, "bytes": bytes }),
+    });
     if let Err(e) = inner.cache.put(depot, &chunk, &data).await {
-        tracing::warn!("cannot cache chunk {}: {e}", chunk.hex());
+        inner.events.publish(Event::Warning { message: format!("cannot cache chunk {}: {e}", chunk.hex()) });
     }
     Ok(data)
 }
@@ -76,6 +96,8 @@ impl ChunkStore {
         let inner = Inner {
             cache,
             source,
+            cancel: CancellationToken::new(),
+            events: Events::new(respak_core::event::DEFAULT_EVENT_CAPACITY),
             permits: Semaphore::new(parallel.max(1)),
             inflight: Mutex::default(),
             downloaded: AtomicU64::new(0),
@@ -83,6 +105,15 @@ impl ChunkStore {
             hits: AtomicU64::new(0),
         };
         Self { inner: Arc::new(inner) }
+    }
+
+    /// Makes the store stop when `cancel` is triggered and publish what it does to `events`.
+    /// Called before the store is shared.
+    pub fn with_cancel_events(mut self, cancel: CancellationToken, events: Events) -> Self {
+        let inner = Arc::get_mut(&mut self.inner).expect("the store is not shared yet");
+        inner.cancel = cancel;
+        inner.events = events;
+        self
     }
 
     async fn get_one(&self, depot: u32, chunk: &ChunkRef) -> Result<Bytes> {
@@ -93,7 +124,7 @@ impl ChunkStore {
         };
         let result = shared.await;
         self.inner.inflight.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
-        result.map_err(Error::Fetch)
+        result.map_err(|e| if e == CANCELLED { Error::Cancelled } else { Error::Fetch(e) })
     }
 
     /// The decompressed chunks `chunks`, in order.
@@ -228,5 +259,56 @@ pub(crate) mod tests {
         assert!(message.contains("depot 7") && message.contains(&fake.chunks[0].hex()) && message.contains("CDN said no"), "{message}");
         assert!(store.read(7, &fake.chunks, 0..10).await.is_err());
         assert_eq!(fake.calls.load(Ordering::SeqCst), 2, "a failure is not remembered");
+    }
+
+    #[tokio::test]
+    async fn a_triggered_token_stops_the_store_before_any_fetch() {
+        let fake = Fake::new(&[100; 4]);
+        let dir = tempfile::tempdir().unwrap();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let store = store(&fake, dir.path(), 8).with_cancel_events(cancel, Events::new(16));
+        assert!(matches!(store.get_many(1, &fake.chunks).await, Err(Error::Cancelled)));
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn cancelling_during_a_download_returns_cancelled_and_caches_nothing() {
+        let fake = Fake::new(&[100; 16]);
+        let dir = tempfile::tempdir().unwrap();
+        let cancel = CancellationToken::new();
+        let store = store(&fake, dir.path(), 2).with_cancel_events(cancel.clone(), Events::new(16));
+        let trigger = tokio::spawn({
+            let cancel = cancel.clone();
+            async move {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                cancel.cancel();
+            }
+        });
+        assert!(matches!(store.get_many(1, &fake.chunks).await, Err(Error::Cancelled)));
+        trigger.await.unwrap();
+        assert!(fake.calls.load(Ordering::SeqCst) <= 2, "only the running fetches started");
+        assert_eq!(store.stats().chunks_downloaded, 0);
+    }
+
+    #[tokio::test]
+    async fn every_download_publishes_a_chunk_event() {
+        let fake = Fake::new(&[100; 3]);
+        let dir = tempfile::tempdir().unwrap();
+        let events = Events::new(16);
+        let mut rx = events.subscribe();
+        let store = store(&fake, dir.path(), 1).with_cancel_events(CancellationToken::new(), events);
+        store.get_many(1, &fake.chunks).await.unwrap();
+        for n in 1..=3u64 {
+            match rx.try_recv().unwrap() {
+                Event::Custom { source, name, data } => {
+                    assert_eq!((source.as_str(), name.as_str()), ("steam", "chunk"));
+                    assert_eq!(data["chunks"], n);
+                    assert_eq!(data["bytes"], n * 50);
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+        assert!(rx.try_recv().is_err());
     }
 }
