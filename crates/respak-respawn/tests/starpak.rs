@@ -106,6 +106,24 @@ async fn a_missing_optional_starpak_falls_back_to_lower_mips() {
 }
 
 #[tokio::test]
+async fn skipped_optional_mips_are_a_warning_event() {
+    let env = env();
+    put(&env, &spec(10), true, false).await;
+    let cx = cx_on(&env.input);
+    let mut rx = cx.mediator.subscribe();
+    let asset = cx.mediator.open(GUID, &cx).await.unwrap();
+    cx.mediator.identify(asset, &cx).await.unwrap();
+    let mut warnings = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        if let respak_core::Event::Warning { message } = e {
+            warnings.push(message);
+        }
+    }
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("1 optional mip(s) are skipped"), "{warnings:?}");
+}
+
+#[tokio::test]
 async fn a_missing_mandatory_starpak_is_a_missing_dependency() {
     let env = env();
     put(&env, &spec(10), false, true).await;

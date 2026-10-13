@@ -96,7 +96,7 @@ async fn to_dds(b: BitmapBuf) -> std::result::Result<Vec<u8>, ErrorKind> {
         .unwrap();
     let request: ConvertRequest =
         serde_json::from_str(r#"{"version":1,"outputs":[{"from":"x.fake","to":{"type":"dds"}}]}"#).unwrap();
-    match engine.convert(&request).await.unwrap().outputs.remove(0).result {
+    match engine.convert(&request, &respak_core::CancellationToken::new()).await.unwrap().outputs.remove(0).result {
         OutputResult::Ok { files } => Ok(output.read(&files[0]).await.unwrap().to_vec()),
         OutputResult::Err { error } => Err(match error.kind() {
             ErrorKind::UnsupportedVersion { .. } => ErrorKind::UnknownFormat,

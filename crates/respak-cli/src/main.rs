@@ -5,8 +5,8 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use opendal::{services::Fs, Operator};
-use respak_cli::{run, Cli};
-use respak_core::Engine;
+use respak_cli::{run_with_events, Cli};
+use respak_core::{CancellationToken, Engine};
 use respak_formats::FormatsPlugin;
 use respak_respawn::RespawnPlugin;
 
@@ -59,7 +59,21 @@ async fn main() -> anyhow::Result<ExitCode> {
         }
         None => Box::new(std::io::stdout()),
     };
-    let code = run(cli, &engine, &mut report, &mut std::io::stderr()).await?;
+    // The first Ctrl-C asks the call to stop and report what finished; a second one aborts.
+    let cancel = CancellationToken::new();
+    tokio::spawn({
+        let cancel = cancel.clone();
+        async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                eprintln!("cancelling... (Ctrl-C again to abort)");
+                cancel.cancel();
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    std::process::exit(130);
+                }
+            }
+        }
+    });
+    let code = run_with_events(cli, &engine, &cancel, &mut report, &mut std::io::stderr(), &mut std::io::stderr()).await?;
     report.flush()?;
     drop(report);
     #[cfg(feature = "steam")]

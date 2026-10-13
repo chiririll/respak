@@ -229,18 +229,18 @@ async fn discover_opens_containers_by_depth() {
     let env = fixture().await;
     let paths = |d: &respak_core::Discovery| d.entries.iter().map(|e| e.path.clone()).collect::<Vec<_>>();
 
-    let d0 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 0 }).await.unwrap();
+    let d0 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 0 }, &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(paths(&d0), ["outer.pak"]);
     assert_eq!(d0.entries[0].format.as_deref(), Some("pak"));
 
-    let d1 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 1 }).await.unwrap();
+    let d1 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 1 }, &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(paths(&d1), ["outer.pak/inner.pak", "outer.pak/other.txt", "outer.pak/z.dat"]);
     assert_eq!(d1.entries[0].format.as_deref(), Some("pak"), "a nested pak is not opened at depth 1");
     assert_eq!(d1.entries[1].format, None);
     let z = &d1.entries[2];
     assert_eq!((z.format.as_deref(), z.version.as_deref(), z.kind.as_deref(), z.name.as_deref()), (Some("pak.item"), Some("7"), Some("dat"), Some("z.dat")));
 
-    let d2 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 2 }).await.unwrap();
+    let d2 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 2 }, &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(
         paths(&d2),
         ["outer.pak/inner.pak/a/x.dat", "outer.pak/inner.pak/a/y.bin", "outer.pak/other.txt", "outer.pak/z.dat"]
@@ -250,13 +250,13 @@ async fn discover_opens_containers_by_depth() {
 #[tokio::test]
 async fn discover_accepts_a_path_inside_a_container() {
     let env = fixture().await;
-    let d = env.engine.discover("outer.pak/inner.pak/a/x.dat", &DiscoverOptions::default()).await.unwrap();
+    let d = env.engine.discover("outer.pak/inner.pak/a/x.dat", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(d.entries[0].path, "outer.pak/inner.pak/a/x.dat");
     assert_eq!(d.entries[0].format.as_deref(), Some("pak.item"));
 }
 
 async fn globbed(env: &Env, pattern: &str) -> Result<Vec<String>> {
-    Ok(env.engine.open(pattern).await?.iter().map(|v| v.key().to_string()).collect())
+    Ok(env.engine.open(pattern, &respak_core::CancellationToken::new()).await?.iter().map(|v| v.key().to_string()).collect())
 }
 
 #[tokio::test]
@@ -287,4 +287,18 @@ async fn a_pattern_through_a_file_that_is_not_a_container_matches_nothing() {
     let env = fixture().await;
     let err = globbed(&env, "plain.txt/*.dat").await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::NoMatch { .. }), "{err}");
+}
+
+#[tokio::test]
+async fn mounting_a_container_publishes_input_opened() {
+    let env = fixture().await;
+    let mut rx = env.engine.events();
+    env.engine.discover("outer.pak", &DiscoverOptions { depth: 1 }, &respak_core::CancellationToken::new()).await.unwrap();
+    let mut opened = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        if let respak_core::Event::InputOpened { path, entries } = e {
+            opened.push((path, entries));
+        }
+    }
+    assert_eq!(opened, [("outer.pak".to_owned(), 3)]);
 }

@@ -24,12 +24,12 @@ async fn every_version_is_detected_and_listed() {
         let env = env();
         env.input.write("common.rpak", build_pak(version, &assets())).await.unwrap();
 
-        let d0 = env.engine.discover("common.rpak", &depth(0)).await.unwrap();
+        let d0 = env.engine.discover("common.rpak", &depth(0), &respak_core::CancellationToken::new()).await.unwrap();
         let e = &d0.entries[0];
         assert_eq!((e.format.as_deref(), e.score), (Some("rpak"), 13), "v{version}");
         assert_eq!(e.version.as_deref(), Some(version.to_string().as_str()));
 
-        let d1 = env.engine.discover("common.rpak", &depth(1)).await.unwrap();
+        let d1 = env.engine.discover("common.rpak", &depth(1), &respak_core::CancellationToken::new()).await.unwrap();
         let listed: Vec<_> = d1
             .entries
             .iter()
@@ -52,7 +52,7 @@ async fn an_asset_path_resolves_and_its_header_is_served_with_ranged_reads() {
     let env = env();
     env.input.write("p/common.rpak", build_pak(8, &assets())).await.unwrap();
 
-    let d = env.engine.discover("p/common.rpak/0x1111222233334444.txtr", &depth(0)).await.unwrap();
+    let d = env.engine.discover("p/common.rpak/0x1111222233334444.txtr", &depth(0), &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(d.entries[0].format.as_deref(), Some("txtr"));
     assert_eq!(d.entries[0].version.as_deref(), Some("10"));
 
@@ -83,7 +83,7 @@ async fn oodle_paks_list_their_assets_and_serve_them() {
         let pak = oodle_pak(&build_pak(version, &assets()), restart_blocks, 700_000);
         env.input.write("p/common.rpak", pak).await.unwrap();
 
-        let d = env.engine.discover("p/common.rpak", &depth(1)).await.unwrap();
+        let d = env.engine.discover("p/common.rpak", &depth(1), &respak_core::CancellationToken::new()).await.unwrap();
         assert_eq!(d.entries.len(), 3, "v{version}/{restart_blocks}");
         let cx = respak_core::Cx::new(
             {
@@ -107,13 +107,13 @@ async fn oodle_paks_with_a_short_file_or_bad_stream_are_corrupt() {
     let env = env();
     let pak = oodle_pak(&build_pak(8, &assets()), 0, 700_000);
     env.input.write("short.rpak", pak[..pak.len() - 10].to_vec()).await.unwrap();
-    let err = env.engine.discover("short.rpak", &depth(1)).await.unwrap_err();
+    let err = env.engine.discover("short.rpak", &depth(1), &respak_core::CancellationToken::new()).await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
 
     let mut bad = pak.clone();
     bad[0x80] = 0xFF; // the first block header
     env.input.write("bad.rpak", bad).await.unwrap();
-    let err = env.engine.discover("bad.rpak", &depth(1)).await.unwrap_err();
+    let err = env.engine.discover("bad.rpak", &depth(1), &respak_core::CancellationToken::new()).await.unwrap_err();
     assert!(err.to_string().contains("oodle"), "{err}");
 }
 
@@ -123,11 +123,11 @@ async fn a_name_resolves_through_its_hashed_guid() {
     let guid = string_to_guid("texture/foo");
     env.input.write("c.rpak", build_pak(8, &[TestAsset::new(guid, b"txtr", 8, b"named")])).await.unwrap();
 
-    let d = env.engine.discover("c.rpak/texture/foo.txtr", &depth(0)).await.unwrap();
+    let d = env.engine.discover("c.rpak/texture/foo.txtr", &depth(0), &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(d.entries[0].format.as_deref(), Some("txtr"));
     // Case and slash direction do not matter to the hash.
-    env.engine.discover("c.rpak/Texture\\Foo.txtr", &depth(0)).await.unwrap();
-    env.engine.discover("c.rpak/TEXTURE/FOO.TXTR", &depth(0)).await.unwrap();
+    env.engine.discover("c.rpak/Texture\\Foo.txtr", &depth(0), &respak_core::CancellationToken::new()).await.unwrap();
+    env.engine.discover("c.rpak/TEXTURE/FOO.TXTR", &depth(0), &respak_core::CancellationToken::new()).await.unwrap();
 }
 
 #[tokio::test]
@@ -135,7 +135,7 @@ async fn a_wrong_kind_or_missing_asset_is_not_found() {
     let env = env();
     env.input.write("c.rpak", build_pak(8, &assets())).await.unwrap();
     for path in ["c.rpak/0x1111222233334444.matl", "c.rpak/0x1.txtr", "c.rpak/nothing", "c.rpak/0x1111222233334444"] {
-        let err = env.engine.discover(path, &depth(0)).await.unwrap_err();
+        let err = env.engine.discover(path, &depth(0), &respak_core::CancellationToken::new()).await.unwrap_err();
         assert!(matches!(err.kind(), ErrorKind::NotFound { .. }), "{path}: {err}");
     }
 }
@@ -145,7 +145,7 @@ async fn duplicate_guids_are_listed_once() {
     let env = env();
     let twice = [TestAsset::new(7, b"txtr", 8, b"first"), TestAsset::new(7, b"txtr", 8, b"second")];
     env.input.write("c.rpak", build_pak(7, &twice)).await.unwrap();
-    let d = env.engine.discover("c.rpak", &depth(1)).await.unwrap();
+    let d = env.engine.discover("c.rpak", &depth(1), &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(d.entries.len(), 1);
 }
 
@@ -163,7 +163,7 @@ async fn unsupported_paks_say_why() {
     ];
     for (name, bytes, why) in cases {
         env.input.write(name, bytes).await.unwrap();
-        let err = env.engine.discover(name, &depth(1)).await.unwrap_err();
+        let err = env.engine.discover(name, &depth(1), &respak_core::CancellationToken::new()).await.unwrap_err();
         match err.kind() {
             ErrorKind::UnsupportedVersion { format, version } => {
                 assert_eq!(format, "rpak", "{name}");
@@ -190,7 +190,7 @@ async fn broken_paks_are_corrupt_not_a_panic() {
     ];
     for (name, bytes) in cases {
         env.input.write(name, bytes).await.unwrap();
-        let err = env.engine.discover(name, &depth(1)).await.unwrap_err();
+        let err = env.engine.discover(name, &depth(1), &respak_core::CancellationToken::new()).await.unwrap_err();
         assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{name}: {err}");
     }
 }
@@ -252,7 +252,7 @@ mod real {
         }
         let env = env();
         env.input.write("ui_main_menu.rpak", std::fs::read(UI_MAIN_MENU).unwrap()).await.unwrap();
-        let d = env.engine.discover("ui_main_menu.rpak", &depth(1)).await.unwrap();
+        let d = env.engine.discover("ui_main_menu.rpak", &depth(1), &respak_core::CancellationToken::new()).await.unwrap();
         assert_eq!(d.entries.len(), 1);
         let e = &d.entries[0];
         assert_eq!(e.path, "ui_main_menu.rpak/0x35492C0539B480BC.uiia");
@@ -274,7 +274,7 @@ mod real {
         let mut r = respak_core::Registry::new();
         r.add(&respak_respawn::RespawnPlugin::new());
         let cx = respak_core::Cx::new(respak_core::Mediator::new(r), env.input.clone(), env.input.clone());
-        let d = env.engine.discover("ui.rpak", &depth(1)).await.unwrap();
+        let d = env.engine.discover("ui.rpak", &depth(1), &respak_core::CancellationToken::new()).await.unwrap();
         let (mut named, mut matched) = (0, 0);
         for e in d.entries.iter().filter(|e| e.kind.as_deref() == Some("txtr")) {
             let asset = cx.mediator.open(&e.path, &cx).await.unwrap();
@@ -302,7 +302,7 @@ mod real {
         }
         let env = env();
         env.input.write("ui.rpak", std::fs::read(UI).unwrap()).await.unwrap();
-        let d = env.engine.discover("ui.rpak", &depth(1)).await.unwrap();
+        let d = env.engine.discover("ui.rpak", &depth(1), &respak_core::CancellationToken::new()).await.unwrap();
         assert_eq!(d.entries.len(), 1665);
         // Textures are recognised as `txtr`; other kinds have no reader yet.
         let textures = d.entries.iter().filter(|e| e.format.as_deref() == Some("txtr")).count();

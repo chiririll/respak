@@ -54,7 +54,7 @@ async fn to_png(
         serde_json::json!({ "version": 1, "outputs": [{ "from": from, "to": to, "path": "out.png" }] }),
     )
     .unwrap();
-    match env.0.convert(&request).await.unwrap().outputs.remove(0).result {
+    match env.0.convert(&request, &respak_core::CancellationToken::new()).await.unwrap().outputs.remove(0).result {
         OutputResult::Ok { files } => Ok(env.2.read(&files[0]).await.unwrap().to_vec()),
         OutputResult::Err { error } => Err(match error.kind() {
             ErrorKind::InvalidOptions { message } => ErrorKind::InvalidOptions { message: message.clone() },
@@ -161,7 +161,7 @@ async fn mips_all_writes_a_folder_with_one_png_per_mip() {
         serde_json::json!({ "version": 1, "outputs": [{ "from": "t.dds", "to": { "type": "png", "mips": "all" } }] }),
     )
     .unwrap();
-    let report = env.0.convert(&request).await.unwrap();
+    let report = env.0.convert(&request, &respak_core::CancellationToken::new()).await.unwrap();
     let OutputResult::Ok { files } = &report.outputs[0].result else { panic!("{:?}", report.outputs[0].result) };
     assert_eq!(files, &["t/mip0.png", "t/mip1.png"]);
     let (w, h, px) = decode(&env.2.read("t/mip0.png").await.unwrap().to_vec());

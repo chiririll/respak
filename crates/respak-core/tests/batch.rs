@@ -41,7 +41,7 @@ async fn env() -> Env {
 }
 
 async fn run(env: &Env, json: &str) -> Vec<(String, std::result::Result<Vec<String>, &'static str>)> {
-    let report = env.engine.convert(&request(json)).await.unwrap();
+    let report = env.engine.convert(&request(json), &respak_core::CancellationToken::new()).await.unwrap();
     report
         .outputs
         .into_iter()
@@ -156,7 +156,7 @@ async fn max_concurrency_keeps_results_in_request_order() {
     for i in 0..5 {
         input.write(&format!("f{i}.aa"), "AAAA").await.unwrap();
     }
-    let report = engine.convert(&request(r#"{"version":1,"outputs":[{"from":"*.aa","to":{"type":"beta"}}]}"#)).await.unwrap();
+    let report = engine.convert(&request(r#"{"version":1,"outputs":[{"from":"*.aa","to":{"type":"beta"}}]}"#), &respak_core::CancellationToken::new()).await.unwrap();
     let froms: Vec<_> = report.outputs.iter().map(|o| o.from.clone()).collect();
     assert_eq!(froms, ["f0.aa", "f1.aa", "f2.aa", "f3.aa", "f4.aa"]);
 }
@@ -164,8 +164,8 @@ async fn max_concurrency_keeps_results_in_request_order() {
 #[tokio::test]
 async fn engine_open_takes_a_path_or_a_glob() {
     let env = env().await;
-    assert_eq!(env.engine.open("a/*.aa").await.unwrap().len(), 2);
-    assert_eq!(env.engine.open("a/1.aa").await.unwrap().len(), 1);
-    assert!(matches!(env.engine.open("a/*.zz").await.unwrap_err().kind(), ErrorKind::NoMatch { .. }));
-    assert!(matches!(env.engine.open("a/9.aa").await.unwrap_err().kind(), ErrorKind::NotFound { .. }));
+    assert_eq!(env.engine.open("a/*.aa", &respak_core::CancellationToken::new()).await.unwrap().len(), 2);
+    assert_eq!(env.engine.open("a/1.aa", &respak_core::CancellationToken::new()).await.unwrap().len(), 1);
+    assert!(matches!(env.engine.open("a/*.zz", &respak_core::CancellationToken::new()).await.unwrap_err().kind(), ErrorKind::NoMatch { .. }));
+    assert!(matches!(env.engine.open("a/9.aa", &respak_core::CancellationToken::new()).await.unwrap_err().kind(), ErrorKind::NotFound { .. }));
 }

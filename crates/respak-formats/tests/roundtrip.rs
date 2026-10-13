@@ -24,7 +24,7 @@ impl Env {
     async fn convert(&self, from: &str, to: &str) -> Result<Vec<u8>, ErrorKind> {
         let json = format!(r#"{{"version":1,"outputs":[{{"from":"{from}","to":{{"type":"{to}"}},"path":"out.{to}"}}]}}"#);
         let request: ConvertRequest = serde_json::from_str(&json).unwrap();
-        let report = self.engine.convert(&request).await.unwrap();
+        let report = self.engine.convert(&request, &respak_core::CancellationToken::new()).await.unwrap();
         match report.outputs.into_iter().next().unwrap().result {
             OutputResult::Ok { files } => Ok(self.output.read(&files[0]).await.unwrap().to_vec()),
             OutputResult::Err { error } => Err(clone_kind(error.kind())),

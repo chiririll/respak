@@ -28,6 +28,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
+use respak_core::CancellationToken;
 use respak_core::capability::{Container, Dependency, Metadata};
 use respak_core::value::FileData;
 use respak_core::volume::{volume_operator, VolumeEntry, VolumeSource, VolumeStat};
@@ -56,9 +57,26 @@ enum Body {
     /// Stored as is: ranged reads of the file.
     Raw { op: Operator, path: String, start: u64 },
     /// RTech-compressed: the body is decoded front to back, only as far as reads need.
-    Rtech { op: Operator, path: String, start: u64, header_len: usize, len: u64, file_len: u64, state: Mutex<Progress> },
+    Rtech {
+        op: Operator,
+        path: String,
+        start: u64,
+        header_len: usize,
+        len: u64,
+        file_len: u64,
+        state: Mutex<Progress>,
+        cancel: CancellationToken,
+    },
     /// Oodle-compressed: cut into segments that decode on their own, each only when a read needs it.
-    Oodle { op: Operator, path: String, start: u64, len: u64, stream_len: u64, state: Mutex<OodleProgress> },
+    Oodle {
+        op: Operator,
+        path: String,
+        start: u64,
+        len: u64,
+        stream_len: u64,
+        state: Mutex<OodleProgress>,
+        cancel: CancellationToken,
+    },
 }
 
 /// How far an Oodle body has been read and scanned, and the segments decoded so far.
@@ -83,17 +101,26 @@ struct Progress {
     done: bool,
 }
 
+/// `Cancelled` once the host has triggered the call's token.
+fn check(cancel: &CancellationToken) -> Result<()> {
+    if cancel.is_cancelled() {
+        return Err(Error::new(ErrorKind::Cancelled));
+    }
+    Ok(())
+}
+
 /// First read of a compressed pak, and the least growth of the input between decoding attempts.
 const MIN_INPUT: u64 = 1 << 20;
 
 impl Body {
     /// The decoded body, at least `upto` bytes of it (fewer only if the body is shorter).
     async fn decoded(&self, upto: u64) -> Result<Bytes> {
-        let Self::Rtech { op, path, start, header_len, len, file_len, state } = self else {
+        let Self::Rtech { op, path, start, header_len, len, file_len, state, cancel } = self else {
             unreachable!("only compressed bodies are decoded")
         };
         let mut progress = state.lock().await;
         while (progress.body.len() as u64) < upto && !progress.done {
+            check(cancel)?;
             // Decode a bit ahead, so a run of small reads does not decode again each time.
             let want = upto.max(2 * progress.body.len() as u64).max(MIN_INPUT).min(*len);
             let complete = progress.input.len() as u64 >= *file_len;
@@ -128,7 +155,7 @@ impl Body {
 
     /// The decoded bytes of an Oodle body in `range` (inside the body).
     async fn oodle_read(&self, range: Range<u64>) -> Result<Bytes> {
-        let Self::Oodle { op, path, start, len, stream_len, state } = self else {
+        let Self::Oodle { op, path, start, len, stream_len, state, cancel } = self else {
             unreachable!("only Oodle bodies are read this way")
         };
         if range.start > range.end || range.end > *len {
@@ -146,6 +173,7 @@ impl Body {
         // Walk the stream until the last segment needed is known, and where it ends.
         let segment_of = |p: &OodleProgress, at: usize| p.scan.segments.iter().rposition(|s| s.output <= at);
         let (first, last) = loop {
+            check(cancel)?;
             if p.scan.scanned() >= to {
                 let last = segment_of(p, to - 1).ok_or_else(|| corrupt("rpak: no Oodle segment"))?;
                 if p.scan.scanned() >= total || p.scan.segments.len() > last + 1 {
@@ -173,6 +201,7 @@ impl Body {
             if p.segments.contains_key(&k) {
                 continue;
             }
+            check(cancel)?;
             let seg = p.scan.segments[k];
             let (out_end, in_end) = match p.scan.segments.get(k + 1) {
                 Some(next) => (next.output, next.input),
@@ -528,7 +557,7 @@ impl Detect for RpakRead {
 
 #[async_trait]
 impl ReadHandler for RpakRead {
-    async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
+    async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
         let file = source
             .downcast_ref::<FileData>()
             .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "rpak must be read from a file".into() }))?;
@@ -562,6 +591,7 @@ impl ReadHandler for RpakRead {
                 len: header.body_len(),
                 stream_len: header.compressed_size,
                 state: Mutex::default(),
+                cancel: cx.cancel.clone(),
             }
         } else if compressed {
             Body::Rtech {
@@ -572,6 +602,7 @@ impl ReadHandler for RpakRead {
                 len: header.body_len(),
                 file_len: header.compressed_size,
                 state: Mutex::default(),
+                cancel: cx.cancel.clone(),
             }
         } else {
             Body::Raw { op: file.op.clone(), path: file.path.clone(), start: start + header_len as u64 }
@@ -600,10 +631,11 @@ mod tests {
 
     const BLOCK: usize = 0x40000;
 
-    async fn body(stream: Vec<u8>, len: usize) -> (Body, Operator) {
+    async fn body(stream: Vec<u8>, len: usize) -> (Body, Operator, CancellationToken) {
         let op = Operator::new(opendal::services::Memory::default()).unwrap();
         let stream_len = stream.len() as u64;
         let at = 100; // some bytes before the stream: the header
+        let cancel = CancellationToken::new();
         let mut file = vec![0u8; at];
         file.extend(stream);
         op.write("p", file).await.unwrap();
@@ -614,8 +646,9 @@ mod tests {
             len: len as u64,
             stream_len,
             state: Mutex::default(),
+            cancel: cancel.clone(),
         };
-        (body, op)
+        (body, op, cancel)
     }
 
     fn data(n: usize) -> Vec<u8> {
@@ -626,7 +659,7 @@ mod tests {
     async fn reads_across_segments_and_decodes_only_what_it_needs() {
         let data = data(7 * BLOCK + 123);
         // segments of 2 blocks: [0,2) [2,4) [4,6) [6,7.x)
-        let (body, _) = body(oodle_stored(&data, 2), data.len()).await;
+        let (body, _, _) = body(oodle_stored(&data, 2), data.len()).await;
         // inside the last segment first: earlier ones stay undecoded
         let tail = (6 * BLOCK + 10) as u64..data.len() as u64;
         assert_eq!(body.read(tail.clone()).await.unwrap(), Bytes::copy_from_slice(&data[tail.start as usize..]));
@@ -642,11 +675,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_triggered_token_stops_decoding_between_segments() {
+        let data = data(7 * BLOCK + 123);
+        let (body, _, cancel) = body(oodle_stored(&data, 2), data.len()).await;
+        let tail = (6 * BLOCK) as u64..data.len() as u64;
+        body.read(tail).await.unwrap();
+        cancel.cancel();
+        let err = body.read(0..(5 * BLOCK) as u64).await.unwrap_err();
+        assert!(matches!(err.kind(), ErrorKind::Cancelled), "{err}");
+        let Body::Oodle { state, .. } = &body else { unreachable!() };
+        assert_eq!(state.lock().await.segments.len(), 1, "no segment was decoded after the cancel");
+    }
+
+    #[tokio::test]
     async fn a_stream_that_ends_early_is_corrupt() {
         let data = data(3 * BLOCK);
         let mut stream = oodle_stored(&data, 1);
         stream.truncate(stream.len() - 1000);
-        let (body, _) = body(stream, data.len()).await;
+        let (body, _, _) = body(stream, data.len()).await;
         assert!(body.read(0..data.len() as u64).await.is_err());
         // the part before the cut still reads
         assert_eq!(body.read(0..10).await.unwrap(), Bytes::copy_from_slice(&data[..10]));

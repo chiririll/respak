@@ -134,7 +134,7 @@ impl Mediator {
                             Box::pin(self.expand_in(&volume, &mount_path, "", rest, cx, out)).await?;
                         }
                         Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. } | ErrorKind::UnknownFormat) => {}
-                        Err(e) => tracing::warn!("cannot look inside {virtual_path}: {e}"),
+                        Err(e) => cx.warn(format!("cannot look inside {virtual_path}: {e}")),
                     }
                 }
                 // A directory matched the last segment: only files are outputs.

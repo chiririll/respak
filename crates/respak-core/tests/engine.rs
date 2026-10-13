@@ -77,7 +77,7 @@ async fn equal_top_scores_are_ambiguous_and_no_match_is_unknown() {
     env.input.write("junk.bin", "zzzz").await.unwrap();
     let report = env.engine.convert(&request(
         r#"{"version":1,"outputs":[{"from":"tie.bin","to":{"type":"one"}},{"from":"junk.bin","to":{"type":"one"}}]}"#,
-    ))
+    ), &respak_core::CancellationToken::new())
     .await
     .unwrap();
     match error_kind(&report.outputs[0].result) {
@@ -108,7 +108,7 @@ async fn header_prefix_is_sized_to_the_largest_header_len() {
 async fn converts_through_a_capability_edge_and_defaults_the_output_path() {
     let env = env_with(register_ab);
     env.input.write("dir.v2/pic.aa", "AAAA").await.unwrap();
-    let report = env.engine.convert(&one("dir.v2/pic.aa", "beta")).await.unwrap();
+    let report = env.engine.convert(&one("dir.v2/pic.aa", "beta"), &respak_core::CancellationToken::new()).await.unwrap();
     match &report.outputs[0].result {
         OutputResult::Ok { files } => assert_eq!(files, &["dir.v2/pic.bb"]),
         OutputResult::Err { error } => panic!("{error}"),
@@ -121,7 +121,7 @@ async fn explicit_path_overrides_the_default() {
     let env = env_with(register_ab);
     env.input.write("pic.aa", "AAAA").await.unwrap();
     let req = request(r#"{"version":1,"outputs":[{"from":"pic.aa","to":{"type":"beta"},"path":"custom/out.dat"}]}"#);
-    env.engine.convert(&req).await.unwrap();
+    env.engine.convert(&req, &respak_core::CancellationToken::new()).await.unwrap();
     assert!(env.output.exists("custom/out.dat").await.unwrap());
     assert!(!env.output.exists("pic.bb").await.unwrap());
 }
@@ -142,7 +142,7 @@ async fn cheaper_capability_edge_wins() {
             .cost(2);
     });
     env.input.write("pic.aa", "AAAA").await.unwrap();
-    env.engine.convert(&one("pic.aa", "beta")).await.unwrap();
+    env.engine.convert(&one("pic.aa", "beta"), &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(env.output.read("pic.bb").await.unwrap().to_vec(), b"blob-edge");
 }
 
@@ -150,7 +150,7 @@ async fn cheaper_capability_edge_wins() {
 async fn no_edge_to_the_target_is_no_path() {
     let env = env_with(register_ab);
     env.input.write("pic.aa", "AAAA").await.unwrap();
-    let report = env.engine.convert(&one("pic.aa", "gamma")).await.unwrap();
+    let report = env.engine.convert(&one("pic.aa", "gamma"), &respak_core::CancellationToken::new()).await.unwrap();
     assert!(matches!(error_kind(&report.outputs[0].result), ErrorKind::NoPath { .. }));
 }
 
@@ -170,7 +170,7 @@ async fn a_result_that_is_not_a_blob_is_an_error_and_writes_nothing() {
     let env = env_with(register_ab);
     env.input.write("pic.aa", "AAAA").await.unwrap();
     // alpha -> alpha is the identified `Img`, which is not writable.
-    let report = env.engine.convert(&one("pic.aa", "alpha")).await.unwrap();
+    let report = env.engine.convert(&one("pic.aa", "alpha"), &respak_core::CancellationToken::new()).await.unwrap();
     assert!(matches!(error_kind(&report.outputs[0].result), ErrorKind::Custom { .. }));
     assert!(!env.output.exists("pic.aa").await.unwrap());
 }
@@ -178,7 +178,7 @@ async fn a_result_that_is_not_a_blob_is_an_error_and_writes_nothing() {
 #[tokio::test]
 async fn unknown_request_version_is_invalid() {
     let env = env_with(register_ab);
-    let err = env.engine.convert(&request(r#"{"version":2,"outputs":[]}"#)).await.err().unwrap();
+    let err = env.engine.convert(&request(r#"{"version":2,"outputs":[]}"#), &respak_core::CancellationToken::new()).await.err().unwrap();
     assert!(matches!(err.kind(), ErrorKind::InvalidRequest { .. }));
 }
 
@@ -190,7 +190,7 @@ async fn a_failing_output_does_not_stop_the_others() {
         .engine
         .convert(&request(
             r#"{"version":1,"outputs":[{"from":"missing.aa","to":{"type":"beta"}},{"from":"pic.aa","to":{"type":"beta"}}]}"#,
-        ))
+        ), &respak_core::CancellationToken::new())
         .await
         .unwrap();
     assert_eq!(report.outputs.len(), 2);
@@ -213,7 +213,7 @@ fn request_json_round_trips() {
 async fn report_serializes_with_ok_and_err() {
     let env = env_with(register_ab);
     env.input.write("pic.aa", "AAAA").await.unwrap();
-    let report = env.engine.convert(&one("pic.aa", "beta")).await.unwrap();
+    let report = env.engine.convert(&one("pic.aa", "beta"), &respak_core::CancellationToken::new()).await.unwrap();
     let json = serde_json::to_value(&report).unwrap();
     assert_eq!(json["outputs"][0]["result"]["Ok"]["files"][0], "pic.bb");
 }

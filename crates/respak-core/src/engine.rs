@@ -1,13 +1,19 @@
 //! The public entry point (PROJECT.md §8). Slice 05: single-path `convert` only.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 
 use crate::discover::{Alternative, DiscoverOptions, Discovery, DiscoveryEntry};
 use crate::error::{Error, ErrorKind, Result};
+use crate::event::{Event, Events, DEFAULT_EVENT_CAPACITY};
 use crate::graph::FormatGraph;
 use crate::mediator::{Cx, Mediator, Target};
+use crate::middleware::Middleware;
 use crate::plugin::{Plugin, Registry};
+use crate::CancellationToken;
 use crate::value::{BundleData, FormatId, Value, FILE};
 
 /// `{ "version": 1, "outputs": [...] }`
@@ -151,12 +157,40 @@ pub struct EngineBuilder {
     output: Option<Operator>,
     plugins: Vec<Box<dyn Plugin>>,
     max_concurrency: Option<usize>,
+    middleware: Vec<Arc<dyn Middleware>>,
+    blocking_limit: Option<usize>,
+    io_limit: Option<usize>,
+    event_capacity: Option<usize>,
 }
 
 impl EngineBuilder {
     /// How many outputs run at once (default 4, at least 1).
     pub fn max_concurrency(mut self, n: usize) -> Self {
         self.max_concurrency = Some(n.max(1));
+        self
+    }
+
+    /// Adds host middleware, run after the built-ins in the order added.
+    pub fn middleware(mut self, m: impl Middleware + 'static) -> Self {
+        self.middleware.push(Arc::new(m));
+        self
+    }
+
+    /// How many `Cx::blocking` tasks run at once (default: unlimited).
+    pub fn blocking_limit(mut self, n: usize) -> Self {
+        self.blocking_limit = Some(n);
+        self
+    }
+
+    /// How many `Cx::io` futures run at once (default: unlimited).
+    pub fn io_limit(mut self, n: usize) -> Self {
+        self.io_limit = Some(n);
+        self
+    }
+
+    /// Unread events a subscriber may fall behind by before it misses some (default 1024).
+    pub fn event_capacity(mut self, n: usize) -> Self {
+        self.event_capacity = Some(n);
         self
     }
 
@@ -188,10 +222,13 @@ impl EngineBuilder {
         }
         registry.check()?;
         Ok(Engine {
-            mediator: Mediator::new(registry),
+            mediator: Mediator::new(registry)
+                .with_events(Events::new(self.event_capacity.unwrap_or(DEFAULT_EVENT_CAPACITY)))
+                .with_middleware(self.middleware),
             input,
             output,
             max_concurrency: self.max_concurrency.unwrap_or(4),
+            limits: (self.blocking_limit, self.io_limit),
         })
     }
 }
@@ -202,6 +239,7 @@ pub struct Engine {
     input: Operator,
     output: Operator,
     max_concurrency: usize,
+    limits: (Option<usize>, Option<usize>),
 }
 
 impl Engine {
@@ -215,13 +253,18 @@ impl Engine {
         self.mediator.formats()
     }
 
+    /// A receiver for the events of every call from now on.
+    pub fn events(&self) -> tokio::sync::broadcast::Receiver<Event> {
+        self.mediator.subscribe()
+    }
+
     /// Detects what `path` is and which formats it can be converted to, without decoding.
     /// `NotFound` if the path does not exist; an unrecognised file is an entry with no format.
     ///
     /// `depth` is how many container levels to open: 0 describes the item itself; 1 lists the
     /// contents of a container (one entry per item, instead of the container's own entry); and so on.
-    pub async fn discover(&self, path: &str, options: &DiscoverOptions) -> Result<Discovery> {
-        let cx = self.cx();
+    pub async fn discover(&self, path: &str, options: &DiscoverOptions, cancel: &CancellationToken) -> Result<Discovery> {
+        let cx = self.cx(cancel);
         let value = self.mediator.open(path, &cx).await?;
         let mut entries = Vec::new();
         self.describe(&value, path.trim_matches('/'), options.depth, &cx, &mut entries).await?;
@@ -282,11 +325,12 @@ impl Engine {
         let c = container.as_container().expect("mount checks this");
         let mount_path = c.mount_path().to_owned();
         for rel in list_volume(&c.volume()).await? {
+            cx.check_cancelled()?;
             let child_path = format!("{}/{rel}", mount_path.trim_end_matches('/'));
             match c.entry(&rel).await {
                 Ok(child) => Box::pin(self.describe(&child, &child_path, depth - 1, cx, out)).await?,
                 Err(error) => {
-                    tracing::warn!("cannot describe {child_path}: {error}");
+                    cx.warn(format!("cannot describe {child_path}: {error}"));
                     out.push(unrecognised(&child_path));
                 }
             }
@@ -294,14 +338,18 @@ impl Engine {
         Ok(())
     }
 
-    fn cx(&self) -> Cx {
-        Cx::new(self.mediator.clone(), self.input.clone(), self.output.clone())
+    fn cx(&self, cancel: &CancellationToken) -> Cx {
+        let cx = Cx::new(self.mediator.clone(), self.input.clone(), self.output.clone()).with_cancel(cancel.clone());
+        match self.limits {
+            (None, None) => cx,
+            (blocking, io) => cx.with_limits(blocking.unwrap_or(usize::MAX), io.unwrap_or(usize::MAX)),
+        }
     }
 
     /// Opens a path or glob on the input: one value per match (`NoMatch` if a glob matches
     /// nothing, `NotFound` for a path that is not there).
-    pub async fn open(&self, path_or_glob: &str) -> Result<Vec<Value>> {
-        let cx = self.cx();
+    pub async fn open(&self, path_or_glob: &str, cancel: &CancellationToken) -> Result<Vec<Value>> {
+        let cx = self.cx(cancel);
         let mut values = Vec::new();
         for path in self.mediator.expand(path_or_glob, &cx).await? {
             values.push(self.mediator.open(&path, &cx).await?);
@@ -312,13 +360,13 @@ impl Engine {
     /// Runs every output, up to `max_concurrency` at a time; one failing output does not stop
     /// the others. A glob or a list in `from` gives one report entry per conversion.
     /// `Err` only for an invalid request (unknown `version`).
-    pub async fn convert(&self, request: &ConvertRequest) -> Result<ConvertReport> {
+    pub async fn convert(&self, request: &ConvertRequest, cancel: &CancellationToken) -> Result<ConvertReport> {
         if request.version != 1 {
             return Err(Error::new(ErrorKind::InvalidRequest {
                 message: format!("unknown request version {}", request.version),
             }));
         }
-        let cx = self.cx();
+        let cx = self.cx(cancel);
 
         // Expand every `from` first, in request order, so the report has a stable order.
         let mut jobs: Vec<Job<'_>> = Vec::new();
@@ -343,9 +391,10 @@ impl Engine {
         }
 
         use futures::StreamExt;
+        let (total, done) = (jobs.len() as u64, AtomicU64::new(0));
         let outputs = futures::stream::iter(jobs)
             .map(|job| {
-                let cx = &cx;
+                let (cx, done) = (&cx, &done);
                 async move {
                     let result = match job.error {
                         Some(error) => Err(error),
@@ -355,6 +404,11 @@ impl Engine {
                         Ok(files) => OutputResult::Ok { files },
                         Err(error) => OutputResult::Err { error },
                     };
+                    cx.mediator.publish(Event::Progress {
+                        task: "convert".into(),
+                        done: done.fetch_add(1, Ordering::SeqCst) + 1,
+                        total,
+                    });
                     OutputReport { from: job.from, result }
                 }
             })
@@ -371,6 +425,7 @@ impl Engine {
         format: Option<&FormatId>,
         cx: &Cx,
     ) -> Result<Vec<String>> {
+        cx.check_cancelled()?;
         let mut source = self.mediator.open(from, cx).await?;
         if let Some(format) = format {
             source = self.mediator.identify_as(source, format, cx).await?;
@@ -451,7 +506,7 @@ fn unrecognised(path: &str) -> DiscoveryEntry {
 }
 
 /// Every file in a volume, as paths relative to it, sorted.
-async fn list_volume(op: &Operator) -> Result<Vec<String>> {
+pub(crate) async fn list_volume(op: &Operator) -> Result<Vec<String>> {
     let mut files = Vec::new();
     let mut dirs = vec!["/".to_owned()];
     while let Some(dir) = dirs.pop() {

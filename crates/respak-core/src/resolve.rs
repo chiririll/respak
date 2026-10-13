@@ -95,6 +95,9 @@ impl Mediator {
             return Err(not_found(&key));
         }
         cx.mounts.insert(key, value.clone());
+        let c = value.as_container().expect("checked above");
+        let entries = crate::engine::list_volume(&c.volume()).await.map_or(0, |files| files.len());
+        cx.mediator.publish(crate::event::Event::InputOpened { path: c.mount_path().to_owned(), entries });
         Ok(value)
     }
 

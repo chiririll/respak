@@ -3,6 +3,11 @@
 use std::sync::Arc;
 
 use opendal::Operator;
+use tokio::sync::{broadcast, Semaphore};
+use tokio_util::sync::CancellationToken;
+
+use crate::event::{Event, Events, DEFAULT_EVENT_CAPACITY};
+use crate::middleware::{Convert, Middleware, Next};
 
 use crate::detect::{Detected, Probe};
 use crate::error::{Error, ErrorKind, Result};
@@ -34,6 +39,8 @@ pub struct Hit {
 #[derive(Clone)]
 pub struct Mediator {
     registry: Arc<Registry>,
+    events: Events,
+    middleware: Arc<[Arc<dyn Middleware>]>,
 }
 
 type Candidate<'a> = (&'a FormatDef, &'a ReadEdge);
@@ -49,7 +56,31 @@ struct Scan<'a> {
 impl Mediator {
     /// A mediator over a checked registry.
     pub fn new(registry: Registry) -> Self {
-        Self { registry: Arc::new(registry) }
+        Self { registry: Arc::new(registry), events: Events::new(DEFAULT_EVENT_CAPACITY), middleware: crate::middleware::builtins().into() }
+    }
+
+    /// Replaces the event channel (the builder's `event_capacity`).
+    pub fn with_events(mut self, events: Events) -> Self {
+        self.events = events;
+        self
+    }
+
+    /// Sets host middleware, run after the built-ins.
+    pub fn with_middleware(mut self, middleware: Vec<Arc<dyn Middleware>>) -> Self {
+        let mut chain = crate::middleware::builtins();
+        chain.extend(middleware);
+        self.middleware = chain.into();
+        self
+    }
+
+    /// Sends `event` to every subscriber.
+    pub fn publish(&self, event: Event) {
+        self.events.publish(event)
+    }
+
+    /// A receiver for events published from now on.
+    pub fn subscribe(&self) -> broadcast::Receiver<Event> {
+        self.events.subscribe()
     }
 
     fn candidates(&self, from: &str) -> Vec<Candidate<'_>> {
@@ -143,7 +174,14 @@ impl Mediator {
 
     /// Identifies `source`, then follows the cheapest path to `to.format` that visits `to.via`
     /// (`NoPath` if there is none). A source already in the target format is returned as is.
+    ///
+    /// Runs through the middleware chain (built-ins first, then the host's).
     pub async fn convert(&self, source: Value, to: Target, cx: &Cx) -> Result<Value> {
+        let req = Convert { source, to };
+        Next::new(&self.middleware, self).run(&req, cx).await
+    }
+
+    pub(crate) async fn convert_unwrapped(&self, source: Value, to: Target, cx: &Cx) -> Result<Value> {
         let target = to.format.name();
         let mut value = source;
         if value.format().name() == target {
@@ -172,12 +210,14 @@ impl Mediator {
         let planned = graph::plan(&self.registry, from.name(), to, via)
             .ok_or_else(|| Error::new(ErrorKind::NoPath { from: from.to_string(), to: to.to_owned() }))?;
         if planned.alternatives > 0 {
-            tracing::warn!(
-                "path {} -> {to}: chose `{}` over {} other path(s)",
-                from.name(),
-                planned.path,
-                planned.alternatives
-            );
+            self.publish(Event::Warning {
+                message: format!(
+                    "path {} -> {to}: chose `{}` over {} other path(s)",
+                    from.name(),
+                    planned.path,
+                    planned.alternatives
+                ),
+            });
         }
         Ok(planned)
     }
@@ -187,7 +227,7 @@ impl Mediator {
     /// Candidates are ordered by: total cost, then fewer capability steps (direct edges first),
     /// then fewer hops, then registration order. `via` must be a subsequence of the path's
     /// formats (both ends count). When more than one complete path existed, the chosen one is
-    /// logged with `tracing::warn!`. `NoPath` if there is none.
+    /// published as `Event::Warning`. `NoPath` if there is none.
     pub fn plan(&self, from: &FormatId, to: &str, via: &[String]) -> Result<Path> {
         Ok(self.plan_inner(from, to, via)?.path)
     }
@@ -270,12 +310,76 @@ pub struct Cx {
     pub mounts: Arc<crate::resolve::Mounts>,
     /// Output path -> key of the value written there, for the whole call (PROJECT.md §5.5).
     written: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    /// Triggered by the host to stop the call; long handlers check it.
+    pub cancel: CancellationToken,
+    /// Bounds for `blocking` and `io`.
+    limits: Arc<Limits>,
+}
+
+/// Semaphores behind `Cx::blocking` and `Cx::io`.
+struct Limits {
+    blocking: Semaphore,
+    io: Semaphore,
 }
 
 impl Cx {
     /// A context with nothing mounted yet. One context serves one `Engine` call.
     pub fn new(mediator: Mediator, input: Operator, output: Operator) -> Self {
-        Self { mediator, input, output, mounts: Arc::default(), written: Arc::default() }
+        Self { mediator, input, output, mounts: Arc::default(),
+            written: Arc::default(),
+            cancel: CancellationToken::new(),
+            limits: Arc::new(Limits { blocking: Semaphore::new(Semaphore::MAX_PERMITS), io: Semaphore::new(Semaphore::MAX_PERMITS) }),
+        }
+    }
+
+    /// Uses `cancel` as this call's token.
+    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
+    /// Bounds `blocking` and `io` to the given numbers of concurrent tasks.
+    pub fn with_limits(mut self, blocking: usize, io: usize) -> Self {
+        let clamp = |n: usize| n.clamp(1, Semaphore::MAX_PERMITS);
+        self.limits = Arc::new(Limits { blocking: Semaphore::new(clamp(blocking)), io: Semaphore::new(clamp(io)) });
+        self
+    }
+
+    /// `Err(Cancelled)` if the token is triggered. Long loops call this between units of work.
+    pub fn check_cancelled(&self) -> Result<()> {
+        if self.cancel.is_cancelled() {
+            return Err(Error::new(ErrorKind::Cancelled));
+        }
+        Ok(())
+    }
+
+    /// Publishes `Event::Warning`.
+    pub fn warn(&self, message: impl Into<String>) {
+        self.mediator.publish(Event::Warning { message: message.into() });
+    }
+
+    /// Runs CPU-heavy or blocking `f` on the blocking pool, bounded by `blocking_limit`.
+    pub async fn blocking<T, F>(&self, f: F) -> Result<T>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        self.check_cancelled()?;
+        let _permit = self.limits.blocking.acquire().await.expect("semaphore is never closed");
+        tokio::task::spawn_blocking(f).await.map_err(|e| {
+            Error::new(ErrorKind::Custom { source: None, message: format!("blocking task failed: {e}") })
+        })
+    }
+
+    /// Runs an I/O-bound future, bounded by `io_limit`.
+    pub async fn io<T, Fut>(&self, fut: Fut) -> Result<T>
+    where
+        Fut: std::future::Future<Output = T> + Send,
+        T: Send,
+    {
+        self.check_cancelled()?;
+        let _permit = self.limits.io.acquire().await.expect("semaphore is never closed");
+        Ok(fut.await)
     }
 
     /// Writes `bytes` to `path` on the output operator on behalf of the value with key `key`.
@@ -299,6 +403,7 @@ impl Cx {
             self.written.lock().unwrap().remove(path);
             return Err(e.into());
         }
+        self.mediator.publish(Event::OutputWritten { path: path.to_owned() });
         Ok(true)
     }
 }

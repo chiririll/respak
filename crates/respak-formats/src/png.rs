@@ -9,7 +9,7 @@ use bytes::Bytes;
 use respak_core::capability::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 use respak_core::value::{BlobData, BundleData};
 use respak_core::{
-    magic, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Target,
+    magic, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, Event, FormatId, Probe, ReadHandler, Result, Target,
     TypedTarget, Value, ValueKey,
 };
 
@@ -150,20 +150,23 @@ impl PngOptions {
 }
 
 /// One mip of one layer as a PNG file.
-async fn encode_mip(bitmap: &dyn Bitmap, level: u32, layer: u32) -> Result<Vec<u8>> {
+async fn encode_mip(bitmap: &dyn Bitmap, level: u32, layer: u32, cx: &Cx) -> Result<Vec<u8>> {
     let info = bitmap.info();
     let (width, height) = ((info.width >> level).max(1), (info.height >> level).max(1));
     let raw = bitmap.read_mip(level, layer).await?;
-    let pixels = decode_rgba8(info.format, width, height, &raw)?;
-
-    let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().map_err(|e| Error::custom("png encode", e))?;
-    writer.write_image_data(&pixels).map_err(|e| Error::custom("png encode", e))?;
-    writer.finish().map_err(|e| Error::custom("png encode", e))?;
-    Ok(out)
+    // Decoding and compressing are CPU work: off the async threads.
+    cx.blocking(move || {
+        let pixels = decode_rgba8(info.format, width, height, &raw)?;
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().map_err(|e| Error::custom("png encode", e))?;
+        writer.write_image_data(&pixels).map_err(|e| Error::custom("png encode", e))?;
+        writer.finish().map_err(|e| Error::custom("png encode", e))?;
+        Ok(out)
+    })
+    .await?
 }
 
 #[async_trait]
@@ -171,7 +174,7 @@ impl ConvertHandler for PngEncode {
     /// Bitmap -> a blob tagged `png`: one mip (option `mips`), layer 0, decoded to RGBA8. With
     /// `mips: "all"`: a bundle of `mip<N>.png` (`layer<L>_mip<N>.png` for arrays), which the
     /// engine writes into a folder.
-    async fn convert(&self, source: Value, target: &Target, _cx: &Cx) -> Result<Value> {
+    async fn convert(&self, source: Value, target: &Target, cx: &Cx) -> Result<Value> {
         let options = TypedTarget::<PngOptions>::parse(target)?;
         let selection = options.options().selection()?;
         let bitmap = bitmap_of(&source)?;
@@ -193,15 +196,22 @@ impl ConvertHandler for PngEncode {
                     }));
                 }
                 if info.layer_count() > 1 {
-                    tracing::warn!("png: the bitmap has {} layers, writing layer 0 only", info.layer_count());
+                    cx.warn(format!("png: the bitmap has {} layers, writing layer 0 only", info.layer_count()));
                 }
-                Ok(blob(encode_mip(bitmap, level, 0).await?, key))
+                Ok(blob(encode_mip(bitmap, level, 0, cx).await?, key))
             }
             Selection::All => {
                 let layers = info.layer_count();
                 let mut items = Vec::new();
+                let total = u64::from(layers) * u64::from(info.mip_count);
                 for layer in 0..layers {
                     for level in 0..info.mip_count {
+                        cx.check_cancelled()?;
+                        cx.mediator.publish(Event::Progress {
+                            task: "png mips".into(),
+                            done: items.len() as u64,
+                            total,
+                        });
                         let name = if layers == 1 {
                             format!("mip{level}.png")
                         } else {
@@ -212,7 +222,7 @@ impl ConvertHandler for PngEncode {
                             FormatId::new("png"),
                             &serde_json::json!({ "layer": layer, "mip": level }),
                         );
-                        items.push((name, blob(encode_mip(bitmap, level, layer).await?, item_key)));
+                        items.push((name, blob(encode_mip(bitmap, level, layer, cx).await?, item_key)));
                     }
                 }
                 Ok(Arc::new(BundleData::named(items, key)))

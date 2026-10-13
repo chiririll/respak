@@ -4,7 +4,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use respak_core::{ConvertReport, ConvertRequest, DiscoverOptions, Engine, Error, ErrorKind, OutputRequest, OutputResult, TargetSpec};
+use respak_core::broadcast::error::{RecvError, TryRecvError};
+use respak_core::{
+    CancellationToken, ConvertReport, ConvertRequest, DiscoverOptions, Engine, Error, ErrorKind, Event, OutputRequest,
+    OutputResult, TargetSpec,
+};
 
 /// `respak --root <dir> --out <dir> <command>`
 #[derive(Debug, Parser)]
@@ -141,11 +145,65 @@ pub async fn run_steam(command: SteamCommand, out: &mut impl Write) -> anyhow::R
     Ok(ExitCode::SUCCESS)
 }
 
+/// One line of progress for `event`, or `None` for events a person does not need to see
+/// (failures are in the report).
+pub fn event_line(event: &Event) -> Option<String> {
+    match event {
+        Event::Warning { message } => Some(format!("warning: {message}")),
+        Event::Progress { task, done, total } => Some(format!("[{done}/{total}] {task}")),
+        Event::InputOpened { path, entries } => Some(format!("opened {path} ({entries} entries)")),
+        Event::OutputWritten { path } => Some(format!("wrote {path}")),
+        _ => None,
+    }
+}
+
+/// [`run`], printing the engine's events to `events` as they happen.
+pub async fn run_with_events(
+    cli: Cli,
+    engine: &Engine,
+    cancel: &CancellationToken,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    events: &mut impl Write,
+) -> anyhow::Result<ExitCode> {
+    let mut rx = engine.events();
+    let command = run(cli, engine, cancel, out, err);
+    tokio::pin!(command);
+    let result = loop {
+        tokio::select! {
+            result = &mut command => break result,
+            event = rx.recv() => match event {
+                Ok(event) => {
+                    if let Some(line) = event_line(&event) {
+                        writeln!(events, "{line}")?;
+                    }
+                }
+                Err(RecvError::Lagged(missed)) => writeln!(events, "({missed} events skipped)")?,
+                Err(RecvError::Closed) => {}
+            },
+        }
+    };
+    // Whatever was published after the last poll.
+    loop {
+        match rx.try_recv() {
+            Ok(event) => {
+                if let Some(line) = event_line(&event) {
+                    writeln!(events, "{line}")?;
+                }
+            }
+            Err(TryRecvError::Lagged(missed)) => writeln!(events, "({missed} events skipped)")?,
+            Err(_) => break,
+        }
+    }
+    result
+}
+
 /// Runs a command; the JSON report goes to `out`, error messages to `err`. The exit code is
 /// non-zero if any output failed. An unusable command line (malformed `--to`) is an `Err`.
 pub async fn run(
     cli: Cli,
     engine: &Engine,
+    cancel: &CancellationToken,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> anyhow::Result<ExitCode> {
@@ -162,7 +220,7 @@ pub async fn run(
             let mut found = Vec::new();
             let mut failed = false;
             for path in &paths {
-                match engine.discover(path, &options).await {
+                match engine.discover(path, &options, cancel).await {
                     Ok(discovery) => found.push(discovery),
                     Err(error) => {
                         writeln!(err, "{path}: {error}")?;
@@ -180,7 +238,7 @@ pub async fn run(
             })?;
             let request =
                 ConvertRequest { version: 1, outputs: vec![OutputRequest { from: path.into(), to, path: out_path }] };
-            report(engine.convert(&request).await?, out, err)
+            report(engine.convert(&request, cancel).await?, out, err)
         }
         Command::Run { request } => {
             let text = if request == "-" {
@@ -193,7 +251,7 @@ pub async fn run(
             let request: ConvertRequest = serde_json::from_str(&text).map_err(|e| {
                 Error::new(ErrorKind::InvalidRequest { message: format!("the request is not valid: {e}") })
             })?;
-            report(engine.convert(&request).await?, out, err)
+            report(engine.convert(&request, cancel).await?, out, err)
         }
     }
 }

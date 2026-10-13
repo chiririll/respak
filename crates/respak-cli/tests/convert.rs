@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use opendal::{services::Memory, Operator};
 use respak_cli::{run, Cli};
-use respak_core::{Engine, ErrorKind};
+use respak_core::{CancellationToken, Engine, ErrorKind};
 use respak_formats::FormatsPlugin;
 
 struct Env {
@@ -39,9 +39,13 @@ struct Run {
 }
 
 async fn invoke(env: &Env, args: &[&str]) -> Run {
+    invoke_with(env, &CancellationToken::new(), args).await
+}
+
+async fn invoke_with(env: &Env, cancel: &CancellationToken, args: &[&str]) -> Run {
     let cli = Cli::try_parse_from(["respak", "--root", "in", "--out", "out"].iter().chain(args)).unwrap();
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let result = run(cli, &env.engine, &mut out, &mut err).await;
+    let result = run(cli, &env.engine, cancel, &mut out, &mut err).await;
     let (code, error) = match result {
         Ok(code) => (Some(code), None),
         Err(e) => (None, Some(e)),
@@ -270,4 +274,41 @@ async fn run_reads_a_request_file_with_a_glob() {
 
     let bad = invoke(&env, &["run", "/definitely/not/here.json"]).await;
     assert!(bad.error.is_some());
+}
+
+#[tokio::test]
+async fn a_triggered_token_cancels_every_output_and_exits_non_zero() {
+    let env = env();
+    env.input.write("a.png", png_1x1()).await.unwrap();
+    env.input.write("b.png", png_1x1()).await.unwrap();
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let run = invoke_with(&env, &cancel, &["convert", "*.png", "--to", r#"{"type":"dds"}"#]).await;
+
+    assert_eq!(run.code, Some(ExitCode::FAILURE));
+    let report: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    let outputs = report["outputs"].as_array().unwrap();
+    assert_eq!(outputs.len(), 2);
+    assert!(outputs.iter().all(|o| o["result"]["Err"]["error"]["kind"] == "Cancelled"), "{}", run.out);
+    assert!(!env.output.exists("a.dds").await.unwrap());
+}
+
+#[tokio::test]
+async fn events_are_printed_to_their_own_stream() {
+    let env = env();
+    env.input.write("a.png", png_1x1()).await.unwrap();
+    env.input.write("b.png", png_1x1()).await.unwrap();
+    let cli = Cli::try_parse_from(["respak", "--root", "in", "--out", "out", "convert", "*.png", "--to", r#"{"type":"dds"}"#])
+        .unwrap();
+    let (mut out, mut err, mut events) = (Vec::new(), Vec::new(), Vec::new());
+    let code = respak_cli::run_with_events(cli, &env.engine, &CancellationToken::new(), &mut out, &mut err, &mut events)
+        .await
+        .unwrap();
+
+    assert_eq!(code, ExitCode::SUCCESS);
+    assert!(err.is_empty());
+    let lines = String::from_utf8(events).unwrap();
+    for expected in ["wrote a.dds", "wrote b.dds", "[2/2] convert"] {
+        assert!(lines.lines().any(|l| l == expected), "{expected} missing in:\n{lines}");
+    }
 }

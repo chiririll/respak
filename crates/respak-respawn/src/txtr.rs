@@ -384,7 +384,7 @@ async fn stat_len(volume: &Operator, path: &str) -> Result<u64> {
 
 #[async_trait]
 impl ReadHandler for TxtrRead {
-    async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
+    async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
         let asset = source
             .downcast_ref::<RpakAsset>()
             .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "txtr must be read from an rpak.asset".into() }))?;
@@ -461,7 +461,7 @@ impl ReadHandler for TxtrRead {
                 }
                 Err(why) => {
                     first = header.optional;
-                    tracing::warn!("texture {label}: {} optional mip(s) are skipped: {why}", header.optional);
+                    cx.warn(format!("texture {label}: {} optional mip(s) are skipped: {why}", header.optional));
                 }
             }
         }

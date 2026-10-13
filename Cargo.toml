@@ -16,7 +16,7 @@ respak-formats = { path = "crates/respak-formats" }
 # Pre-1.0: exact pin (see todo/PROJECT.md §3).
 opendal = { version = "=0.59.4", default-features = false, features = ["services-fs", "executors-tokio"] }
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "signal"] }
 tokio-util = "0.7"
 futures = "0.3"
 async-trait = "0.1"

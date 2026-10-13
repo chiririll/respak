@@ -187,12 +187,12 @@ async fn convert_follows_the_cheapest_path_and_honours_via() {
     let env = env_with(register_route);
     env.input.write("x.ss", "SSSS").await.unwrap();
 
-    let report = env.engine.convert(&one("x.ss", "dst")).await.unwrap();
+    let report = env.engine.convert(&one("x.ss", "dst"), &respak_core::CancellationToken::new()).await.unwrap();
     assert!(matches!(report.outputs[0].result, respak_core::OutputResult::Ok { .. }));
     assert_eq!(env.output.read("x.dd").await.unwrap().to_vec(), b"m>d");
 
     let req = request(r#"{"version":1,"outputs":[{"from":"x.ss","to":{"type":"dst","via":[]},"path":"y"}]}"#);
-    env.engine.convert(&req).await.unwrap();
+    env.engine.convert(&req, &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(env.output.read("y").await.unwrap().to_vec(), b"m>d");
 }
 
@@ -213,7 +213,7 @@ async fn via_pins_the_route_in_a_request() {
                                           {"from":"x.ss","to":{"type":"dst","via":["nope"]},"path":"q"}]}"#;
     let req = request(json);
     assert_eq!(serde_json::to_value(&req).unwrap()["outputs"][0]["to"]["via"], serde_json::json!(["mid"]));
-    let report = env.engine.convert(&req).await.unwrap();
+    let report = env.engine.convert(&req, &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(env.output.read("p").await.unwrap().to_vec(), b"m>d");
     assert!(matches!(error_kind(&report.outputs[1].result), ErrorKind::NoPath { .. }));
 }
@@ -252,7 +252,7 @@ async fn discover_reports_winner_alternatives_and_targets() {
     env.input.write("f.bin", "AAAA").await.unwrap();
     env.input.write("junk.bin", "ZZZZ").await.unwrap();
 
-    let d = env.engine.discover("f.bin", &DiscoverOptions::default()).await.unwrap();
+    let d = env.engine.discover("f.bin", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(d.path, "f.bin");
     let e = &d.entries[0];
     assert_eq!((e.path.as_str(), e.format.as_deref(), e.version.as_deref(), e.score), ("f.bin", Some("versioned"), Some("3.1"), 12));
@@ -261,7 +261,7 @@ async fn discover_reports_winner_alternatives_and_targets() {
     assert_eq!(e.targets.iter().map(|t| t.format.as_str()).collect::<Vec<_>>(), ["target"]);
     assert_eq!(e.targets[0].defaults, serde_json::json!({}));
 
-    let d = env.engine.discover("junk.bin", &DiscoverOptions::default()).await.unwrap();
+    let d = env.engine.discover("junk.bin", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap();
     let e = &d.entries[0];
     assert!(e.format.is_none() && e.targets.is_empty() && e.alternatives.is_empty());
     assert_eq!(serde_json::to_value(e).unwrap()["format"], serde_json::Value::Null);
@@ -270,11 +270,11 @@ async fn discover_reports_winner_alternatives_and_targets() {
 #[tokio::test]
 async fn discover_errors_for_a_missing_path_and_ignores_depth_on_plain_files() {
     let env = env_with(register_scored);
-    let err = env.engine.discover("nope.bin", &DiscoverOptions::default()).await.unwrap_err();
+    let err = env.engine.discover("nope.bin", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::NotFound { .. }), "{err}");
     env.input.write("f.bin", "AAAA").await.unwrap();
     // A file that is not a container is described as itself, whatever the depth.
-    let d = env.engine.discover("f.bin", &DiscoverOptions { depth: 3 }).await.unwrap();
+    let d = env.engine.discover("f.bin", &DiscoverOptions { depth: 3 }, &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(d.entries.len(), 1);
 }
 
@@ -292,6 +292,6 @@ async fn the_first_registered_edge_runs_when_everything_else_is_equal() {
         r.format("dst").extensions(["dd"]);
     });
     env.input.write("x.ss", "SSSS").await.unwrap();
-    env.engine.convert(&one("x.ss", "dst")).await.unwrap();
+    env.engine.convert(&one("x.ss", "dst"), &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(env.output.read("x.dd").await.unwrap().to_vec(), b"first");
 }
