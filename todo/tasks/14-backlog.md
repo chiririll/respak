@@ -16,7 +16,7 @@ Each item becomes its own vertical slice (README: how a slice works), ending in 
 
 **Other:**
 - `respak-miles`: Miles banks (`mbnk`, `mstr`) → `Audio`
-- rpak: read only the blocks that are needed. Today (after 11b) a compressed `.rpak` is decoded front to back up to the offset of the last read, so a page near the end costs almost the whole file. Fix: when only the *segments* are compressed and not the whole body (as the header flags / block layout allow), decompress just the segments a request needs, with ranged reads of their compressed bytes. First find out from rsx and real paks which layouts exist and whether RTech blocks refer back across block boundaries; touch nothing else in the rpak volume.
+- ~~rpak: read only the blocks that are needed~~ investigated, **not possible**; nothing to build. A compressed `.rpak` is decoded front to back up to the last read (11b), so a page near the end costs almost the whole file, and that stays. Findings: (1) rsx knows only v6 (raw), v7, v8; the header is raw and the whole body is one compressed stream (RTech, Oodle or zstd), never segment by segment. (2) The RTech output chunks (2^o bytes, per-chunk size fields) are not independent: measured on Apex `common.rpak` (app 1172470, depot 1172471 manifest 6197768190074397522; 620 MB, 4 MiB chunks) 2.8M of 26.8M matches (~10%) point into the previous chunk, none further back (max distance 4194288 < chunk size), so there are no resets and chunk N needs the decoded output of N-1, which needs N-2, and so on. Only starpaks and small embedded blobs (texture mips, LODs) are randomly accessible. Only one pak was measured.
 - rpak patches (PROJECT.md §11)
 - writing Respawn formats (PROJECT.md §5.8), including the `bundle` rule
 - the in-memory cache (PROJECT.md §7)
