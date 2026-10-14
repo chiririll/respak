@@ -24,5 +24,6 @@ Every slice ends with:
 ## Active
 | # | Task | Demo | Depends on | Status |
 |---|---|---|---|---|
+| 16 | [Miles banks → WAV](16-slice-miles-audio.md) | `convert …/general.mbnk/<name>.asrc --to wav` | 15 | in-progress (built on synthetic data; real-file check pending) |
 
 Respawn format code comes from rsx: reviewed first, then ported (PROJECT.md §12).

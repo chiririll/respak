@@ -1,6 +1,6 @@
 # respak — Steam input
 
-The respak CLI can read game files straight from Steam depots. It downloads only the byte ranges a request needs, and caches what it downloads. This document is the design. It is built as tasks [11a](tasks/11a-slice-steam-login.md) and [11b](tasks/11b-slice-steam-depot.md), which come **before task 12**; they let the existing pipeline run on real game files. Task [11c](tasks/11c-slice-oodle.md) (Oodle) follows them, so the current Apex version works too. Slices work as described in [`tasks/README.md`](tasks/README.md): sketch, gate (the user agrees on the tests), TDD, demo.
+The respak CLI can read game files straight from Steam depots. It downloads only the byte ranges a request needs, and caches what it downloads. This document is the design. It is built as tasks [11a](tasks/done/11a-slice-steam-login.md) and [11b](tasks/done/11b-slice-steam-depot.md), which come **before task 12**; they let the existing pipeline run on real game files. Task [11c](tasks/done/11c-slice-oodle.md) (Oodle) follows them, so the current Apex version works too. Slices work as described in [`tasks/README.md`](tasks/README.md): sketch, gate (the user agrees on the tests), TDD, demo.
 
 **Status:** planned.
 

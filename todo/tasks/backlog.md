@@ -17,7 +17,8 @@ Each item becomes its own vertical slice (README: how a slice works), ending in 
 **Common formats** (`respak-formats`): Cast, SMD + QC.
 
 **Audio** (`respak-miles`):
-- Miles banks (`mbnk`, `mstr`) → `Audio` (spec: [`../formats/miles.md`](../formats/miles.md), [`../formats/miles-codecs.md`](../formats/miles-codecs.md))
+- ~~Miles banks (`mbnk`, `mstr`) → `Audio`~~ built in slice 16 (spec: [`../formats/miles.md`](../formats/miles.md), [`../formats/miles-codecs.md`](../formats/miles-codecs.md))
+- Third-party codec plugin for RADA (idea, 2026-10-14): a small stable C-ABI codec interface in core, loaded at runtime from a path, so a user can supply a module that wraps RAD's closed library themselves (never shipped with respak). Needs an exception to the "no RAD binaries, C, DLLs" rule and a licence check (UE EULA, AGPL boundary). It mirrors the ASI flow in miles-codecs.md (open from the header, examine a block, decode a block to planar f32) and could double as a BCF1 test oracle
 - RAD Audio (`RADA`, Apex S24+) decoder: the first Miles slice reads the header only, decoding gives `UnsupportedVersion`. No open decoder exists; the only source is RAD's SDK inside Unreal Engine (EULA, not usable). Needs a clean-room reverse engineering or a future open decoder (miles-codecs.md, open question 1)
 
 ## Follow-ups to built slices

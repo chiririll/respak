@@ -1622,7 +1622,7 @@ checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 [[package]]
 name = "nihav_codec_support"
 version = "0.1.0"
-source = "git+https://github.com/chiririll/nihav?rev=dc01d4f7d8ddddeb989281e956356b8ac2107d2a#dc01d4f7d8ddddeb989281e956356b8ac2107d2a"
+source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 dependencies = [
  "nihav_core",
 ]
@@ -1630,7 +1630,7 @@ dependencies = [
 [[package]]
 name = "nihav_commonfmt"
 version = "0.1.0"
-source = "git+https://github.com/chiririll/nihav?rev=dc01d4f7d8ddddeb989281e956356b8ac2107d2a#dc01d4f7d8ddddeb989281e956356b8ac2107d2a"
+source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 dependencies = [
  "nihav_codec_support",
  "nihav_core",
@@ -1640,12 +1640,12 @@ dependencies = [
 [[package]]
 name = "nihav_core"
 version = "0.1.0"
-source = "git+https://github.com/chiririll/nihav?rev=dc01d4f7d8ddddeb989281e956356b8ac2107d2a#dc01d4f7d8ddddeb989281e956356b8ac2107d2a"
+source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 
 [[package]]
 name = "nihav_rad"
 version = "0.1.0"
-source = "git+https://github.com/chiririll/nihav?rev=dc01d4f7d8ddddeb989281e956356b8ac2107d2a#dc01d4f7d8ddddeb989281e956356b8ac2107d2a"
+source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 dependencies = [
  "nihav_codec_support",
  "nihav_core",
@@ -1654,7 +1654,7 @@ dependencies = [
 [[package]]
 name = "nihav_registry"
 version = "0.1.0"
-source = "git+https://github.com/chiririll/nihav?rev=dc01d4f7d8ddddeb989281e956356b8ac2107d2a#dc01d4f7d8ddddeb989281e956356b8ac2107d2a"
+source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 dependencies = [
  "nihav_core",
 ]
@@ -2272,6 +2272,7 @@ dependencies = [
  "png",
  "respak-core",
  "respak-formats",
+ "respak-miles",
  "respak-nihav",
  "respak-respawn",
  "respak-steam",
@@ -2316,6 +2317,22 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "respak-miles"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "nihav_core",
+ "nihav_rad",
+ "opendal",
+ "respak-core",
+ "respak-formats",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
