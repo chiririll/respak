@@ -1,4 +1,4 @@
-//! The only module that knows NihAV. Everything NihAV returns is converted to respak's own
+//! The Bink decoding side of NihAV. Everything NihAV returns is converted to respak's own
 //! types here; its errors become `Corrupt` / `UnsupportedVersion`, and a panic inside the
 //! decoder is caught and becomes `Corrupt`.
 //!

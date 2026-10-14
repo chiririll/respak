@@ -16,7 +16,7 @@ respak --steam 1172470 --depot 1172471 --out out convert media/respawn.bik  --to
 - ffmpeg has no Bink 2 decoder (only Bink 1). Here it is only a **test oracle** for the audio.
 
 ## Decisions (gate, answered by the user)
-1. **Home:** `respak-respawn` for `bik`. The common targets `wav` and `png.frames` go to `respak-formats` and connect through the capabilities.
+1. **Home:** `bik` first lived in `respak-respawn`; it moved to `respak-nihav` (Bink is RAD's, and all NihAV code is there). The common targets `wav` and `png.frames` go to `respak-formats` and connect through the capabilities.
 2. **Async everywhere:** the capabilities return async streams (not blocking callbacks).
 3. **Frame format is configurable:** the consumer asks for `Rgba8` or `Yuv420`; the video converts.
 4. **No mp4 / no ffmpeg subprocess** in this slice.
@@ -32,7 +32,7 @@ respak --steam 1172470 --depot 1172471 --out out convert media/respawn.bik  --to
 
 **`respak-respawn`**:
 - `bik.rs`: `BikHeader` (44-byte fixed header, `parse`), `BikRead` (score: `KB2` + a letter = 10, plausible fields +2, extension `bik`/`bk2` +1; `Version { major: 2, minor: letter - 'a' }`; Bink 1 `BIK` is scored too and its read gives `UnsupportedVersion`), `BikFile { bytes, header }` as `Data` + `Video` + `Audio`. Registered as `bik` providing `Video` and `Audio`. `BikRead::score` currently returns `None` (discovery calls every file reader, so it must not panic).
-- `bik_decode.rs`: the only module that knows NihAV: `VideoDecoder`, `AudioDecoder` (synchronous, stateful), `yuv420_to_rgba8` (full-range BT.601). NihAV errors → `Corrupt` / `UnsupportedVersion`; decoder panics are caught → `Corrupt`. **The NihAV dependency is added when the implementation starts**, not in the sketch.
+- `bik_decode.rs`: the Bink side of NihAV: `VideoDecoder`, `AudioDecoder` (synchronous, stateful), `yuv420_to_rgba8` (full-range BT.601). NihAV errors → `Corrupt` / `UnsupportedVersion`; decoder panics are caught → `Corrupt`. **The NihAV dependency is added when the implementation starts**, not in the sketch.
 
 **`respak-formats`**:
 - `wav.rs`: `WavEncode` (`from_cap::<dyn Audio>`), options `{ "track": 0 }`. 16-bit PCM, `(x * 32768).round()` clamped, hand-written RIFF header.

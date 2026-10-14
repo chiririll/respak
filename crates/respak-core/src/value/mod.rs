@@ -9,10 +9,12 @@ use crate::capability::{Animation, Audio, Bitmap, Blob, Container, Mesh, Metadat
 mod core_formats;
 mod format;
 mod key;
+mod lazy;
 
 pub use core_formats::{BlobData, BundleData, CompressedData, FileData, BLOB, BUNDLE, COMPRESSED, FILE};
 pub use format::{FormatId, Version};
 pub use key::ValueKey;
+pub use lazy::{LazyBlob, LazyInit, LazySource};
 
 /// A shared value. Results are shared between concurrent requests, hence `Arc`.
 pub type Value = Arc<dyn Data>;
@@ -31,7 +33,7 @@ pub trait Data: Any + Send + Sync + Debug {
     fn approx_size(&self) -> usize {
         0
     }
-    /// This value as in-memory bytes.
+    /// This value as bytes.
     fn as_blob(&self) -> Option<&dyn Blob> {
         None
     }

@@ -481,7 +481,7 @@ impl Engine {
             for (name, item) in bundle.names.iter().zip(&bundle.items) {
                 let blob = item.as_blob().ok_or_else(cannot_write)?;
                 let path = format!("{folder}/{name}");
-                cx.write(&path, item.key(), blob.bytes().clone()).await?;
+                cx.write_blob(&path, item.key(), blob).await?;
                 files.push(path);
             }
             return Ok(files);
@@ -494,7 +494,7 @@ impl Engine {
                 with_extension(inner, self.mediator.extension_of(name).unwrap_or(name))
             }
         };
-        cx.write(&path, result.key(), blob.bytes().clone()).await?;
+        cx.write_blob(&path, result.key(), blob).await?;
         Ok(vec![path])
     }
 }

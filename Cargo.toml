@@ -12,6 +12,7 @@ publish = false
 respak-core = { path = "crates/respak-core" }
 respak-respawn = { path = "crates/respak-respawn" }
 respak-formats = { path = "crates/respak-formats" }
+respak-nihav = { path = "crates/respak-nihav" }
 
 # Pre-1.0: exact pin (see todo/PROJECT.md §3).
 opendal = { version = "=0.59.4", default-features = false, features = ["services-fs", "executors-tokio"] }
@@ -31,6 +32,8 @@ oozextract = { git = "https://github.com/chiririll/oozextract", rev = "4b9423158
 # Bink 2 demuxer and decoders (AGPL-3.0, pure Rust, not on crates.io). Our fork: upstream history plus one fix to the DCT audio decoder.
 nihav_core = { git = "https://github.com/chiririll/nihav", rev = "aabd6fcf16537bb644206cbc42e8d72947303d32" }
 nihav_rad = { git = "https://github.com/chiririll/nihav", rev = "aabd6fcf16537bb644206cbc42e8d72947303d32", default-features = false, features = ["demuxer_bink", "decoder_bink2", "decoder_binkaud"] }
+# Video encoders and muxers (AVI + MJPEG for now), the same fork and revision.
+nihav_commonfmt = { git = "https://github.com/chiririll/nihav", rev = "aabd6fcf16537bb644206cbc42e8d72947303d32", default-features = false, features = ["muxer_avi", "encoder_jpeg"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 

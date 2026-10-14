@@ -4,6 +4,7 @@ mod bc;
 mod dds;
 mod frames;
 mod png;
+mod videofile;
 mod wav;
 
 use respak_core::value::FileData;
@@ -16,6 +17,9 @@ pub use bc::decode_rgba8;
 pub use dds::{DdsEncode, DdsImage, DdsOptions, DdsRead};
 pub use frames::{FramesEncode, FramesOptions};
 pub use png::{Mips, PngEncode, PngImage, PngOptions, PngRead};
+pub use videofile::{
+    Codec, CodecSetup, Container, FrameEncoder, MuxSetup, Packet, PacketSink, VideoFileEncode, VideoFileOptions,
+};
 pub use wav::{WavEncode, WavOptions};
 
 /// Registers `png`, `dds`, `png.frames` and `wav`.

@@ -2,8 +2,6 @@
 //!
 //! The format code is ported from the C++ tool rsx (AGPL-3.0); each module names its sources.
 
-mod bik;
-mod bik_decode;
 mod dxbc;
 mod guid;
 mod locate;
@@ -24,10 +22,9 @@ pub mod testing;
 
 use std::sync::Arc;
 
-use respak_core::capability::{Audio, Bitmap, Container, Metadata, Video};
+use respak_core::capability::{Bitmap, Container, Metadata};
 use respak_core::{Plugin, Registry};
 
-pub use bik::{BikFile, BikHeader, BikRead};
 pub use dxbc::texture_slots;
 pub use guid::string_to_guid;
 pub use locate::{GuidRef, RpakLocate};
@@ -110,11 +107,5 @@ impl Plugin for RespawnPlugin {
             .provides::<dyn Metadata>()
             .to("uiia.json", UiiaJsonEncode);
         r.format("uiia.json").label("UI image (JSON)").extensions(["json"]);
-        r.format("bik")
-            .label("Bink 2 video")
-            .from("file", BikRead)
-            .extensions(["bik", "bk2"])
-            .provides::<dyn Video>()
-            .provides::<dyn Audio>();
     }
 }

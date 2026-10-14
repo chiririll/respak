@@ -3,11 +3,14 @@
 use std::ops::Range;
 use std::sync::OnceLock;
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
 
 use super::{Data, FormatId, Value, ValueKey};
 use crate::capability::Blob;
+use crate::error::Result;
+use crate::Cx;
 
 /// Format name of [`FileData`].
 pub const FILE: &str = "file";
@@ -96,9 +99,16 @@ impl BlobData {
     }
 }
 
+#[async_trait]
 impl Blob for BlobData {
-    fn bytes(&self) -> &Bytes {
-        &self.bytes
+    fn len(&self) -> Option<u64> {
+        Some(self.bytes.len() as u64)
+    }
+
+    async fn read(&self, range: Range<u64>, _cx: &Cx) -> Result<Bytes> {
+        let len = self.bytes.len() as u64;
+        let (start, end) = (range.start.min(len), range.end.min(len).max(range.start.min(len)));
+        Ok(self.bytes.slice(start as usize..end as usize))
     }
 }
 

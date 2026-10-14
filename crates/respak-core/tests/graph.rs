@@ -20,7 +20,7 @@ struct Step(&'static str, &'static str);
 #[async_trait]
 impl ConvertHandler for Step {
     async fn convert(&self, source: Value, _target: &Target, _cx: &Cx) -> Result<Value> {
-        let mut bytes = source.as_blob().map(|b| b.bytes().to_vec()).unwrap_or_default();
+        let mut bytes = source.downcast_ref::<BlobData>().map(|b| b.bytes().to_vec()).unwrap_or_default();
         if !bytes.is_empty() {
             bytes.push(b'>');
         }

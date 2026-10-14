@@ -16,7 +16,7 @@ mod video;
 pub use animation::Animation;
 pub use audio::{Audio, AudioChunk, AudioTrackInfo};
 pub use bitmap::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
-pub use blob::Blob;
+pub use blob::{read_all, Blob, CHUNK};
 pub use container::Container;
 pub use mesh::Mesh;
 pub use metadata::{Dependency, Metadata};

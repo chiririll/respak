@@ -1,0 +1,25 @@
+[package]
+name = "respak-nihav"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+respak-core.workspace = true
+respak-formats.workspace = true
+nihav_core.workspace = true
+nihav_rad.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+futures.workspace = true
+tokio.workspace = true
+nihav_commonfmt.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["time"] }
+opendal.workspace = true
+serde_json.workspace = true

@@ -4,7 +4,7 @@
 use opendal::{services::Memory, Operator};
 use respak_core::{CancellationToken, Cx, Engine, ErrorKind, Mediator, Registry};
 use respak_formats::FormatsPlugin;
-use respak_respawn::RespawnPlugin;
+use respak_nihav::NihavPlugin;
 
 /// The 44-byte fixed header of a Bink file, then `extra` bytes.
 fn header(magic: &[u8; 4], frames: u32, width: u32, height: u32, fps: (u32, u32), tracks: u32, extra: usize) -> Vec<u8> {
@@ -39,7 +39,7 @@ fn env() -> Env {
         .input(input.clone())
         .output(output)
         .plugin(FormatsPlugin)
-        .plugin(RespawnPlugin::new())
+        .plugin(NihavPlugin)
         .build()
         .unwrap();
     Env { engine, input }
@@ -111,7 +111,7 @@ async fn bink_1_is_unsupported_not_unknown() {
 
     let mut r = Registry::new();
     r.add(&FormatsPlugin);
-    r.add(&RespawnPlugin::new());
+    r.add(&NihavPlugin);
     let cx = Cx::new(Mediator::new(r), env.input.clone(), env.input.clone());
     let file = cx.mediator.open("old.bik", &cx).await.unwrap();
     let err = cx.mediator.identify(file, &cx).await.unwrap_err();
@@ -121,7 +121,7 @@ async fn bink_1_is_unsupported_not_unknown() {
 fn cx_on(env: &Env) -> Cx {
     let mut r = Registry::new();
     r.add(&FormatsPlugin);
-    r.add(&RespawnPlugin::new());
+    r.add(&NihavPlugin);
     Cx::new(Mediator::new(r), env.input.clone(), env.input.clone())
 }
 

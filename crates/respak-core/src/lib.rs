@@ -34,7 +34,7 @@ pub use middleware::{Convert, Middleware, Next};
 pub use plugin::{CapId, FormatBuilder, Plugin, Registry};
 pub use resolve::Mounts;
 pub use target::TypedTarget;
-pub use value::{Data, FormatId, Value, ValueKey, Version};
+pub use value::{Data, FormatId, LazyBlob, LazyInit, LazySource, Value, ValueKey, Version};
 
 /// Channel types of the event API, re-exported so hosts name the same ones.
 pub use tokio::sync::broadcast;

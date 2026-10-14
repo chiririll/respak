@@ -9,6 +9,7 @@ publish.workspace = true
 respak-core.workspace = true
 respak-respawn.workspace = true
 respak-formats.workspace = true
+respak-nihav.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 tokio.workspace = true

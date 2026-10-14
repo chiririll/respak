@@ -26,7 +26,7 @@ pub struct WavOptions {
 }
 
 /// A sample in `-1.0..=1.0` as 16-bit PCM: rounded to the nearest value, clamped, `NaN` is 0.
-fn pcm16(sample: f32) -> i16 {
+pub(crate) fn pcm16(sample: f32) -> i16 {
     (sample * 32768.0).round().clamp(-32768.0, 32767.0) as i16
 }
 

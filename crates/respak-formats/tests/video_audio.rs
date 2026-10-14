@@ -199,7 +199,7 @@ async fn wav_of(stub: Stub, options: serde_json::Value) -> respak_core::Result<V
 }
 
 fn bytes_of(value: &Value) -> Bytes {
-    value.as_blob().expect("a blob").bytes().clone()
+    value.downcast_ref::<respak_core::value::BlobData>().expect("a blob").bytes().clone()
 }
 
 #[tokio::test]

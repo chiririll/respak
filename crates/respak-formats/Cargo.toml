@@ -20,6 +20,8 @@ bcdec_rs = "0.2.0"
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+tokio.workspace = true
+tempfile = "3"
 
 [dev-dependencies]
 tokio.workspace = true

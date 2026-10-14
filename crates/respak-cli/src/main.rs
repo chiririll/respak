@@ -8,6 +8,7 @@ use opendal::{services::Fs, Operator};
 use respak_cli::{run_with_events, Cli};
 use respak_core::{CancellationToken, Engine};
 use respak_formats::FormatsPlugin;
+use respak_nihav::NihavPlugin;
 use respak_respawn::RespawnPlugin;
 
 fn fs(root: &std::path::Path) -> anyhow::Result<Operator> {
@@ -76,6 +77,7 @@ async fn main() -> anyhow::Result<ExitCode> {
         .input(input)
         .output(fs(out)?)
         .plugin(FormatsPlugin)
+        .plugin(NihavPlugin)
         .plugin(RespawnPlugin::new().search(cli.search.clone()));
     if let Some(dir) = &cli.cache {
         builder = builder.cache(fs(dir)?);
