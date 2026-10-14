@@ -2,16 +2,23 @@
 
 mod bc;
 mod dds;
+mod frames;
 mod png;
+mod wav;
 
 use respak_core::value::FileData;
-use respak_core::{capability::Bitmap, Error, ErrorKind, Plugin, Registry, Result, Value};
+use respak_core::{
+    capability::{Audio, Bitmap, Video},
+    Error, ErrorKind, Plugin, Registry, Result, Value,
+};
 
 pub use bc::decode_rgba8;
 pub use dds::{DdsEncode, DdsImage, DdsOptions, DdsRead};
+pub use frames::{FramesEncode, FramesOptions};
 pub use png::{Mips, PngEncode, PngImage, PngOptions, PngRead};
+pub use wav::{WavEncode, WavOptions};
 
-/// Registers `png` and `dds`.
+/// Registers `png`, `dds`, `png.frames` and `wav`.
 pub struct FormatsPlugin;
 
 impl Plugin for FormatsPlugin {
@@ -31,6 +38,10 @@ impl Plugin for FormatsPlugin {
             .extensions(["dds"])
             .provides::<dyn Bitmap>()
             .from_cap::<dyn Bitmap>(DdsEncode);
+        // Written only: a folder of `frame_00001.png ...` from any video.
+        r.format("png.frames").label("PNG frames").from_cap::<dyn Video>(FramesEncode);
+        // Written only: 16-bit PCM from any audio.
+        r.format("wav").label("WAV audio").extensions(["wav"]).from_cap::<dyn Audio>(WavEncode);
     }
 }
 
@@ -45,6 +56,24 @@ fn bitmap_of(source: &Value) -> Result<&dyn Bitmap> {
         Error::new(ErrorKind::Custom {
             source: None,
             message: format!("`{}` has no Bitmap capability", source.format()),
+        })
+    })
+}
+
+fn video_of(source: &Value) -> Result<&dyn Video> {
+    source.as_video().ok_or_else(|| {
+        Error::new(ErrorKind::Custom {
+            source: None,
+            message: format!("`{}` has no Video capability", source.format()),
+        })
+    })
+}
+
+fn audio_of(source: &Value) -> Result<&dyn Audio> {
+    source.as_audio().ok_or_else(|| {
+        Error::new(ErrorKind::Custom {
+            source: None,
+            message: format!("`{}` has no Audio capability", source.format()),
         })
     })
 }

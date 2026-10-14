@@ -1620,6 +1620,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
+name = "nihav_codec_support"
+version = "0.1.0"
+source = "git+https://github.com/chiririll/nihav?rev=895ba0d04ec36e1b9246b818484393a3e516cc75#895ba0d04ec36e1b9246b818484393a3e516cc75"
+dependencies = [
+ "nihav_core",
+]
+
+[[package]]
+name = "nihav_core"
+version = "0.1.0"
+source = "git+https://github.com/chiririll/nihav?rev=895ba0d04ec36e1b9246b818484393a3e516cc75#895ba0d04ec36e1b9246b818484393a3e516cc75"
+
+[[package]]
+name = "nihav_rad"
+version = "0.1.0"
+source = "git+https://github.com/chiririll/nihav?rev=895ba0d04ec36e1b9246b818484393a3e516cc75#895ba0d04ec36e1b9246b818484393a3e516cc75"
+dependencies = [
+ "nihav_codec_support",
+ "nihav_core",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2265,6 +2287,7 @@ dependencies = [
  "bcdec_rs",
  "bytes",
  "ddsfile",
+ "futures",
  "opendal",
  "png",
  "respak-core",
@@ -2280,6 +2303,9 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "futures",
+ "nihav_core",
+ "nihav_rad",
  "oozextract",
  "opendal",
  "respak-core",

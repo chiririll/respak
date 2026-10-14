@@ -119,7 +119,7 @@ async fn formats_prints_the_graph() {
     assert_eq!(run.code, Some(ExitCode::SUCCESS));
     let json: serde_json::Value = serde_json::from_str(&run.out).unwrap();
     let names: Vec<_> = json["formats"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["png", "dds"]);
+    assert_eq!(names, ["png", "dds", "png.frames", "wav"]);
 }
 
 #[tokio::test]

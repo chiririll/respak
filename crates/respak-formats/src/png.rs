@@ -157,16 +157,21 @@ async fn encode_mip(bitmap: &dyn Bitmap, level: u32, layer: u32, cx: &Cx) -> Res
     // Decoding and compressing are CPU work: off the async threads.
     cx.blocking(move || {
         let pixels = decode_rgba8(info.format, width, height, &raw)?;
-        let mut out = Vec::new();
-        let mut encoder = png::Encoder::new(&mut out, width, height);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().map_err(|e| Error::custom("png encode", e))?;
-        writer.write_image_data(&pixels).map_err(|e| Error::custom("png encode", e))?;
-        writer.finish().map_err(|e| Error::custom("png encode", e))?;
-        Ok(out)
+        encode_rgba8(&pixels, width, height)
     })
     .await?
+}
+
+/// Tightly packed RGBA8 pixels as a PNG file.
+pub(crate) fn encode_rgba8(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().map_err(|e| Error::custom("png encode", e))?;
+    writer.write_image_data(pixels).map_err(|e| Error::custom("png encode", e))?;
+    writer.finish().map_err(|e| Error::custom("png encode", e))?;
+    Ok(out)
 }
 
 #[async_trait]

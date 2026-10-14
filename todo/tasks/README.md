@@ -44,6 +44,7 @@ Every slice ends with:
 | 11c | [Oodle decompression](11c-slice-oodle.md) | current Apex textures over Steam | 11b | in-progress |
 | 12 | [Events, progress, cancellation](12-slice-events-cancel.md) | progress + Ctrl-C | 11 | in-progress |
 | 13 | [Linking: a material with its textures](13-slice-linking-material.md) | material + textures | 12 | in-progress |
+| 15 | [Bink 2 video → PNG frames + WAV](15-slice-bik-video.md) | `convert media/frontend.bik --to '{"type":"png.frames"}'`, `convert media/respawn.bik --to '{"type":"wav"}'` | 11b | in-progress (sketch done, gate) |
 | 14 | [Backlog](14-backlog.md) | — | — | blocked |
 
 Respawn format code comes from rsx: reviewed first, then ported (PROJECT.md §12).

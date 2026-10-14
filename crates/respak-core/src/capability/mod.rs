@@ -11,9 +11,10 @@ mod mesh;
 mod metadata;
 mod skeleton;
 mod table;
+mod video;
 
 pub use animation::Animation;
-pub use audio::Audio;
+pub use audio::{Audio, AudioChunk, AudioTrackInfo};
 pub use bitmap::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 pub use blob::Blob;
 pub use container::Container;
@@ -21,6 +22,7 @@ pub use mesh::Mesh;
 pub use metadata::{Dependency, Metadata};
 pub use skeleton::Skeleton;
 pub use table::Table;
+pub use video::{FrameFormat, Video, VideoFrame, VideoInfo};
 
 /// Names a capability trait object type (`dyn Bitmap`, ...) so registration can say
 /// `provides::<dyn Bitmap>()` and `from_cap::<dyn Bitmap>(..)`. Handlers get the capability
@@ -42,6 +44,7 @@ fn _object_safe(
     _: &dyn Animation,
     _: &dyn Table,
     _: &dyn Audio,
+    _: &dyn Video,
 ) {
 }
 
@@ -59,4 +62,12 @@ impl Cap for dyn Container {
 
 impl Cap for dyn Metadata {
     const NAME: &'static str = "Metadata";
+}
+
+impl Cap for dyn Audio {
+    const NAME: &'static str = "Audio";
+}
+
+impl Cap for dyn Video {
+    const NAME: &'static str = "Video";
 }

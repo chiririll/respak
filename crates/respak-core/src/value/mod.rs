@@ -4,7 +4,7 @@ use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use crate::capability::{Animation, Audio, Bitmap, Blob, Container, Mesh, Metadata, Skeleton, Table};
+use crate::capability::{Animation, Audio, Bitmap, Blob, Container, Mesh, Metadata, Skeleton, Table, Video};
 
 mod core_formats;
 mod format;
@@ -65,6 +65,10 @@ pub trait Data: Any + Send + Sync + Debug {
     }
     /// This value as audio.
     fn as_audio(&self) -> Option<&dyn Audio> {
+        None
+    }
+    /// This value as video.
+    fn as_video(&self) -> Option<&dyn Video> {
         None
     }
     /// A plugin-defined capability, looked up by the `TypeId` of its trait object type.
