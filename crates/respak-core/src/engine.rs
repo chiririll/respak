@@ -489,6 +489,8 @@ impl Engine {
         let blob = result.as_blob().ok_or_else(cannot_write)?;
         let path = match &out.path {
             Some(p) => p.clone(),
+            // A copy of the source keeps its name.
+            None if result.format().name() == crate::value::FILE => inner.to_owned(),
             None => {
                 let name = out.to.format.name();
                 with_extension(inner, self.mediator.extension_of(name).unwrap_or(name))

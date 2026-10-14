@@ -312,3 +312,32 @@ async fn events_are_printed_to_their_own_stream() {
         assert!(lines.lines().any(|l| l == expected), "{expected} missing in:\n{lines}");
     }
 }
+
+#[tokio::test]
+async fn copy_copies_files_unchanged_and_combines_with_a_conversion() {
+    let env = env();
+    let bytes: Vec<u8> = (0..(5u32 << 20)).map(|i| i as u8).collect();
+    env.input.write("media/a.bin", bytes.clone()).await.unwrap();
+    env.input.write("media/b.bin", vec![7]).await.unwrap();
+    env.input.write("icon.png", png_1x1()).await.unwrap();
+
+    let run = invoke(&env, &["copy", "media/*.bin"]).await;
+    assert_eq!(run.code, Some(ExitCode::SUCCESS), "{}", run.err);
+    assert_eq!(env.output.read("media/a.bin").await.unwrap().to_vec(), bytes);
+    assert_eq!(env.output.read("media/b.bin").await.unwrap().to_vec(), [7]);
+
+    let run = invoke(&env, &["copy", "icon.png", "--path", "copy/icon.png"]).await;
+    assert_eq!(run.code, Some(ExitCode::SUCCESS), "{}", run.err);
+    assert_eq!(env.output.read("copy/icon.png").await.unwrap().to_vec(), png_1x1());
+}
+
+#[tokio::test]
+async fn convert_with_copy_writes_both_the_conversion_and_the_original() {
+    let env = env();
+    env.input.write("img/icon.png", png_1x1()).await.unwrap();
+    let run = invoke(&env, &["convert", "img/*.png", "--to", r#"{"type":"dds"}"#, "--copy"]).await;
+
+    assert_eq!(run.code, Some(ExitCode::SUCCESS), "{}", run.err);
+    assert_eq!(&env.output.read("img/icon.dds").await.unwrap().to_vec()[..4], b"DDS ");
+    assert_eq!(env.output.read("img/icon.png").await.unwrap().to_vec(), png_1x1());
+}

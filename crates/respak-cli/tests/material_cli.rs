@@ -49,3 +49,31 @@ fn search_and_cache_find_a_texture_in_another_pak() {
     assert!(again.status.success(), "{}", String::from_utf8_lossy(&again.stderr));
     assert!(out.join("mat/textures/slot_0.png").exists());
 }
+
+#[test]
+fn copy_skips_assets_inside_paks_and_copies_the_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, out) = (dir.path().join("in"), dir.path().join("out"));
+    let mut lvl = PakBuilder::new();
+    lvl.matl(0xA1, "material/wall", 0, &[]);
+    let pak = lvl.build(8);
+    write(&root, "paks/lvl.rpak", pak.clone());
+
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_respak"))
+            .args(["--root".as_ref(), root.as_os_str(), "--out".as_ref(), out.as_os_str()])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    // The pak file is copied; its assets (not files) are skipped without an error.
+    let copied = run(&["copy", "paks/**"]);
+    assert!(copied.status.success(), "{}", String::from_utf8_lossy(&copied.stderr));
+    assert_eq!(std::fs::read(out.join("paks/lvl.rpak")).unwrap(), pak);
+
+    let assets = run(&["copy", "paks/lvl.rpak/*"]);
+    assert!(assets.status.success(), "{}", String::from_utf8_lossy(&assets.stderr));
+
+    let both = run(&["convert", "paks/lvl.rpak/*.matl", "--to", r#"{"type":"matl.json"}"#, "--copy"]);
+    assert!(both.status.success(), "{}", String::from_utf8_lossy(&both.stderr));
+}

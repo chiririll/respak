@@ -71,6 +71,30 @@ impl Data for FileData {
     fn key(&self) -> &ValueKey {
         &self.key
     }
+    fn as_blob(&self) -> Option<&dyn Blob> {
+        Some(self)
+    }
+}
+
+/// The file's bytes, read by range from its operator (relative to the value's own range).
+#[async_trait]
+impl Blob for FileData {
+    fn len(&self) -> Option<u64> {
+        self.range.as_ref().map(|r| r.end - r.start)
+    }
+
+    async fn read(&self, range: Range<u64>, _cx: &Cx) -> Result<Bytes> {
+        let base = self.range.as_ref().map_or(0, |r| r.start);
+        let total = match &self.range {
+            Some(r) => r.end - r.start,
+            None => self.op.stat(&self.path).await?.content_length(),
+        };
+        let (start, end) = (range.start.min(total), range.end.min(total).max(range.start.min(total)));
+        if start == end {
+            return Ok(Bytes::new());
+        }
+        Ok(self.op.read_with(&self.path).range(base + start..base + end).await?.to_bytes())
+    }
 }
 
 /// `blob`: bytes in memory. A converter that encodes a format (e.g. `png`) returns a blob

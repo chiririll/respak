@@ -73,6 +73,15 @@ pub enum Command {
         #[arg(long, default_value_t = 0)]
         depth: u32,
     },
+    /// Copy a file, or every file a glob matches, to `--out` unchanged (with `--steam`: download
+    /// it). To combine it with conversions, add `{"type":"file"}` as one more output of a `run` request.
+    Copy {
+        /// Source path or glob, relative to `--root` (or the Steam depots).
+        path: String,
+        /// Output path, relative to `--out`; default: the source path.
+        #[arg(long = "path")]
+        out_path: Option<String>,
+    },
     /// Run a request file (`-` reads stdin): any number of outputs, with globs and lists.
     Run {
         /// Path of the request JSON, or `-`.
@@ -88,6 +97,9 @@ pub enum Command {
         /// Output path, relative to `--out`.
         #[arg(long = "path")]
         out_path: Option<String>,
+        /// Also copy each source file to `--out` unchanged, like `copy`.
+        #[arg(long)]
+        copy: bool,
     },
 }
 
@@ -245,13 +257,25 @@ pub async fn run(
             writeln!(out)?;
             Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
         }
-        Command::Convert { path, to, out_path } => {
+        Command::Convert { path, to, out_path, copy } => {
             let to: TargetSpec = serde_json::from_str(&to).map_err(|e| {
                 Error::new(ErrorKind::InvalidRequest { message: format!("--to is not a valid target: {e}") })
             })?;
-            let request =
-                ConvertRequest { version: 1, outputs: vec![OutputRequest { from: path.into(), to, path: out_path }] };
-            report(engine.convert(&request, cancel).await?, out, err)
+            let mut outputs = vec![OutputRequest { from: path.clone().into(), to, path: out_path }];
+            if copy {
+                outputs.push(OutputRequest { from: path.into(), to: file_target(), path: None });
+            }
+            let mut done = engine.convert(&ConvertRequest { version: 1, outputs }, cancel).await?;
+            if copy {
+                skip_assets(&mut done);
+            }
+            report(done, out, err)
+        }
+        Command::Copy { path, out_path } => {
+            let outputs = vec![OutputRequest { from: path.into(), to: file_target(), path: out_path }];
+            let mut done = engine.convert(&ConvertRequest { version: 1, outputs }, cancel).await?;
+            skip_assets(&mut done);
+            report(done, out, err)
         }
         Command::Run { request } => {
             let text = if request == "-" {
@@ -267,6 +291,19 @@ pub async fn run(
             report(engine.convert(&request, cancel).await?, out, err)
         }
     }
+}
+
+/// `{"type":"file"}`: the source unchanged.
+fn file_target() -> TargetSpec {
+    TargetSpec { format: respak_core::FormatId::from_static("file"), options: Default::default(), via: Default::default() }
+}
+
+/// Drops the entries that only say a source is not a file (an asset inside a pak has no bytes of
+/// its own to copy), so copying a glob that reaches into paks copies the real files and goes on.
+fn skip_assets(report: &mut ConvertReport) {
+    report.outputs.retain(|o| {
+        !matches!(&o.result, OutputResult::Err { error } if matches!(error.kind(), ErrorKind::NoPath { to, .. } if to == "file"))
+    });
 }
 
 /// Prints the report as JSON, each failure on `err`; non-zero exit if any output failed.

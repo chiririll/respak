@@ -13,7 +13,7 @@ The respak CLI can read game files straight from Steam depots. It downloads only
 - **The account must own the game.** There is no anonymous login and no third-party key or request-code service (tek-s3).
 - **State lives in `.respak/` in the working directory**, like DepotDownloader. It is listed in `.gitignore`, because it holds a plaintext token.
 - **Steam is input only.** Output always goes to the local `--out`.
-- **Out of scope:** rpak patches (`name(NN).rpak`, `patch_master.rpak`; also out of scope for respak in general, PROJECT.md §11), branch passwords, a whole-file "download" command, depot listing commands, OS keyring storage and token encryption.
+- **Out of scope:** rpak patches (`name(NN).rpak`, `patch_master.rpak`; also out of scope for respak in general, PROJECT.md §11), branch passwords, depot listing commands, OS keyring storage and token encryption.
 
 ## 2. Crate and dependencies
 ```
@@ -40,6 +40,7 @@ respak --steam 1172470 --depot 1172471=7843921… --out out convert 'paks/Win64/
 - `--depot ID` takes that depot's current manifest for `--branch` (default `public`), read from PICS. `--depot ID=MANIFEST` pins a manifest, which is how older game versions are read. The user gets manifest IDs from SteamDB.
 - The chosen depots are merged into one file tree. On a path collision, **the depot later in the `--depot` list wins** (list order, not date).
 - Paths: manifest `\` becomes `/`, the original case is kept, and lookups and globs match **case-insensitively** (`paks/win64/common.rpak` finds `Paks/Win64/common.rpak`).
+- `respak --steam APP --depot ID --out DIR copy 'paks/Win64/*.rpak'` copies whole files unchanged (ranged reads, 4 MiB at a time); it is `convert --to '{"type":"file"}'` underneath, so a `run` request can mix such outputs with conversions.
 - If the stored token is missing, expired or revoked, the command fails with "run `respak steam login`". It never prompts in the middle of a conversion.
 
 ## 4. Login and the token file
