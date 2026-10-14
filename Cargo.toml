@@ -29,8 +29,8 @@ thiserror = "2"
 # Oodle decoder (port of ooz, GPL-3.0+): decoding only, never the proprietary oo2core. Our fork: one fix on top of upstream dev.
 oozextract = { git = "https://github.com/chiririll/oozextract", rev = "4b9423158df788d7f3e5b754d37f4c8183682af9" }
 # Bink 2 demuxer and decoders (AGPL-3.0, pure Rust, not on crates.io). Our fork: upstream history plus one fix to the DCT audio decoder.
-nihav_core = { git = "https://github.com/chiririll/nihav", rev = "895ba0d04ec36e1b9246b818484393a3e516cc75" }
-nihav_rad = { git = "https://github.com/chiririll/nihav", rev = "895ba0d04ec36e1b9246b818484393a3e516cc75", default-features = false, features = ["demuxer_bink", "decoder_bink2", "decoder_binkaud"] }
+nihav_core = { git = "https://github.com/chiririll/nihav", rev = "aabd6fcf16537bb644206cbc42e8d72947303d32" }
+nihav_rad = { git = "https://github.com/chiririll/nihav", rev = "aabd6fcf16537bb644206cbc42e8d72947303d32", default-features = false, features = ["demuxer_bink", "decoder_bink2", "decoder_binkaud"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
