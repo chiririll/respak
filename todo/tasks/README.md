@@ -21,30 +21,8 @@ Every slice ends with:
 - Live Steam tests and any run that talks to Steam are integration tests: never run them without a need and the user's explicit permission ([STEAM.md](../STEAM.md) §8).
 - Don't commit unless the user asks.
 
-## Foundation (done)
-| # | Task | Depends on | Status |
-|---|---|---|---|
-| 01 | [Workspace setup](01-workspace-setup.md) | — | done |
-| 02 | [Core: errors](02-core-errors.md) | 01 | done |
-| 03 | [Core: values, formats, keys](03-core-values.md) | 02 | done |
-| 04 | [Core: capabilities](04-core-capabilities.md) | 03 | done |
-
-## Slices
+## Active
 | # | Task | Demo | Depends on | Status |
 |---|---|---|---|---|
-| 05 | [Walking skeleton: PNG ↔ DDS](05-slice-png-dds.md) | PNG → DDS → PNG round trip | 04 | done |
-| 06 | [`formats` and `discover`](06-slice-discover-formats.md) | `discover icon.png` | 05 | done |
-| 07 | [Open an rpak, list its assets](07-slice-rpak-listing.md) | `discover common.rpak --depth 1` | 06 | done |
-| 08 | [rpak texture → DDS (permanent mips)](08-slice-txtr-to-dds.md) | `convert …/foo.txtr --to dds` | 07 | done |
-| 09 | [BC decoding and target options](09-slice-txtr-to-png.md) | `convert …/foo.txtr --to png` | 08 | done |
-| 10 | [Streamed mips from starpaks](10-slice-streamed-mips.md) | full-size texture, byte count | 09 | done |
-| 11 | [Batch requests, globs, composite outputs](11-slice-batch-requests.md) | `run request.json` | 10 | done |
-| 11a | [Steam login](11a-slice-steam-login.md) | `steam login --qr`, token reused | 11 | done |
-| 11b | [Steam depots as input](11b-slice-steam-depot.md) | `--steam … convert`, only the needed chunks downloaded | 11a | in-progress |
-| 11c | [Oodle decompression](11c-slice-oodle.md) | current Apex textures over Steam | 11b | in-progress |
-| 12 | [Events, progress, cancellation](12-slice-events-cancel.md) | progress + Ctrl-C | 11 | in-progress |
-| 13 | [Linking: a material with its textures](13-slice-linking-material.md) | material + textures | 12 | in-progress |
-| 15 | [Bink 2 video → PNG frames + WAV](15-slice-bik-video.md) | `convert media/frontend.bik --to '{"type":"png.frames"}'`, `convert media/respawn.bik --to '{"type":"wav"}'` | 11b | in-progress (sketch done, gate) |
-| 14 | [Backlog](14-backlog.md) | — | — | blocked |
 
 Respawn format code comes from rsx: reviewed first, then ported (PROJECT.md §12).
