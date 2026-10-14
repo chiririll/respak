@@ -40,7 +40,7 @@ respak --steam 1172470 --depot 1172471=7843921… --out out convert 'paks/Win64/
 - `--depot ID` takes that depot's current manifest for `--branch` (default `public`), read from PICS. `--depot ID=MANIFEST` pins a manifest, which is how older game versions are read. The user gets manifest IDs from SteamDB.
 - The chosen depots are merged into one file tree. On a path collision, **the depot later in the `--depot` list wins** (list order, not date).
 - Paths: manifest `\` becomes `/`, the original case is kept, and lookups and globs match **case-insensitively** (`paks/win64/common.rpak` finds `Paks/Win64/common.rpak`).
-- `respak --steam APP --depot ID --out DIR copy 'paks/Win64/*.rpak'` copies whole files unchanged (ranged reads, 4 MiB at a time); it is `convert --to '{"type":"file"}'` underneath, so a `run` request can mix such outputs with conversions.
+- `respak --steam APP --depot ID --out DIR copy 'paks/Win64/*.rpak'` copies whole files unchanged (ranged reads, 4 MiB at a time); it is `convert --to '{"type":"file"}'` underneath, so a `run` request can mix such outputs with conversions, and `convert ... --copy` writes the original next to each conversion.
 - If the stored token is missing, expired or revoked, the command fails with "run `respak steam login`". It never prompts in the middle of a conversion.
 
 ## 4. Login and the token file
