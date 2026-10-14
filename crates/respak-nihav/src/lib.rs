@@ -1,13 +1,17 @@
-//! respak-nihav: Bink 2 decoding and video file encoders and muxers from NihAV.
+//! respak-nihav: everything respak takes from NihAV.
 //!
-//! The only crate that knows NihAV. It reads Bink 2 (`bik`, decoded by `nihav_rad`) and fills in the traits of `respak_formats::videofile`: [`Mjpeg`] is a [`Codec`], [`Avi`] a
-//! [`Container`]. Everything NihAV returns is converted to respak's own types here, its errors
-//! become `Custom` errors that name the step, and a panic inside it is caught.
+//! The only crate that knows NihAV. It reads Bink 2 (`bik`, decoded by `nihav_rad`) and fills in
+//! the traits of `respak_formats::videofile`: [`Mjpeg`], [`Cinepak`], [`RawVideo`] and [`Zmbv`]
+//! are [`Codec`]s, [`NihavContainer`] writes `avi`, `mov` and `y4m`. Everything NihAV returns is
+//! converted to respak's own types here, its errors become `Custom` errors that name the step, and
+//! a panic inside it is caught.
 
-mod avi;
 mod bik;
 mod bik_decode;
+mod enc;
 mod mjpeg;
+mod mux;
+mod simple;
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -16,11 +20,12 @@ use respak_core::capability::{Audio, Video};
 use respak_core::{Error, ErrorKind, Plugin, Registry};
 use respak_formats::{Codec, VideoFileEncode};
 
-pub use avi::Avi;
 pub use bik::{BikFile, BikHeader, BikRead};
 pub use mjpeg::Mjpeg;
+pub use mux::NihavContainer;
+pub use simple::{Cinepak, RawVideo, Zmbv};
 
-/// Registers `avi` (MJPEG video, 16-bit PCM audio), written from any `Video`.
+/// Registers `bik` (read) and `avi`, `mov` and `y4m` (written from any `Video`).
 pub struct NihavPlugin;
 
 impl Plugin for NihavPlugin {
@@ -35,11 +40,18 @@ impl Plugin for NihavPlugin {
             .extensions(["bik", "bk2"])
             .provides::<dyn Video>()
             .provides::<dyn Audio>();
-        let codecs: Vec<Arc<dyn Codec>> = vec![Arc::new(Mjpeg)];
-        r.format("avi")
-            .label("AVI video")
-            .extensions(["avi"])
-            .from_cap::<dyn Video>(VideoFileEncode::new(Arc::new(Avi), codecs));
+        let codecs = || -> Vec<Arc<dyn Codec>> {
+            vec![Arc::new(Mjpeg), Arc::new(Cinepak), Arc::new(Zmbv), Arc::new(RawVideo)]
+        };
+        let mut video_file = |name: &'static str, label: &'static str, container: NihavContainer| {
+            r.format(name)
+                .label(label)
+                .extensions([name])
+                .from_cap::<dyn Video>(VideoFileEncode::new(Arc::new(container), codecs()));
+        };
+        video_file("avi", "AVI video", NihavContainer::avi());
+        video_file("mov", "QuickTime video", NihavContainer::mov());
+        video_file("y4m", "YUV4MPEG2 video", NihavContainer::y4m());
     }
 }
 

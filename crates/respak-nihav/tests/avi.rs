@@ -1,4 +1,4 @@
-//! `avi`: MJPEG video and PCM audio, written lazily from a stub `Video` + `Audio`.
+//! `avi`, `mov` and `y4m`: video and PCM audio, written lazily from a stub `Video` + `Audio`.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -34,9 +34,12 @@ impl Video for Clip {
         format: FrameFormat,
         _cx: &Cx,
     ) -> respak_core::Result<BoxStream<'static, respak_core::Result<VideoFrame>>> {
-        assert_eq!(format, FrameFormat::Yuv420, "the jpeg encoder asks for YUV");
         self.asked.fetch_add(1, Ordering::SeqCst);
         let frames = (0..FRAMES).map(move |index| {
+            if format == FrameFormat::Rgba8 {
+                let px: Vec<u8> = (0..37 * 21 * 4).map(|i| (i as u32 * 7 + index * 11) as u8).collect();
+                return Ok(VideoFrame { index, format, planes: vec![Bytes::from(px)], strides: vec![37 * 4] });
+            }
             let y: Vec<u8> = (0..37 * 21).map(|i| (i as u32 * 3 + index * 20) as u8).collect();
             let c = |v: u8| Bytes::from(vec![v; 19 * 11]);
             Ok(VideoFrame { index, format, planes: vec![Bytes::from(y), c(100), c(160)], strides: vec![37, 19, 19] })
@@ -222,4 +225,74 @@ async fn the_file_is_streamed_to_the_output() {
     let written = cx.output.read("clip.avi").await.unwrap().to_bytes();
     assert_eq!(&written[..4], b"RIFF");
     assert_eq!(movi_chunks(&written).iter().filter(|(id, _)| id == b"00dc").count(), FRAMES as usize);
+}
+
+async fn file(options: serde_json::Value, container: &'static str) -> respak_core::Result<Bytes> {
+    let cx = cx();
+    let (_, source) = clip(true);
+    let target = Target { format: FormatId::new(container), options, via: Vec::new() };
+    let out = cx.mediator.convert(source, target, &cx).await?;
+    read_all(out.as_blob().unwrap(), &cx).await
+}
+
+#[tokio::test]
+async fn avi_holds_cinepak_and_zmbv() {
+    for (codec, fourcc) in [("cinepak", b"cvid"), ("zmbv", b"ZMBV")] {
+        let file = file(serde_json::json!({ "codec": codec }), "avi").await.unwrap();
+        assert!(file.windows(4).any(|w| w == fourcc), "{codec}");
+        let chunks = movi_chunks(&file);
+        assert_eq!(chunks.iter().filter(|(id, _)| id == b"00dc").count(), FRAMES as usize, "{codec}");
+        let audio: usize = chunks.iter().filter(|(id, _)| id == b"01wb").map(|(_, p)| p.len()).sum();
+        assert_eq!(audio, (RATE * FRAMES / FPS) as usize * 2, "{codec} keeps the sound");
+    }
+}
+
+#[tokio::test]
+async fn mov_has_video_and_sound_in_both_codecs() {
+    for codec in ["mjpeg", "cinepak"] {
+        let file = file(serde_json::json!({ "codec": codec }), "mov").await.unwrap();
+        // The audio sample table counts 2-byte samples, all of them (NihAV leaves it empty).
+        let tables: Vec<(u32, u32)> = file
+            .windows(4)
+            .enumerate()
+            .filter(|(_, w)| *w == b"stsz")
+            .map(|(at, _)| {
+                let field = |n: usize| u32::from_be_bytes(file[at + 8 + n * 4..at + 12 + n * 4].try_into().unwrap());
+                (field(0), field(1))
+            })
+            .collect();
+        assert_eq!(tables.len(), 2, "{codec}");
+        assert_eq!(tables[1], (2, RATE * FRAMES / FPS), "{codec}: audio sample size and count");
+        for atom in [&b"moov"[..], b"mdat", b"vide", b"soun", b"sowt"] {
+            assert!(file.windows(4).any(|w| w == atom), "{codec}: no {}", String::from_utf8_lossy(atom));
+        }
+    }
+    let silent = file(serde_json::json!({ "mute": true }), "mov").await.unwrap();
+    assert!(!silent.windows(4).any(|w| w == b"soun"));
+}
+
+#[tokio::test]
+async fn y4m_is_raw_limited_range_planes_without_sound() {
+    let file = file(serde_json::json!({}), "y4m").await.unwrap();
+    let header = b"YUV4MPEG2 W37 H21 F25:1 C420";
+    assert!(file.starts_with(header), "{}", String::from_utf8_lossy(&file[..40]));
+    let frame = 37 * 21 + 2 * 19 * 11;
+    let body = &file[file.iter().position(|b| *b == b'\n').unwrap() + 1..];
+    assert_eq!(body.len(), FRAMES as usize * (6 + frame), "FRAME\n and the planes, per frame");
+    assert_eq!(&body[..6], b"FRAME\n");
+    // The source is full range, so the samples are compressed to 16..=235.
+    assert!(body[6..6 + 37 * 21].iter().all(|y| (16..=235).contains(y)));
+}
+
+#[tokio::test]
+async fn a_codec_a_container_cannot_hold_is_refused_and_y4m_has_no_track_to_pick() {
+    for (container, options) in [
+        ("y4m", serde_json::json!({ "codec": "mjpeg" })),
+        ("mov", serde_json::json!({ "codec": "zmbv" })),
+        ("avi", serde_json::json!({ "codec": "rawvideo" })),
+        ("y4m", serde_json::json!({ "audio_track": 0 })),
+    ] {
+        let err = file(options.clone(), container).await.unwrap_err();
+        assert!(matches!(err.kind(), ErrorKind::InvalidOptions { .. }), "{container} {options}: {err}");
+    }
 }

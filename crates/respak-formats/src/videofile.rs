@@ -106,6 +106,11 @@ pub trait Container: Send + Sync {
     /// The [`Codec::name`]s it can hold; the first is the default.
     fn codecs(&self) -> &[&'static str];
 
+    /// Whether the format can carry sound; one that cannot (`y4m`) is written without it.
+    fn has_audio(&self) -> bool {
+        true
+    }
+
     /// Writes a file to `file` (empty and seekable, so a header may be patched at the end): calls
     /// `feed` with the sink the streams go to, and finishes the file after it returns.
     fn mux(
@@ -177,7 +182,10 @@ impl ConvertHandler for VideoFileEncode {
             return Err(invalid("`quality` is 1 to 100".into()));
         }
         let codec = self.pick(&opts)?;
-        let track = match (opts.mute, source.as_audio()) {
+        if opts.audio_track.is_some() && !self.container.has_audio() {
+            return Err(invalid(format!("`{}` has no sound, so there is no audio track to pick", self.container.name())));
+        }
+        let track = match (opts.mute || !self.container.has_audio(), source.as_audio()) {
             (true, _) | (_, None) => None,
             (false, Some(audio)) => {
                 let tracks = audio.tracks();
