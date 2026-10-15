@@ -1,5 +1,7 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "integration"]
+# `cargo build` / `cargo test` without `-p` skip the integration crate.
+default-members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]

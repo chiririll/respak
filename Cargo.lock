@@ -2320,6 +2320,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "respak-integration"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ddsfile",
+ "opendal",
+ "png",
+ "respak-cli",
+ "respak-core",
+ "respak-formats",
+ "respak-respawn",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "respak-miles"
 version = "0.1.0"
 dependencies = [
