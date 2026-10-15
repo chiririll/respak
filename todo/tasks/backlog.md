@@ -6,7 +6,7 @@ Each item becomes its own vertical slice (README: how a slice works), ending in 
 ## New asset kinds
 
 **Respawn kinds** (`respak-respawn`):
-- model (`rmdl`) → Cast, including its streamed vertex data (`Mesh` / `Skeleton`)
+- model (`rmdl`): asset versions 16-20 → Cast is built (slice 18). Left: asset versions 8-15 (rev1-rev3 vertex data, older studiohdr layouts, [`../formats/rmdl.md`](../formats/rmdl.md)), blend shapes, `Vector48` positions, hitboxes/physics export, SMD/QC, animations
 - animation sequence (`aseq`), anim rig (`arig`) → `Animation`
 - datatable (`dtbl`) → CSV/JSON → `Table`
 - UI image atlas (`uimg`, rsx `'gmiu'`, `ui_image_atlas.cpp`): atlas texture by guid + per-sprite UV rects; export as image + JSON with an option to slice into sprites

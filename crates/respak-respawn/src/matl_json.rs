@@ -60,12 +60,12 @@ pub struct MatlJsonOptions {
 /// Convert edge `matl -> matl.json`.
 pub struct MatlJsonEncode;
 
-fn hex(guid: u64) -> String {
+pub(crate) fn hex(guid: u64) -> String {
     format!("0x{guid:016X}")
 }
 
 /// The virtual path of the pak a value from a pak volume lives in.
-fn pak_of(key: &ValueKey) -> String {
+pub(crate) fn pak_of(key: &ValueKey) -> String {
     key.to_string().rsplit_once('/').map_or(String::new(), |(pak, _)| pak.to_owned())
 }
 
@@ -78,12 +78,12 @@ fn custom(message: impl Into<String>) -> Error {
 }
 
 /// The pak asset `guid` of `kind` refers to, searched from the pak at `origin`.
-async fn locate(guid: u64, kind: &str, origin: &str, cx: &Cx) -> Result<Value> {
+pub(crate) async fn locate(guid: u64, kind: &str, origin: &str, cx: &Cx) -> Result<Value> {
     cx.mediator.identify(Arc::new(GuidRef::new(guid, kind, origin)), cx).await
 }
 
 /// Bind point -> shader variable name, from the material's shader.
-async fn shader_slots(matl: &MatlAsset, origin: &str, cx: &Cx) -> Result<BTreeMap<u32, String>> {
+pub(crate) async fn shader_slots(matl: &MatlAsset, origin: &str, cx: &Cx) -> Result<BTreeMap<u32, String>> {
     if matl.header.shader_set == 0 {
         return Err(custom("the material has no shader set"));
     }
@@ -95,7 +95,7 @@ async fn shader_slots(matl: &MatlAsset, origin: &str, cx: &Cx) -> Result<BTreeMa
     dxbc::texture_slots(&shader::bytecode(shdr_asset).await?)
 }
 
-fn file_safe(name: &str) -> String {
+pub(crate) fn file_safe(name: &str) -> String {
     name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect()
 }
 

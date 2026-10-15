@@ -145,6 +145,9 @@ pub struct PakHeader {
     pub external_refs_size: u64,
     /// Bytes of unknown data after the external refs (v8).
     pub unknown_data: u64,
+    /// When the pak was built, a Windows FILETIME (100 ns since 1601) at header offset 0x08.
+    /// Models of some asset versions are told apart by it.
+    pub created_time: u64,
 }
 
 impl PakHeader {
@@ -201,6 +204,7 @@ impl PakHeader {
                     num_external_refs: c(le_i32(data, 0x4C), "external ref count")?,
                     external_refs_size: c(le_i32(data, 0x50), "external refs size")?,
                     unknown_data: 0,
+                    created_time: le_i64(data, 0x08) as u64,
                 }
             }
             7 => Self {
@@ -221,6 +225,7 @@ impl PakHeader {
                 num_external_refs: c(le_i32(data, 0x50), "external ref count")?,
                 external_refs_size: c(le_i32(data, 0x54), "external refs size")?,
                 unknown_data: 0,
+                created_time: le_i64(data, 0x08) as u64,
             },
             _ => Self {
                 version,
@@ -240,6 +245,7 @@ impl PakHeader {
                 num_external_refs: c(le_i32(data, 0x64), "external ref count")?,
                 external_refs_size: c(le_i32(data, 0x68), "external refs size")?,
                 unknown_data: u64::from(le_i32(data, 0x74) as u32) + u64::from(le_i32(data, 0x78) as u32),
+                created_time: le_i64(data, 0x08) as u64,
             },
         };
         if h.flags & FLAG_ZSTD != 0 {

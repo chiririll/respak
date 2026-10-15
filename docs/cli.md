@@ -96,6 +96,8 @@ A pak is addressed like a folder: `paks/Win64/common.rpak/0x8A3F12C4D5E6F701.txt
 | `y4m` | video | codec `rawvideo`; no sound | one file |
 | `matl.json` | material | `textures`: a target (`{"type":"png"}`) | folder with `material.json` and `textures/` |
 | `uiia.json` | UI image | `image`: a target (`{"type":"png"}`) | folder with the image and JSON layout |
+| `cast` | model | `lods`: `0`, `"all"` or a list (0); `skin` (0); `textures` (true); `image`: texture format (`"png"`) | folder with one `<bodypart>_<n>_LOD<m>.cast` per LOD and model, and `textures/` |
+| `rmdl.json` | model | none | one JSON file: header, bones, body parts, materials, skins, LODs, hitboxes, attachments |
 | `file` | any file | none | unchanged copy |
 
 Textures of a material are found by GUID in the same pak, then the `common.rpak` beside it, then `--search`, then the cache. Slot names come from the material's shader; if that fails they become `slot_<n>` with a warning.
@@ -129,4 +131,5 @@ Logs go to stderr; the default level is warnings. Set `RUST_LOG=info` for more, 
 
 - Read-only: no writing back to Respawn formats.
 - Patched paks, zstd paks, Bink 1 video, `matl` outside versions 15-23 (e.g. Titanfall 2) and swizzled/console textures are unsupported.
-- Models, animations and in-pak audio cannot be converted; audio is only available from Bink videos.
+- Models convert only for asset versions 16-20 (current Apex), without blend shapes, physics or animations; older models, animations and in-pak audio cannot be converted; audio is only available from Bink videos.
+- A Cast material links a texture only when the material's shader slots can be named; otherwise the textures are still written as `slot_<n>` files and a warning says why.

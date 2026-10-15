@@ -556,6 +556,7 @@ impl Container for RpakData {
             stream: has_stream.then(|| format!("{}.stream", Inner::file_name(&self.inner.tables.assets[index]))),
             opt: has_opt.then(|| format!("{}.opt", Inner::file_name(&self.inner.tables.assets[index]))),
             data_mem_offset,
+            pak_created_time: self.inner.header.created_time,
             inner: Pages(self.inner.clone()),
         }))
     }
@@ -592,6 +593,8 @@ pub struct RpakAsset {
     pub opt: Option<String>,
     /// Offset in `.mem` of the asset's CPU data, if it has any.
     pub data_mem_offset: Option<u64>,
+    /// The pak header's `created_time` (see [`PakHeader`]).
+    pub pak_created_time: u64,
     inner: Pages,
 }
 

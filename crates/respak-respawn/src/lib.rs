@@ -10,6 +10,8 @@ mod matl_json;
 mod oodle;
 mod pak;
 mod patch;
+mod rmdl;
+mod rmdl_json;
 mod rpak;
 mod rtech;
 mod shader;
@@ -23,7 +25,7 @@ pub mod testing;
 
 use std::sync::Arc;
 
-use respak_core::capability::{Bitmap, Container, Metadata};
+use respak_core::capability::{Bitmap, Container, Mesh, Metadata, Skeleton};
 use respak_core::{Plugin, Registry};
 
 pub use dxbc::texture_slots;
@@ -31,6 +33,8 @@ pub use guid::string_to_guid;
 pub use locate::{GuidRef, RpakLocate};
 pub use matl::{MatlAsset, MatlHeader, MatlRead};
 pub use matl_json::{MatlJsonEncode, MatlJsonOptions, TextureTarget};
+pub use rmdl::{variant as rmdl_variant, RmdlAsset, RmdlHeader, RmdlRead, Studio, StudioLayout};
+pub use rmdl_json::{RmdlJsonEncode, RmdlJsonOptions};
 pub use pak::{AssetEntry, PagePtr, PakHeader, PatchBlock, Tables};
 pub use rpak::{RpakAsset, RpakData, RpakRead, MEM};
 pub use starpak::{Starpak, StarpakData, StarpakEntry, StarpakRead};
@@ -109,6 +113,15 @@ impl Plugin for RespawnPlugin {
             .extensions(["txtr"])
             .provides::<dyn Bitmap>()
             .provides::<dyn Metadata>();
+        r.format("rmdl")
+            .label("Respawn model")
+            .from("rpak.asset", RmdlRead)
+            .extensions(["mdl_"])
+            .provides::<dyn Mesh>()
+            .provides::<dyn Skeleton>()
+            .provides::<dyn Metadata>()
+            .to("rmdl.json", RmdlJsonEncode);
+        r.format("rmdl.json").label("Model (JSON)").extensions(["json"]);
         r.format("uiia")
             .label("Respawn UI image")
             .from("rpak.asset", UiiaRead)

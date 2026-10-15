@@ -41,6 +41,7 @@ pub fn texture_slots(blob: &[u8]) -> Result<BTreeMap<u32, String>> {
         return Err(corrupt("chunk table past the end"));
     }
     let mut rdef = None;
+    let mut seen = Vec::new();
     for i in 0..chunks {
         let at = u32_at(blob, 0x20 + i * 4)? as usize;
         let size = u32_at(blob, at.checked_add(4).ok_or_else(|| corrupt("chunk offset"))?)? as usize;
@@ -51,8 +52,9 @@ pub fn texture_slots(blob: &[u8]) -> Result<BTreeMap<u32, String>> {
             rdef = Some(data);
             break;
         }
+        seen.push(String::from_utf8_lossy(&blob[at..at + 4]).into_owned());
     }
-    let rdef = rdef.ok_or_else(|| corrupt("no RDEF chunk"))?;
+    let rdef = rdef.ok_or_else(|| corrupt(&format!("no RDEF chunk ({} bytes, chunks: {})", blob.len(), seen.join(","))))?;
 
     let count = u32_at(rdef, 8)? as usize;
     let table = u32_at(rdef, 0xC)? as usize;

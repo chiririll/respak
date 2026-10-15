@@ -18,9 +18,9 @@ pub use audio::{Audio, AudioChunk, AudioTrackInfo};
 pub use bitmap::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 pub use blob::{read_all, Blob, CHUNK};
 pub use container::Container;
-pub use mesh::Mesh;
+pub use mesh::{MaterialTexture, Mesh, MeshInfo, MeshMaterial, MeshModel, MeshPart, ModelInfo};
 pub use metadata::{Dependency, Metadata};
-pub use skeleton::Skeleton;
+pub use skeleton::{Bone, Skeleton};
 pub use table::Table;
 pub use video::{FrameFormat, Video, VideoFrame, VideoInfo};
 
@@ -62,6 +62,14 @@ impl Cap for dyn Container {
 
 impl Cap for dyn Metadata {
     const NAME: &'static str = "Metadata";
+}
+
+impl Cap for dyn Mesh {
+    const NAME: &'static str = "Mesh";
+}
+
+impl Cap for dyn Skeleton {
+    const NAME: &'static str = "Skeleton";
 }
 
 impl Cap for dyn Audio {

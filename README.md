@@ -15,14 +15,15 @@ Conversion is read-only: writing Respawn formats is not supported.
 | `txtr` | textures, asset versions 8-10 |
 | `matl` | materials, converted to JSON plus textures |
 | `uiia` | single tiled UI images (not atlases) |
+| `rmdl` | models (`mdl_`), asset versions 16-20 (current Apex): skeleton, meshes per LOD, materials; converted to Cast |
 | `bik` / `bk2` | Bink 2 video and audio only |
 | `png`, `dds` | plain image files |
 
-Other asset kinds (models, animations, ...) show up in pak listings but cannot be converted yet.
+Other asset kinds (older models, animations, ...) show up in pak listings but cannot be converted yet.
 
 ## What it writes
 
-`png`, `dds`, `png.frames` (video to a folder of PNGs), `wav`, `avi`, `mov`, `y4m`, `matl.json`, `uiia.json`, and `file` (unchanged copy).
+`png`, `dds`, `png.frames` (video to a folder of PNGs), `wav`, `avi`, `mov`, `y4m`, `matl.json`, `uiia.json`, `cast` (models), `rmdl.json` (model metadata), and `file` (unchanged copy).
 
 ## Quick start
 
