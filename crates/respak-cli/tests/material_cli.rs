@@ -77,3 +77,25 @@ fn copy_skips_assets_inside_paks_and_copies_the_files() {
     let both = run(&["convert", "paks/lvl.rpak/*.matl", "--to", r#"{"type":"matl.json"}"#, "--copy"]);
     assert!(both.status.success(), "{}", String::from_utf8_lossy(&both.stderr));
 }
+
+#[test]
+fn list_prints_paths_a_map_or_only_the_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, out) = (dir.path().join("in"), dir.path().join("out"));
+    let mut named = texture();
+    named.name = Some("ui/icon");
+    write(&root, "c.rpak", build_tex_pak(8, &[named]));
+    let list = |extra: &[&str]| {
+        let run = Command::new(env!("CARGO_BIN_EXE_respak"))
+            .args(["--root".as_ref(), root.as_os_str(), "--out".as_ref(), out.as_os_str(), "list".as_ref(), "c.rpak".as_ref()])
+            .args(extra)
+            .output()
+            .unwrap();
+        assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
+        String::from_utf8(run.stdout).unwrap()
+    };
+
+    assert_eq!(list(&[]), "0x000000000000ABCD.txtr\n");
+    assert_eq!(list(&["--map"]), "0x000000000000ABCD.txtr\ttexture/ui/icon.txtr\n");
+    assert_eq!(list(&["--names"]), "texture/ui/icon.txtr\n");
+}

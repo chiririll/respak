@@ -4,6 +4,15 @@ use serde::Serialize;
 
 use crate::graph::TargetInfo;
 
+/// One line of [`Engine::list`](crate::Engine::list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedEntry {
+    /// Path inside the container (for an rpak asset: `0x<GUID>.<kind>`).
+    pub path: String,
+    /// Readable path of the same entry (`texture/foo.txtr`), when the container knows one.
+    pub name: Option<String>,
+}
+
 /// Options for [`Engine::discover`](crate::Engine::discover).
 #[derive(Debug, Clone, Default)]
 pub struct DiscoverOptions {

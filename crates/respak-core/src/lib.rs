@@ -21,7 +21,7 @@ pub mod volume;
 pub use cache::PluginCache;
 pub use capability::Cap;
 pub use detect::{magic, u16le, u32le, within, ConvertHandler, Detect, Detected, Probe, ReadHandler};
-pub use discover::{Alternative, DiscoverOptions, Discovery, DiscoveryEntry};
+pub use discover::{Alternative, DiscoverOptions, Discovery, DiscoveryEntry, ListedEntry};
 pub use engine::{
     ConvertReport, ConvertRequest, Engine, EngineBuilder, FromSpec, LinkedValue, OutputReport, OutputRequest, OutputResult,
     SourceSpec, TargetSpec,

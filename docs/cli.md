@@ -31,6 +31,13 @@ respak --root game --out out discover paks/Win64/common.rpak --depth 1
 
 Each entry has a `path` you can paste into a request, the detected `format` and `version`, and `targets`, where `type` plus `defaults` can be used as `--to`.
 
+### `list PATH... [--map | --names]`
+Prints the entries of a container (rpak, mbnk, ...), one per line, sorted, relative to the container (`assets/some_asset.type`). Nothing is described or opened, so it is fast even for banks with tens of thousands of entries. `--map` reads every entry and, where it has a name of its own, prints it after a tab (`0x…16.txtr<TAB>texture/ui/icon.txtr`). `--names` prints only those names, one per line, and skips entries without one. Both are slow, and only asset kinds respak can read have names. To use an entry in `convert`, put the container path in front: `paks/Win64/common.rpak/assets/some_asset.type`.
+
+```sh
+respak --root game list paks/Win64/common.rpak
+```
+
 ### `convert PATH --to TARGET [--path OUT] [--copy]`
 Converts a file or every file a glob matches. `TARGET` is JSON, e.g. `'{"type":"dds"}'`. `--path` sets the output path under `--out`; `--copy` also copies the source file unchanged.
 

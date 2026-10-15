@@ -6,7 +6,7 @@ use std::sync::Arc;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 
-use crate::discover::{Alternative, DiscoverOptions, Discovery, DiscoveryEntry};
+use crate::discover::{Alternative, DiscoverOptions, Discovery, DiscoveryEntry, ListedEntry};
 use crate::error::{Error, ErrorKind, Result};
 use crate::event::{Event, Events, DEFAULT_EVENT_CAPACITY};
 use crate::graph::FormatGraph;
@@ -14,7 +14,11 @@ use crate::mediator::{Cx, Mediator, Target};
 use crate::middleware::Middleware;
 use crate::plugin::{Plugin, Registry};
 use crate::CancellationToken;
+use crate::capability::Container;
 use crate::value::{BundleData, FormatId, Value, FILE};
+
+/// Entries read at once by `list` with names.
+const NAME_CONCURRENCY: usize = 32;
 
 /// `{ "version": 1, "outputs": [...] }`
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -289,6 +293,44 @@ impl Engine {
         let mut entries = Vec::new();
         self.describe(&value, path.trim_matches('/'), options.depth, &cx, &mut entries).await?;
         Ok(Discovery { path: path.to_owned(), entries })
+    }
+
+    /// Lists the entries of the container at `path`, sorted, as paths relative to the container
+    /// (`assets/some_asset.type`). Without `names` nothing is opened (no detection, no sibling
+    /// files). With `names` every entry is read like `discover` does, and its `Metadata` name
+    /// (if it has one that differs from the path) is reported too; an entry that cannot be read
+    /// is listed without a name. `NotFound` if `path` is not a container.
+    pub async fn list(&self, path: &str, names: bool, cancel: &CancellationToken) -> Result<Vec<ListedEntry>> {
+        use futures::StreamExt;
+        let cx = self.cx(cancel);
+        let value = self.mediator.open(path, &cx).await?;
+        let container = self.mediator.mount(value, &cx).await?;
+        let c = container.as_container().expect("mount checks this");
+        let files = list_volume(&c.volume()).await?;
+        if !names {
+            return Ok(files.into_iter().map(|path| ListedEntry { path, name: None }).collect());
+        }
+        let (cx, c) = (&cx, c);
+        Ok(futures::stream::iter(files)
+            .map(|path| async move { ListedEntry { name: self.entry_name(c, &path, cx).await, path } })
+            .buffered(NAME_CONCURRENCY)
+            .collect()
+            .await)
+    }
+
+    /// The `Metadata` name of the entry `path`, with the entry's extension (names are stored
+    /// without the kind), unless it is just the path again.
+    async fn entry_name(&self, c: &dyn Container, path: &str, cx: &Cx) -> Option<String> {
+        let mut value = c.entry(path).await.ok()?;
+        if value.as_metadata().and_then(|m| m.name()).is_none() {
+            value = self.mediator.identify(value, cx).await.ok()?;
+        }
+        let name = value.as_metadata()?.name()?;
+        let name = match path.rsplit_once('.') {
+            Some((_, ext)) if !name.ends_with(&format!(".{ext}")) => format!("{name}.{ext}"),
+            _ => name.to_owned(),
+        };
+        (name != path).then_some(name)
     }
 
     async fn describe(

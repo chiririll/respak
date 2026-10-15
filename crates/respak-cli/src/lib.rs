@@ -73,6 +73,20 @@ pub enum Command {
         #[arg(long, default_value_t = 0)]
         depth: u32,
     },
+    /// Print the entries of containers (rpak, mbnk, ...), one path per line. Nothing is
+    /// described or opened, so it is fast; use `discover --depth 1` for formats and targets.
+    List {
+        /// Container paths relative to `--root`.
+        #[arg(required = true)]
+        paths: Vec<String>,
+        /// Read every entry and print its name after the path (tab-separated), where it has one.
+        /// Slow: an rpak asset's name is stored in its header, and only some kinds can be read.
+        #[arg(long, conflicts_with = "names")]
+        map: bool,
+        /// Read every entry and print only the names, only of entries that have one (slow, see `--map`).
+        #[arg(long)]
+        names: bool,
+    },
     /// Copy a file, or every file a glob matches, to `--out` unchanged (with `--steam`: download
     /// it). To combine it with conversions, add `{"type":"file"}` as one more output of a `run` request.
     Copy {
@@ -255,6 +269,28 @@ pub async fn run(
             }
             serde_json::to_writer_pretty(&mut *out, &found)?;
             writeln!(out)?;
+            Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
+        }
+        Command::List { paths, map, names } => {
+            let mut failed = false;
+            for path in &paths {
+                match engine.list(path, map || names, cancel).await {
+                    Ok(entries) => {
+                        for entry in entries {
+                            match (entry.name, names) {
+                                (Some(name), true) => writeln!(out, "{name}")?,
+                                (None, true) => {}
+                                (Some(name), false) => writeln!(out, "{}\t{name}", entry.path)?,
+                                (None, false) => writeln!(out, "{}", entry.path)?,
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        writeln!(err, "{path}: {error}")?;
+                        failed = true;
+                    }
+                }
+            }
             Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
         }
         Command::Convert { path, to, out_path, copy } => {
