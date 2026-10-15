@@ -158,7 +158,6 @@ async fn unsupported_paks_say_why() {
             b[4] = 9;
             b
         }, "9"),
-        ("patch.rpak", build_pak_with(8, &assets(), &Options { patch_count: 1, ..Default::default() }), "patch"),
         ("zstd.rpak", build_pak_with(7, &assets(), &Options { flags: 1 << 15, ..Default::default() }), "zstd"),
     ];
     for (name, bytes, why) in cases {
@@ -291,6 +290,52 @@ mod real {
         // checks something on paks that do.
         eprintln!("{named} named textures, {matched} matched");
         assert_eq!(named, matched);
+    }
+
+    /// Apex `common.rpak` with `common(01).rpak` and `patch_master.rpak`, downloaded by
+    /// `respak --steam 1172470 --depot 1172471 copy` into `out/patches` (never committed).
+    const PATCHED_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), r"\..\..\out\patches");
+
+    /// Reads all of the patched `.mem` and every asset header. Slow: `-- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn patched_common_rpak_reads_all_its_pages() {
+        if !Path::new(PATCHED_DIR).join("paks/Win64/common(01).rpak").exists() {
+            return;
+        }
+        let input = opendal::Operator::new(opendal::services::Fs::default().root(PATCHED_DIR)).unwrap();
+        let mut r = respak_core::Registry::new();
+        r.add(&respak_respawn::RespawnPlugin::new());
+        let cx = respak_core::Cx::new(respak_core::Mediator::new(r), input.clone(), input.clone());
+        let pak = cx.mediator.open("paks/Win64/common.rpak", &cx).await.unwrap();
+        let pak = cx.mediator.mount(pak, &cx).await.unwrap();
+        let container = pak.as_container().unwrap();
+        let volume = container.volume();
+        let mem_len = volume.stat(".mem").await.unwrap().content_length();
+        let started = std::time::Instant::now();
+        let chunk = 64 << 20;
+        let mut at = 0;
+        let mut sum = 0u64;
+        while at < mem_len {
+            let end = (at + chunk).min(mem_len);
+            let bytes = volume.read_with(".mem").range(at..end).await.unwrap().to_bytes();
+            sum = bytes.iter().fold(sum, |s, &b| s.wrapping_add(u64::from(b)));
+            at = end;
+        }
+        eprintln!(".mem: {mem_len} bytes, byte sum {sum}, {:?}", started.elapsed());
+
+        let entries = volume.list("").await.unwrap();
+        let mut failed = 0;
+        for e in &entries {
+            if let Err(err) = volume.read(e.name()).await {
+                failed += 1;
+                if failed < 10 {
+                    eprintln!("{}: {err}", e.name());
+                }
+            }
+        }
+        eprintln!("{} headers, {failed} failed, {:?}", entries.len(), started.elapsed());
+        assert_eq!(failed, 0);
     }
 
     /// Slow (decompresses 268 MB): `cargo test -p respak-respawn -- --ignored`.

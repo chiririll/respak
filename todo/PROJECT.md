@@ -268,7 +268,7 @@ impl Mediator {
 ## 11. Open questions (decide with the user)
 - ~~License~~ decided (the user delegated all remaining decisions): respak is **AGPL-3.0-only**, because it ports AGPL-3.0 rsx code. `LICENSE` and the workspace `license` field say so. Reversible only if the rsx authors grant otherwise.
 - ~~First milestone~~ decided: port rsx, covering every game and pak version it supports; first formats txtr → png/dds.
-- **rpak patches** (`common(01).rpak`, …, `patch_master.rpak`): out of scope for v1. Later the base pak's volume probably applies the latest patch transparently.
+- ~~rpak patches~~ built in slice 17 ([`tasks/17-slice-rpak-patches.md`](tasks/17-slice-rpak-patches.md)): opening `common.rpak` beside a `patch_master.rpak` opens its newest patch; the patched `.mem` is a map into the chain files; `--no-patches` / `RespawnPlugin::ignore_patches` turn it off.
 - Raw-byte / chunk caching of the input operator (the user asked to revisit; matters for remote inputs).
 - In-memory cache design (§7).
 - Slice 07 findings: the `VolumeSource` -> `Operator` adapter is ~150 lines (`Operator::from_parts(OperationContext::default(), Arc::new(service))`; a lister, a `StreamRead` reader, rest `()`). OpenDAL rejects an explicit range past the end (`RangeNotSatisfied`), so callers clamp. A compressed rpak is one RTech stream; it was first decompressed whole on first use, now (slice 11b) only as far as the reads need: the decoder stops at an output chunk boundary and the input is read in growing ranges (`rtech::decompress_prefix`, `Body::decoded`).

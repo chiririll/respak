@@ -25,7 +25,14 @@
 //!
 //! Pages follow back to back, in page-header order, with no padding.
 //!
-//! Patched paks (`patchCount > 0`) are out of scope and rejected.
+//! # Patched paks
+//! A pak with `patchCount > 0` (v7, v8) is the top of a chain: `common(03).rpak` lists the base
+//! `common.rpak` and the patches below it. Its body starts with a patch block, ahead of the
+//! starpak paths: `i32 patchDataStreamSize, i32 patchPageCount`, then `i64 cmpSize, i64 dcmpSize`
+//! per patch file, then a `u16` file index per patch file (0 = the base file, n = `(nn)`). The
+//! tables that follow are the complete, final tables of the patched pak. After them comes the edit
+//! stream (`patchDataStreamSize` bytes), then the data of pages `patchPageCount..` only; the
+//! earlier pages are rebuilt from the lower files by the edit stream (see `patch.rs`).
 
 use respak_core::{Error, ErrorKind, Result};
 
@@ -40,6 +47,8 @@ const MAGIC: &[u8; 4] = b"RPak";
 const PAGE_PTR_LEN: u64 = 8;
 const SEGMENT_LEN: u64 = 0x10;
 const PAGE_LEN: u64 = 0xC;
+const PATCH_DATA_HDR_LEN: u64 = 8;
+const PATCH_FILE_HDR_LEN: u64 = 16;
 
 fn corrupt(context: impl Into<String>) -> Error {
     Error::new(ErrorKind::Corrupt { context: context.into() })
@@ -120,7 +129,7 @@ pub struct PakHeader {
     pub num_segments: u64,
     /// Number of pages.
     pub num_pages: u64,
-    /// Patch file count (must be 0).
+    /// Patch file count: 0 for a pak that is not a patch.
     pub patch_count: u64,
     /// Number of pointer table entries.
     pub num_pointers: u64,
@@ -154,7 +163,7 @@ impl PakHeader {
     /// Parses the header from the start of the file. `data` may be longer than the header.
     ///
     /// - Not an rpak → `UnknownFormat`.
-    /// - A version other than 6, 7 or 8, or a patched pak → `UnsupportedVersion`.
+    /// - A version other than 6, 7 or 8 → `UnsupportedVersion`.
     /// - A truncated or inconsistent header → `Corrupt`.
     pub fn parse(data: &[u8]) -> Result<Self> {
         if data.len() < 8 || &data[..4] != MAGIC {
@@ -233,9 +242,6 @@ impl PakHeader {
                 unknown_data: u64::from(le_i32(data, 0x74) as u32) + u64::from(le_i32(data, 0x78) as u32),
             },
         };
-        if h.patch_count > 0 {
-            return Err(unsupported(format!("{version} (patch file, patchCount {})", h.patch_count)));
-        }
         if h.flags & FLAG_ZSTD != 0 {
             return Err(unsupported(format!("{version} (zstd compression)")));
         }
@@ -278,10 +284,20 @@ impl PakHeader {
         }
     }
 
-    /// Bytes from the start of the body to the start of the page data. Saturating, so a hostile
-    /// header can not overflow.
+    /// Bytes of the patch block at the start of the body of a patched pak, 0 otherwise.
+    pub fn patch_block_len(&self) -> u64 {
+        if self.patch_count == 0 {
+            0
+        } else {
+            PATCH_DATA_HDR_LEN.saturating_add(self.patch_count.saturating_mul(PATCH_FILE_HDR_LEN + 2))
+        }
+    }
+
+    /// Bytes from the start of the body to the end of the tables (the patch block and the
+    /// tables, but not the edit stream). Saturating, so a hostile header can not overflow.
     pub fn tables_len(&self) -> u64 {
         [
+            self.patch_block_len(),
             self.starpak_buf,
             self.opt_starpak_buf,
             self.num_segments.saturating_mul(SEGMENT_LEN),
@@ -374,9 +390,24 @@ pub struct Page {
     pub size: u32,
 }
 
+/// The patch block of a patched pak.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatchBlock {
+    /// Size of the edit stream that follows the tables.
+    pub stream_size: u64,
+    /// Number of leading pages whose data is not in this file but rebuilt from the lower files.
+    pub patch_pages: u64,
+    /// Compressed and decompressed size of each lower file, as the block states them.
+    pub files: Vec<(i64, i64)>,
+    /// File index of each lower file: 0 is the base `<stem>.rpak`, n is `<stem>(nn).rpak`.
+    pub indices: Vec<u16>,
+}
+
 /// The parsed tables of a pak.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tables {
+    /// The patch block, for a patched pak.
+    pub patch: Option<PatchBlock>,
     /// Starpak file paths; the index of an entry is the starpak index.
     pub starpaks: Vec<String>,
     /// Optional starpak file paths.
@@ -391,9 +422,11 @@ pub struct Tables {
     pub assets: Vec<AssetEntry>,
     /// The guid reference table.
     pub guid_refs: Vec<PagePtr>,
-    /// Offset of the page data from the start of the body.
+    /// Offset of the page data stored in this file from the start of the body. For a patched pak
+    /// the edit stream sits before it.
     pub page_data_offset: u64,
-    /// Offset of each page from the start of the page data.
+    /// Offset of each page from the start of the page data (the `.mem` offset of the page). In a
+    /// patched pak the pages before `patch_pages` are not stored in the file.
     pub page_bases: Vec<u64>,
     /// The pointer table sorted by (page, offset), for lookups by location.
     sorted_pointers: Vec<PagePtr>,
@@ -410,6 +443,20 @@ impl Tables {
     pub fn parse(header: &PakHeader, body: &[u8]) -> Result<Self> {
         let len = usize::try_from(header.tables_len()).map_err(|_| corrupt("rpak tables are too large"))?;
         let mut r = Cursor { buf: body.get(..len).ok_or_else(|| corrupt("rpak tables run past the data"))?, pos: 0 };
+        let patch = if header.patch_count > 0 {
+            let (stream_size, patch_pages) = (r.i32()?, r.i32()?);
+            let stream_size = count(i64::from(stream_size), "patch stream size")?;
+            let patch_pages = count(i64::from(patch_pages), "patch page count")?;
+            let n = header.patch_count as usize;
+            let files = (0..n).map(|_| Ok((r.i64()?, r.i64()?))).collect::<Result<Vec<_>>>()?;
+            let indices = (0..n).map(|_| Ok(u16::from_le_bytes(r.take(2)?.try_into().expect("2 bytes")))).collect::<Result<Vec<_>>>()?;
+            if patch_pages > header.num_pages {
+                return Err(corrupt("rpak: the patch block claims more patched pages than the pak has"));
+            }
+            Some(PatchBlock { stream_size, patch_pages, files, indices })
+        } else {
+            None
+        };
         let starpaks = strings(r.take(header.starpak_buf as usize)?);
         let opt_starpaks = strings(r.take(header.opt_starpak_buf as usize)?);
 
@@ -448,8 +495,11 @@ impl Tables {
             page_bases.push(at);
             at += u64::from(p.size);
         }
-        let page_data_offset = header.tables_len();
-        if page_data_offset.saturating_add(at) > header.body_len() {
+        // Only the pages from `patch_pages` on are stored in the file.
+        let stored_pages = patch.as_ref().map_or(0, |p| p.patch_pages as usize);
+        let stored: u64 = pages[stored_pages..].iter().map(|p| u64::from(p.size)).sum();
+        let page_data_offset = header.tables_len().saturating_add(patch.as_ref().map_or(0, |p| p.stream_size));
+        if page_data_offset.saturating_add(stored) > header.body_len() {
             return Err(corrupt("rpak pages run past the end of the data"));
         }
         for a in &assets {
@@ -460,6 +510,7 @@ impl Tables {
         let mut sorted_pointers = pointers.clone();
         sorted_pointers.sort_by_key(|p| (p.page, p.offset));
         Ok(Self {
+            patch,
             starpaks,
             opt_starpaks,
             segments,
@@ -554,8 +605,8 @@ impl Tables {
         Ok(())
     }
 
-    /// Where in the body the header of `asset` starts, and its length. `None` if the asset has
-    /// no header pointer or the header does not fit its page.
+    /// Where in `.mem` the header of `asset` starts, and its length. `None` if the asset has no
+    /// header pointer or the header does not fit its page.
     pub fn header_range(&self, asset: &AssetEntry) -> Option<std::ops::Range<u64>> {
         if asset.head.is_null() {
             return None;
@@ -565,7 +616,7 @@ impl Tables {
         if end_in_page > u64::from(page.size) {
             return None;
         }
-        let start = self.page_data_offset + self.page_bases[asset.head.page as usize] + u64::from(asset.head.offset);
+        let start = self.page_bases[asset.head.page as usize] + u64::from(asset.head.offset);
         Some(start..start + u64::from(asset.header_size))
     }
 }

@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<ExitCode> {
         .plugin(FormatsPlugin)
         .plugin(NihavPlugin)
         .plugin(MilesPlugin)
-        .plugin(RespawnPlugin::new().search(cli.search.clone()));
+        .plugin(RespawnPlugin::new().search(cli.search.clone()).ignore_patches(cli.no_patches));
     if let Some(dir) = &cli.cache {
         builder = builder.cache(fs(dir)?);
     }

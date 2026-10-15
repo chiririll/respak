@@ -25,5 +25,6 @@ Every slice ends with:
 | # | Task | Demo | Depends on | Status |
 |---|---|---|---|---|
 | 16 | [Miles banks → WAV](16-slice-miles-audio.md) | `convert …/general.mbnk/<name>.asrc --to wav` | 15 | in-progress (built on synthetic data; real-file check pending) |
+| 17 | [rpak patches](17-slice-rpak-patches.md) | `respak discover …/common(NN).rpak --depth 1` | 07, 08 | in-progress (built and tested; demo pending) |
 
 Respawn format code comes from rsx: reviewed first, then ported (PROJECT.md §12).

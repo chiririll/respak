@@ -14,6 +14,14 @@
 //! not known yet, so listing shows GUIDs; a path that gives a *name* (`texture/foo.txtr`) is
 //! hashed to a GUID and resolves.
 //!
+//! # Patches
+//! A patched pak (`common(03).rpak`) stores the final tables and only part of the page data. Its
+//! `.mem` is a map built from the pak's edit stream (see `patch.rs`): a read follows the map into
+//! the pak itself and the lower files of the chain, which are opened, and the map built, on the
+//! first read of page data. Listing never touches them. A lower file that is not there is
+//! `MissingDependency`. Opening `common.rpak` next to a `patch_master.rpak` opens the newest patch
+//! it names instead; opening a patch file directly opens that file.
+//!
 //! # Cost
 //! An uncompressed pak is read with ranged reads: the tables, then only the header bytes asked
 //! for. An RTech-compressed pak is a stream of output chunks decoded front to back: a read at
@@ -41,6 +49,7 @@ use tokio::sync::{Mutex, OnceCell};
 use crate::guid::string_to_guid;
 use crate::oodle::{self, OodleError, Scanner};
 use crate::pak::{AssetEntry, PagePtr, PakHeader, Tables};
+use crate::patch::{PageMap, Source};
 use crate::rtech;
 use crate::starpak::{self, Starpak, StarpakEntry};
 
@@ -254,11 +263,16 @@ impl Body {
 struct Inner {
     header: PakHeader,
     tables: Tables,
-    body: Body,
+    body: Arc<Body>,
+    /// The pak's own path on `host`.
+    file: String,
+    /// The page map and the chain, for a patched pak; built on the first read of page data.
+    patched: Option<OnceCell<Resolved>>,
     /// GUID -> index into `tables.assets`; the first entry wins on a duplicate.
     by_guid: HashMap<u64, usize>,
-    /// Where the pak lives, to find the starpaks next to it.
+    /// Where the pak lives, to find the starpaks and the patch chain next to it.
     host: Operator,
+    cancel: CancellationToken,
     /// The pak's directory on `host`: empty, or ending in `/`.
     dir: String,
     /// The starpaks, opened on first use (`starpaks` first, then `opt_starpaks`).
@@ -276,7 +290,92 @@ enum Part {
     Opt,
 }
 
+/// One file of a patch chain: its body, and where it starts in `F` (the bodies back to back).
+struct Link {
+    start: u64,
+    len: u64,
+    body: Arc<Body>,
+}
+
+/// A patched pak's `.mem`: the map, the replacement data and the files it points into.
+struct Resolved {
+    map: PageMap,
+    /// The edit stream; the replacement data starts at `map.replacement_at`.
+    stream: Bytes,
+    chain: Vec<Link>,
+}
+
+impl Resolved {
+    async fn read(&self, range: Range<u64>) -> Result<Bytes> {
+        let mut out = Vec::with_capacity((range.end - range.start) as usize);
+        for piece in self.map.locate(range)? {
+            match piece.source {
+                Source::Replacement(at) => {
+                    let from = self.map.replacement_at as u64 + at;
+                    let bytes = self.stream.get(from as usize..(from + piece.len) as usize);
+                    out.extend_from_slice(bytes.ok_or_else(|| corrupt("rpak patch: replacement data past the edit stream"))?);
+                }
+                Source::File(mut at) => {
+                    let mut left = piece.len;
+                    while left > 0 {
+                        let link = self
+                            .chain
+                            .iter()
+                            .find(|l| (l.start..l.start + l.len).contains(&at))
+                            .ok_or_else(|| corrupt("rpak patch: the script reads past the end of the pak files"))?;
+                        let n = left.min(link.start + link.len - at);
+                        out.extend_from_slice(&link.body.read(at - link.start..at - link.start + n).await?);
+                        at += n;
+                        left -= n;
+                    }
+                }
+            }
+        }
+        Ok(Bytes::from(out))
+    }
+}
+
 impl Inner {
+    /// The bytes of `.mem` (the pages back to back) in `range`.
+    async fn read_mem(&self, range: Range<u64>) -> Result<Bytes> {
+        let Some(patched) = &self.patched else {
+            let base = self.tables.page_data_offset;
+            return self.body.read(base + range.start..base + range.end).await;
+        };
+        patched.get_or_try_init(|| self.resolve()).await?.read(range).await
+    }
+
+    /// Reads the edit stream, builds the page map and opens the lower files of the chain.
+    async fn resolve(&self) -> Result<Resolved> {
+        let patch = self.tables.patch.as_ref().expect("a patched pak has a patch block");
+        let tables_end = self.header.tables_len();
+        let stream = self.body.read(tables_end..tables_end + patch.stream_size).await?;
+        let stored: u64 = self.tables.pages[patch.patch_pages as usize..].iter().map(|p| u64::from(p.size)).sum();
+        let map = PageMap::build(&stream, self.tables.mem_len(), stored, self.tables.page_data_offset)?;
+
+        let top_len = self.header.body_len();
+        let mut chain = vec![Link { start: 0, len: top_len, body: self.body.clone() }];
+        let stem = self.file.rsplit_once('/').map_or(self.file.as_str(), |(_, f)| f);
+        let stem = stem.strip_suffix(".rpak").unwrap_or(stem);
+        let stem = stem.split('(').next().unwrap_or(stem);
+        let mut start = top_len;
+        for &index in &patch.indices {
+            let name = if index == 0 { format!("{stem}.rpak") } else { format!("{stem}({index:02}).rpak") };
+            let path = format!("{}{name}", self.dir);
+            let (header, body) = match open_body(&self.host, &path, 0, None, &self.cancel).await {
+                Ok(opened) => opened,
+                Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. }) => {
+                    return Err(Error::new(ErrorKind::MissingDependency { item: self.file.clone(), file: path }));
+                }
+                Err(e) => return Err(e),
+            };
+            let len = header.body_len();
+            chain.push(Link { start, len, body: Arc::new(body) });
+            start += len;
+        }
+        Ok(Resolved { map, stream, chain })
+    }
+
     /// Finds the asset a volume path names: `0x<GUID>.<kind>`, or `<name>.<kind>` (the name is
     /// hashed). The kind must match.
     fn locate(&self, path: &str) -> Option<usize> {
@@ -364,8 +463,7 @@ impl VolumeSource for RpakSource {
 
     async fn read(&self, path: &str, range: Range<u64>) -> Result<Bytes> {
         if path == MEM {
-            let base = self.0.tables.page_data_offset;
-            return self.0.body.read(base + range.start..base + range.end).await;
+            return self.0.read_mem(range).await;
         }
         let (index, part) =
             self.0.locate_part(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
@@ -379,7 +477,7 @@ impl VolumeSource for RpakSource {
             .tables
             .header_range(asset)
             .ok_or_else(|| corrupt(format!("asset {:#018x}: header does not fit its page", asset.guid)))?;
-        let mut raw = self.0.body.read(header).await?.to_vec();
+        let mut raw = self.0.read_mem(header).await?.to_vec();
         self.0.tables.relocate_header(asset, &mut raw)?;
         raw.get(range.start as usize..range.end as usize)
             .map(Bytes::copy_from_slice)
@@ -558,8 +656,143 @@ impl Data for RpakAsset {
     }
 }
 
+/// Opens the pak at `path` (the whole file, or `len` bytes from `start`): reads and checks its
+/// header and returns it with the body reader. `Corrupt` if the file is shorter than the header
+/// says.
+async fn open_body(
+    op: &Operator,
+    path: &str,
+    start: u64,
+    len: Option<u64>,
+    cancel: &CancellationToken,
+) -> Result<(PakHeader, Body)> {
+    let file_len = match len {
+        Some(len) => len,
+        None => op.stat(path).await?.content_length(),
+    };
+    let head_len = file_len.min(PakHeader::MAX_LEN as u64);
+    let head = op.read_with(path).range(start..start + head_len).await?.to_vec();
+    let header = PakHeader::parse(&head)?;
+
+    let compressed = header.is_rtech();
+    let needed = if compressed {
+        header.compressed_size
+    } else if header.is_oodle() {
+        // The compressed size leaves out the header.
+        header.compressed_size.saturating_add(header.header_len as u64)
+    } else {
+        header.decompressed_size
+    };
+    if file_len < needed {
+        return Err(corrupt(format!("rpak: file has {file_len} bytes, its header says {needed}")));
+    }
+    let header_len = header.header_len;
+    let body = if header.is_oodle() {
+        Body::Oodle {
+            op: op.clone(),
+            path: path.to_owned(),
+            start: start + header_len as u64,
+            len: header.body_len(),
+            stream_len: header.compressed_size,
+            state: Mutex::default(),
+            cancel: cancel.clone(),
+        }
+    } else if compressed {
+        Body::Rtech {
+            op: op.clone(),
+            path: path.to_owned(),
+            start,
+            header_len,
+            len: header.body_len(),
+            file_len: header.compressed_size,
+            state: Mutex::default(),
+            cancel: cancel.clone(),
+        }
+    } else {
+        Body::Raw { op: op.clone(), path: path.to_owned(), start: start + header_len as u64 }
+    };
+    Ok((header, body))
+}
+
+/// The path of the newest patch of `path` that a `patch_master.rpak` in its directory names, if
+/// there is one and `path` is not a patch itself. Anything wrong with the master means no patch.
+async fn newest_patch(op: &Operator, path: &str, cancel: &CancellationToken) -> Option<String> {
+    let (dir, name) = path.rsplit_once('/').map_or(("", path), |(d, f)| (&path[..d.len() + 1], f));
+    let stem = name.strip_suffix(".rpak")?;
+    if stem.eq_ignore_ascii_case("patch_master") || stem.ends_with(')') {
+        return None;
+    }
+    let entries = patch_master(op, &format!("{dir}patch_master.rpak"), cancel).await?;
+    let (_, number) = entries.into_iter().find(|(n, _)| n.eq_ignore_ascii_case(name))?;
+    if number == 0 {
+        return None;
+    }
+    let patch = format!("{dir}{stem}({number:02}).rpak");
+    op.stat(&patch).await.ok().map(|_| patch)
+}
+
+/// The entries of the `Ptch` asset of a patch master: pak file name and the number of its newest
+/// patch. The asset header is `i32 unk, i32 count, ptr names, ptr versions`: `names` points at
+/// `count` pointers to NUL-terminated strings, `versions` at `count` bytes.
+async fn patch_master(op: &Operator, path: &str, cancel: &CancellationToken) -> Option<Vec<(String, u8)>> {
+    let (header, body) = open_body(op, path, 0, None, cancel).await.ok()?;
+    if header.patch_count != 0 {
+        return None;
+    }
+    let tables = Tables::parse(&header, &body.read(0..header.tables_len()).await.ok()?).ok()?;
+    let asset = tables.assets.iter().find(|a| a.kind_string() == "Ptch")?;
+    let mem = |at: u64, len: u64| {
+        let (body, base) = (&body, tables.page_data_offset + at);
+        async move { body.read(base..base + len).await.ok() }
+    };
+    let ptr = |b: &[u8]| {
+        let p = PagePtr {
+            page: u32::from_le_bytes(b.get(..4)?.try_into().ok()?),
+            offset: u32::from_le_bytes(b.get(4..8)?.try_into().ok()?),
+        };
+        if p.is_null() {
+            return None;
+        }
+        tables.mem_offset(p)
+    };
+    let head = tables.header_range(asset)?;
+    let h = mem(head.start, head.end - head.start).await?;
+    let count = u64::from(u32::from_le_bytes(h.get(4..8)?.try_into().ok()?));
+    let (names, versions) = (ptr(h.get(8..16)?)?, ptr(h.get(16..24)?)?);
+    if count > 4096 {
+        return None;
+    }
+    let pointers = mem(names, count * 8).await?;
+    let versions = mem(versions, count).await?;
+    let mut out = Vec::new();
+    for (i, p) in pointers.chunks_exact(8).enumerate() {
+        let at = ptr(p)?;
+        let bytes = mem(at, 256.min(tables.mem_len().saturating_sub(at))).await?;
+        let name = bytes.split(|&b| b == 0).next()?;
+        out.push((String::from_utf8_lossy(name).into_owned(), *versions.get(i)?));
+    }
+    Some(out)
+}
+
 /// Read edge `file -> rpak`.
-pub struct RpakRead;
+#[derive(Debug, Clone, Copy)]
+pub struct RpakRead {
+    patches: bool,
+}
+
+impl Default for RpakRead {
+    fn default() -> Self {
+        Self::new(true)
+    }
+}
+
+impl RpakRead {
+    /// With `patches` off, a patch master is not consulted and a patch file is refused as
+    /// `UnsupportedVersion`.
+    pub fn new(patches: bool) -> Self {
+        Self { patches }
+    }
+}
 
 #[async_trait]
 impl Detect for RpakRead {
@@ -586,51 +819,20 @@ impl ReadHandler for RpakRead {
             .downcast_ref::<FileData>()
             .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "rpak must be read from a file".into() }))?;
         let start = file.range.as_ref().map_or(0, |r| r.start);
-        let file_len = match &file.range {
-            Some(r) => r.end - r.start,
-            None => file.op.stat(&file.path).await?.content_length(),
+        let len = file.range.as_ref().map(|r| r.end - r.start);
+        // `common.rpak` next to a `patch_master.rpak` is opened as its newest patch.
+        let patch = match (self.patches, &file.range) {
+            (true, None) => newest_patch(&file.op, &file.path, &cx.cancel).await,
+            _ => None,
         };
-        let head_len = file_len.min(PakHeader::MAX_LEN as u64);
-        let head = file.op.read_with(&file.path).range(start..start + head_len).await?.to_vec();
-        let header = PakHeader::parse(&head)?;
-
-        let compressed = header.is_rtech();
-        let needed = if compressed {
-            header.compressed_size
-        } else if header.is_oodle() {
-            // The compressed size leaves out the header.
-            header.compressed_size.saturating_add(header.header_len as u64)
-        } else {
-            header.decompressed_size
-        };
-        if file_len < needed {
-            return Err(corrupt(format!("rpak: file has {file_len} bytes, its header says {needed}")));
+        let path = patch.as_ref().unwrap_or(&file.path).clone();
+        let (header, body) = open_body(&file.op, &path, start, if patch.is_some() { None } else { len }, &cx.cancel).await?;
+        if !self.patches && header.patch_count > 0 {
+            return Err(Error::new(ErrorKind::UnsupportedVersion {
+                format: "rpak".into(),
+                version: format!("{} (patch file, patchCount {}; patches are ignored)", header.version, header.patch_count),
+            }));
         }
-        let header_len = header.header_len;
-        let body = if header.is_oodle() {
-            Body::Oodle {
-                op: file.op.clone(),
-                path: file.path.clone(),
-                start: start + header_len as u64,
-                len: header.body_len(),
-                stream_len: header.compressed_size,
-                state: Mutex::default(),
-                cancel: cx.cancel.clone(),
-            }
-        } else if compressed {
-            Body::Rtech {
-                op: file.op.clone(),
-                path: file.path.clone(),
-                start,
-                header_len,
-                len: header.body_len(),
-                file_len: header.compressed_size,
-                state: Mutex::default(),
-                cancel: cx.cancel.clone(),
-            }
-        } else {
-            Body::Raw { op: file.op.clone(), path: file.path.clone(), start: start + header_len as u64 }
-        };
         let table_bytes = body.read(0..header.tables_len()).await?;
         let tables = Tables::parse(&header, &table_bytes)?;
 
@@ -638,9 +840,21 @@ impl ReadHandler for RpakRead {
         for (i, a) in tables.assets.iter().enumerate() {
             by_guid.entry(a.guid).or_insert(i);
         }
-        let dir = file.path.rsplit_once('/').map_or(String::new(), |(d, _)| format!("{d}/"));
+        let dir = path.rsplit_once('/').map_or(String::new(), |(d, _)| format!("{d}/"));
         let opened = (0..tables.starpaks.len() + tables.opt_starpaks.len()).map(|_| OnceCell::new()).collect();
-        let inner = Arc::new(Inner { header, tables, body, by_guid, host: file.op.clone(), dir, opened });
+        let patched = tables.patch.is_some().then(OnceCell::new);
+        let inner = Arc::new(Inner {
+            header,
+            tables,
+            body: Arc::new(body),
+            file: path,
+            patched,
+            by_guid,
+            host: file.op.clone(),
+            cancel: cx.cancel.clone(),
+            dir,
+            opened,
+        });
         let mount = source.key().to_string();
         let volume = volume_operator(RpakSource(inner.clone()), &mount);
         let format = FormatId::new("rpak").with_version(Version::new(u32::from(inner.header.version)));

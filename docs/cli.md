@@ -13,6 +13,7 @@ Paths you pass to commands (`from`, `PATH`) always use `/` and are relative to `
 | `--root DIR` | Input directory (the game folder). Required unless `--steam` is used. Created if missing, so a typo makes an empty folder |
 | `--out DIR` | Output directory, created if missing. Required by every command except `steam` |
 | `--search GLOB` | Extra paks to look in when an asset refers to another asset (such as a material's textures) that is not in its own pak or the `common.rpak` beside it. Relative to `--root`, repeatable, e.g. `--search "paks/Win64/*.rpak"`. Nothing is scanned unless a lookup needs it |
+| `--no-patches` | Do not apply rpak patches. By default `common.rpak` next to a `patch_master.rpak` is opened as its newest patch (`common(NN).rpak`), and a patch file is completed from the files it lists. With this flag `patch_master.rpak` is ignored and a patch file is refused as an unsupported version |
 | `--cache DIR` | Remembers where `--search` found each asset, so later runs are faster. Optional |
 | `--report FILE` | Write the JSON report to a file instead of stdout |
 | `--steam`, `--depot`, `--branch`, `--steam-cache-size` | Read from Steam, see [steam.md](steam.md) |

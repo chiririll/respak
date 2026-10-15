@@ -9,6 +9,7 @@ mod matl;
 mod matl_json;
 mod oodle;
 mod pak;
+mod patch;
 mod rpak;
 mod rtech;
 mod shader;
@@ -30,7 +31,7 @@ pub use guid::string_to_guid;
 pub use locate::{GuidRef, RpakLocate};
 pub use matl::{MatlAsset, MatlHeader, MatlRead};
 pub use matl_json::{MatlJsonEncode, MatlJsonOptions, TextureTarget};
-pub use pak::{AssetEntry, PagePtr, PakHeader, Tables};
+pub use pak::{AssetEntry, PagePtr, PakHeader, PatchBlock, Tables};
 pub use rpak::{RpakAsset, RpakData, RpakRead, MEM};
 pub use starpak::{Starpak, StarpakData, StarpakEntry, StarpakRead};
 pub use txtr::{pixel_format, TxtrAsset, TxtrHeader, TxtrRead};
@@ -41,6 +42,7 @@ pub use uiia_json::{UiiaJsonEncode, UiiaJsonOptions};
 #[derive(Debug, Default)]
 pub struct RespawnPlugin {
     search: Arc<Vec<String>>,
+    ignore_patches: bool,
 }
 
 impl RespawnPlugin {
@@ -60,6 +62,14 @@ impl RespawnPlugin {
         self.search = Arc::new(globs.into_iter().map(Into::into).collect());
         self
     }
+
+    /// Ignores rpak patches: `patch_master.rpak` is not consulted, and a patch file (`common(01).rpak`)
+    /// is refused as `UnsupportedVersion` instead of being completed from the files below it. The
+    /// default is to apply patches.
+    pub fn ignore_patches(mut self, ignore: bool) -> Self {
+        self.ignore_patches = ignore;
+        self
+    }
 }
 
 impl Plugin for RespawnPlugin {
@@ -73,7 +83,7 @@ impl Plugin for RespawnPlugin {
     }
 
     fn register(&self, r: &mut Registry) {
-        r.format("rpak").label("Respawn pak").from("file", RpakRead).extensions(["rpak"]).provides::<dyn Container>();
+        r.format("rpak").label("Respawn pak").from("file", RpakRead::new(!self.ignore_patches)).extensions(["rpak"]).provides::<dyn Container>();
         r.format("starpak")
             .label("Respawn starpak")
             .from("file", StarpakRead)

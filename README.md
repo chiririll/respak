@@ -10,7 +10,7 @@ Conversion is read-only: writing Respawn formats is not supported.
 
 | Format | Notes |
 |---|---|
-| `rpak` | header versions 6, 7, 8; uncompressed, RTech and Oodle compression. Patched and zstd paks are not supported |
+| `rpak` | header versions 6, 7, 8; uncompressed, RTech and Oodle compression. Patched paks (`common(NN).rpak`, `patch_master.rpak`) are applied unless `--no-patches`; zstd paks are not supported |
 | `starpak` | streamed texture mips, found automatically beside the pak |
 | `txtr` | textures, asset versions 8-10 |
 | `matl` | materials, converted to JSON plus textures |

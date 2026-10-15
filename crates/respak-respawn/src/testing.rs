@@ -117,6 +117,102 @@ pub fn build_pak_with(version: u16, assets: &[TestAsset], opts: &Options) -> Vec
     h
 }
 
+// ---- patch edit streams ---------------------------------------------------------------------
+
+/// Builds an edit stream (the part of a patch file that rebuilds the pages it does not store).
+/// Both Huffman tables use eight equal 3-bit codes: command `c` and size exponent `e` (0 to 7) are
+/// coded as the 3 bits of the number, so a count `n` (1 to 255) takes `3 + 3 + log2(n)` bits.
+#[derive(Default)]
+pub struct EditScript {
+    bits: Vec<bool>,
+    replacement: Vec<u8>,
+}
+
+impl EditScript {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn put(&mut self, value: u64, n: u32) {
+        for i in 0..n {
+            self.bits.push(value >> i & 1 == 1);
+        }
+    }
+
+    fn code(&mut self, value: u8) {
+        // The 3-bit code of `value`, stored bit-reversed because the stream is read LSB first.
+        let reversed = (0..3).fold(0u64, |r, i| r | u64::from(value >> i & 1) << (2 - i));
+        self.put(reversed, 3);
+    }
+
+    fn counted(&mut self, command: u8, n: u64) -> &mut Self {
+        assert!((1..256).contains(&n));
+        let e = 63 - n.leading_zeros() as u8;
+        self.code(command);
+        self.code(e);
+        self.put(n - (1 << e), u32::from(e));
+        self
+    }
+
+    /// Command 0: copy `n` bytes of the files.
+    pub fn copy(&mut self, n: u64) -> &mut Self {
+        self.counted(0, n)
+    }
+
+    /// Command 1: skip `n` bytes of the files.
+    pub fn skip(&mut self, n: u64) -> &mut Self {
+        self.counted(1, n)
+    }
+
+    /// Command 2: insert bytes (the files stay where they are).
+    pub fn insert(&mut self, bytes: &[u8]) -> &mut Self {
+        self.replacement.extend_from_slice(bytes);
+        self.counted(2, bytes.len() as u64)
+    }
+
+    /// Command 3: bytes that replace the same number of bytes of the files.
+    pub fn replace(&mut self, bytes: &[u8]) -> &mut Self {
+        self.replacement.extend_from_slice(bytes);
+        self.counted(3, bytes.len() as u64)
+    }
+
+    /// Command 4, 5 or 6: one byte (two for 6) of replacement, then a copy of 3, 7 or 6 bytes.
+    pub fn patched_copy(&mut self, command: u8, replacement: &[u8]) -> &mut Self {
+        assert!((4..=6).contains(&command) && replacement.len() == if command == 6 { 2 } else { 1 });
+        self.replacement.extend_from_slice(replacement);
+        self.code(command);
+        self
+    }
+
+    /// A command by number, with no count (for streams that must be rejected).
+    pub fn raw_command(&mut self, command: u8) -> &mut Self {
+        self.code(command);
+        self
+    }
+
+    /// The stream: the two tables, the offset word, the bits, the replacement data.
+    pub fn finish(&self) -> Vec<u8> {
+        // Entry: symbol << 3 | (code length - 1). Symbols 0 to 7 in order get the codes 0 to 7.
+        let table: Vec<u8> = (0..8u8).map(|symbol| symbol << 3 | 2).collect();
+        let mut word = vec![false; 24];
+        word.extend(&self.bits);
+        let mut bits: Vec<u8> = word
+            .chunks(8)
+            .map(|chunk| chunk.iter().enumerate().fold(0u8, |b, (i, &set)| b | u8::from(set) << i))
+            .collect();
+        while bits.len() < 8 {
+            bits.push(0);
+        }
+        let offset = bits.len() as u32;
+        bits[..3].copy_from_slice(&offset.to_le_bytes()[..3]);
+        let mut out = table.clone();
+        out.extend(&table);
+        out.extend(&bits);
+        out.extend(&self.replacement);
+        out
+    }
+}
+
 // ---- textures -------------------------------------------------------------------------------
 
 /// A raw asset: where its header and data live, as `(page, offset)`.
@@ -147,11 +243,56 @@ pub fn build_raw_with(
     starpaks: &[&str],
     opt_starpaks: &[&str],
 ) -> Vec<u8> {
+    build_raw_inner(version, pages, pointers, assets, starpaks, opt_starpaks, None)
+}
+
+/// The patch part of a patch file: which pages it does not store, which files are below it, and
+/// the edit stream (see [`EditScript`]).
+pub struct PatchSpec {
+    /// The first this many pages are not stored in the file.
+    pub patch_pages: u32,
+    /// File index of each lower file: 0 is `<stem>.rpak`, n is `<stem>(nn).rpak`.
+    pub indices: Vec<u16>,
+    /// The edit stream.
+    pub stream: Vec<u8>,
+}
+
+/// Builds a patch file: the tables are those of the final pak (`pages` are all its pages), but only
+/// the pages from `patch.patch_pages` on are stored. Version 7 or 8.
+pub fn build_patch_file(
+    version: u16,
+    pages: &[Vec<u8>],
+    pointers: &[(u32, u32)],
+    assets: &[RawAsset],
+    patch: &PatchSpec,
+) -> Vec<u8> {
+    build_raw_inner(version, pages, pointers, assets, &[], &[], Some(patch))
+}
+
+fn build_raw_inner(
+    version: u16,
+    pages: &[Vec<u8>],
+    pointers: &[(u32, u32)],
+    assets: &[RawAsset],
+    starpaks: &[&str],
+    opt_starpaks: &[&str],
+    patch: Option<&PatchSpec>,
+) -> Vec<u8> {
     let list = |paths: &[&str]| paths.iter().flat_map(|p| p.bytes().chain([0])).collect::<Vec<u8>>();
     let (starpaks, opt_starpaks) = (list(starpaks), if version == 8 { list(opt_starpaks) } else { Vec::new() });
     let header_len = if version == 8 { 0x80 } else { 0x58 };
     let entry_len = if version == 8 { 0x50 } else { 0x48 };
     let mut body = Vec::new();
+    if let Some(patch) = patch {
+        body.extend_from_slice(&(patch.stream.len() as i32).to_le_bytes());
+        body.extend_from_slice(&(patch.patch_pages as i32).to_le_bytes());
+        for _ in &patch.indices {
+            body.extend_from_slice(&[0u8; 16]);
+        }
+        for i in &patch.indices {
+            body.extend_from_slice(&i.to_le_bytes());
+        }
+    }
     body.extend_from_slice(&starpaks);
     body.extend_from_slice(&opt_starpaks);
     body.extend_from_slice(&1i32.to_le_bytes());
@@ -187,7 +328,10 @@ pub fn build_raw_with(
         }
         body.extend_from_slice(&e);
     }
-    for p in pages {
+    if let Some(patch) = patch {
+        body.extend_from_slice(&patch.stream);
+    }
+    for p in pages.get(patch.map_or(0, |p| p.patch_pages as usize)..).unwrap_or_default() {
         body.extend_from_slice(p);
     }
 
@@ -196,6 +340,7 @@ pub fn build_raw_with(
     put(&mut h, 0, b"RPak");
     put(&mut h, 4, &version.to_le_bytes());
     put(&mut h, 0x18, &total.to_le_bytes());
+    let patch_count = patch.map_or(0, |p| p.indices.len() as i16);
     let (np, nptr, na) = (pages.len() as u32, pointers.len() as i32, assets.len() as i32);
     match version {
         6 => {
@@ -210,6 +355,7 @@ pub fn build_raw_with(
             put(&mut h, 0x38, &(starpaks.len() as i16).to_le_bytes());
             put(&mut h, 0x3A, &1u16.to_le_bytes());
             put(&mut h, 0x3C, &(np as u16).to_le_bytes());
+            put(&mut h, 0x3E, &patch_count.to_le_bytes());
             put(&mut h, 0x40, &nptr.to_le_bytes());
             put(&mut h, 0x44, &na.to_le_bytes());
         }
@@ -219,6 +365,7 @@ pub fn build_raw_with(
             put(&mut h, 0x4A, &(opt_starpaks.len() as i16).to_le_bytes());
             put(&mut h, 0x4C, &1u16.to_le_bytes());
             put(&mut h, 0x4E, &(np as u16).to_le_bytes());
+            put(&mut h, 0x50, &patch_count.to_le_bytes());
             put(&mut h, 0x54, &nptr.to_le_bytes());
             put(&mut h, 0x58, &na.to_le_bytes());
         }

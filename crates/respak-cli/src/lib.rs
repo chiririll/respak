@@ -24,6 +24,10 @@ pub struct Cli {
     /// Repeat for several. Nothing else is ever scanned.
     #[arg(long, value_name = "GLOB")]
     pub search: Vec<String>,
+    /// Do not apply rpak patches: `patch_master.rpak` is not consulted and a patch file such as
+    /// `common(01).rpak` is refused instead of being completed from the files below it.
+    #[arg(long)]
+    pub no_patches: bool,
     /// Directory for the plugin cache (e.g. the guid -> pak index); created if missing.
     #[arg(long, value_name = "DIR")]
     pub cache: Option<PathBuf>,

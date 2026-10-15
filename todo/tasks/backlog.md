@@ -31,7 +31,7 @@ Each item becomes its own vertical slice (README: how a slice works), ending in 
 
 - raw dump of a pak asset with `copy` / `convert --copy`: today they skip assets (an asset is not a file: header in the rpak pages, streamed data in the starpak). A dump would write the header plus the streamed blobs as a bundle, per kind
 - the in-memory cache (PROJECT.md §7). It also fixes the dedup gap: the dedup shares only **concurrent** requests, so a texture used by two materials that do not overlap in time is decoded twice
-- rpak patches (PROJECT.md §11)
+- ~~rpak patches (PROJECT.md §11)~~ moved to slice 17 ([`17-slice-rpak-patches.md`](17-slice-rpak-patches.md))
 - writing Respawn formats (PROJECT.md §5.8), including the `bundle` rule
 
 ## Cleanup
