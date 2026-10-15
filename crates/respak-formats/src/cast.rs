@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use respak_core::capability::{Bone, MaterialTexture, Mesh, MeshMaterial, MeshPart, Skeleton};
+use respak_core::capability::{Animation, Bone, MaterialTexture, Mesh, MeshMaterial, MeshPart, Skeleton, Track};
 use respak_core::value::{BlobData, BundleData};
 use respak_core::{ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey};
 use serde::{Deserialize, Serialize};
@@ -75,7 +75,58 @@ impl LodSelect {
     }
 }
 
-/// Options of the `cast` target: `{"type":"cast","lods":[0,1],"skin":2,"textures":true,"image":"png"}`.
+/// Whether the root bone of an animation gets rsx's coordinate fix-up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RootFixup {
+    /// As rsx writes it: bone 0 turned by -90 degrees of yaw, position `(x, y)` to `(y, -x)`.
+    #[default]
+    Rsx,
+    /// Bone 0 as the animation stores it.
+    None,
+}
+
+/// Which blends of an animation to write.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BlendSelect {
+    /// Every blend (`"all"`).
+    All(AllBlends),
+    /// One blend (`1`).
+    One(u32),
+}
+
+/// The word `"all"` in [`BlendSelect`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AllBlends {
+    /// Every blend.
+    All,
+}
+
+impl Default for BlendSelect {
+    fn default() -> Self {
+        Self::All(AllBlends::All)
+    }
+}
+
+impl BlendSelect {
+    /// The blends to write for an animation with `blend_count` blends, ascending. A blend the
+    /// animation does not have is `InvalidOptions`.
+    pub fn resolve(&self, blend_count: u32) -> Result<Vec<u32>> {
+        match self {
+            Self::All(_) => Ok((0..blend_count).collect()),
+            Self::One(n) if *n < blend_count => Ok(vec![*n]),
+            Self::One(n) => Err(Error::new(ErrorKind::InvalidOptions {
+                message: format!("blend {n}: the animation has {blend_count} blend(s)"),
+            })),
+        }
+    }
+}
+
+/// Options of the `cast` target: `{"type":"cast","lods":[0,1],"skin":2,"textures":true,"image":"png"}`
+/// for a mesh, `{"type":"cast","root_fixup":"none","blend":0}` for an animation (each side ignores
+/// the other's options).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct CastOptions {
@@ -87,11 +138,22 @@ pub struct CastOptions {
     pub textures: bool,
     /// Format the textures are converted to; default `png`.
     pub image: String,
+    /// Animations: whether bone 0 gets rsx's coordinate fix-up; default `"rsx"`.
+    pub root_fixup: RootFixup,
+    /// Animations: which blends to write; default `"all"`. A blend the animation does not have is `InvalidOptions`.
+    pub blend: BlendSelect,
 }
 
 impl Default for CastOptions {
     fn default() -> Self {
-        Self { lods: LodSelect::default(), skin: 0, textures: true, image: "png".into() }
+        Self {
+            lods: LodSelect::default(),
+            skin: 0,
+            textures: true,
+            image: "png".into(),
+            root_fixup: RootFixup::default(),
+            blend: BlendSelect::default(),
+        }
     }
 }
 
@@ -180,6 +242,20 @@ impl Node {
     }
 }
 
+/// The `skel` node of `bones`.
+fn skeleton_node(name: &str, bones: &[Bone]) -> Node {
+    let mut skel = Node::new(b"skel", hash64(name));
+    for bone in bones {
+        let mut node = Node::new(b"bone", 0);
+        node.string("n", &bone.name);
+        node.u32("p", bone.parent.unwrap_or(u32::MAX));
+        node.floats(b"v3", "lp", 1, bone.position.iter().copied());
+        node.floats(b"v4", "lr", 1, bone.rotation.iter().copied());
+        skel.children.push(node);
+    }
+    skel
+}
+
 /// Builds the bytes of one Cast file: one model with its skeleton, materials and meshes.
 #[derive(Debug)]
 pub struct CastWriter {
@@ -188,6 +264,7 @@ pub struct CastWriter {
     materials: Vec<Node>,
     material_guids: HashSet<u64>,
     meshes: Vec<Node>,
+    curves: Vec<Node>,
 }
 
 impl Default for CastWriter {
@@ -199,22 +276,13 @@ impl Default for CastWriter {
 impl CastWriter {
     /// An empty file with a `root` and a `modl` node.
     pub fn new() -> Self {
-        Self { modl: Node::new(b"modl", 0), skel: None, materials: Vec::new(), material_guids: HashSet::new(), meshes: Vec::new() }
+        Self { modl: Node::new(b"modl", 0), skel: None, materials: Vec::new(), material_guids: HashSet::new(), meshes: Vec::new(), curves: Vec::new() }
     }
 
     /// Names the model and adds its `skel` with `bones`.
     pub fn model(&mut self, name: &str, bones: &[Bone]) {
         self.modl.hash = hash64(name);
-        let mut skel = Node::new(b"skel", hash64(name));
-        for bone in bones {
-            let mut node = Node::new(b"bone", 0);
-            node.string("n", &bone.name);
-            node.u32("p", bone.parent.unwrap_or(u32::MAX));
-            node.floats(b"v3", "lp", 1, bone.position.iter().copied());
-            node.floats(b"v4", "lr", 1, bone.rotation.iter().copied());
-            skel.children.push(node);
-        }
-        self.skel = Some(skel);
+        self.skel = Some(skeleton_node(name, bones));
     }
 
     /// Adds a `matl` node, with a `file` child per texture whose path is given in `files`
@@ -296,12 +364,59 @@ impl CastWriter {
         Ok(())
     }
 
+    /// Turns the file into an animation: an `anim` node (instead of `modl`) named `name`, with
+    /// `fps` and `looping`, and the `skel` of `bones` beside the curves. Replaces
+    /// [`model`](Self::model); a file is one or the other.
+    pub fn animation(&mut self, name: &str, fps: f32, looping: bool, bones: &[Bone]) {
+        let mut anim = Node::new(b"anim", hash64(name));
+        anim.floats(b"f", "fr", 1, std::iter::once(fps));
+        anim.prop(b"b", "lo", 1, &[u8::from(looping)]);
+        self.modl = anim;
+        self.skel = Some(skeleton_node(name, bones));
+    }
+
+    /// Adds a `curv` node for `bone`: `key` is Cast's key property (`tx`, `ty`, `tz`, `rq`, `sx`,
+    /// `sy`, `sz`), `mode` `"absolute"` or `"additive"` (`weight`, written only when additive).
+    /// `values` holds `frames` entries of 1 (`t*`, `s*`) or 4 (`rq`) floats, one per frame; every
+    /// frame is keyed (`kb` is `u8`, `u16` or `u32` by `frames`). A length that does not match is
+    /// an error.
+    pub fn curve(&mut self, bone: &str, key: &str, mode: &str, weight: Option<f32>, frames: u32, values: &[f32]) -> Result<()> {
+        let width = match key {
+            "tx" | "ty" | "tz" | "sx" | "sy" | "sz" => 1,
+            "rq" => 4,
+            other => return Err(custom(format!("curve {bone}: `{other}` is not a Cast key property"))),
+        };
+        if mode != "absolute" && mode != "additive" {
+            return Err(custom(format!("curve {bone}.{key}: mode `{mode}` is not `absolute` or `additive`")));
+        }
+        if values.len() as u64 != u64::from(frames) * width {
+            return Err(custom(format!("curve {bone}.{key}: {} values for {frames} frames", values.len())));
+        }
+        let mut node = Node::new(b"curv", hash64(&format!("{bone}:{key}")));
+        node.string("nn", bone);
+        node.string("kp", key);
+        let count = frames as usize;
+        match frames {
+            0..=255 => node.prop(b"b", "kb", count, &(0..frames).map(|f| f as u8).collect::<Vec<_>>()),
+            256..=65535 => node.prop(b"h", "kb", count, &(0..frames).flat_map(|f| (f as u16).to_le_bytes()).collect::<Vec<_>>()),
+            _ => node.prop(b"i", "kb", count, &(0..frames).flat_map(u32::to_le_bytes).collect::<Vec<_>>()),
+        }
+        node.floats(if width == 1 { b"f" } else { b"v4" }, "kv", count, values.iter().copied());
+        node.string("m", mode);
+        if mode == "additive" {
+            node.floats(b"f", "ab", 1, std::iter::once(weight.unwrap_or(1.0)));
+        }
+        self.curves.push(node);
+        Ok(())
+    }
+
     /// The finished file.
     pub fn finish(mut self) -> Vec<u8> {
         let mut modl = self.modl;
         modl.children.extend(self.skel.take());
         modl.children.append(&mut self.materials);
         modl.children.append(&mut self.meshes);
+        modl.children.append(&mut self.curves);
         let mut root = Node::new(b"root", 0);
         root.children.push(modl);
         let mut out = Vec::with_capacity(16 + root.size());
@@ -429,6 +544,100 @@ impl ConvertHandler for CastEncode {
             }
         }
         Ok(Arc::new(BundleData::named(items, key.clone())))
+    }
+}
+
+/// Bone 0's position and rotation `[x, y, z, w]` after rsx's root fix-up: the rotation as Source
+/// angles with yaw - 90 degrees, the position `(x, y)` to `(y, -x)` (`ParseAnimDesc_Origin`).
+fn root_fixup(position: [f32; 3], rotation: [f32; 4]) -> ([f32; 3], [f32; 4]) {
+    // Lowering the Source yaw by 90 degrees is a turn about Z applied after the rest of the rotation.
+    let (s, c) = (-std::f32::consts::FRAC_PI_4).sin_cos();
+    ([position[1], -position[0], position[2]], quat_mul([0.0, 0.0, s, c], rotation))
+}
+
+/// The Hamilton product `a * b` of two quaternions `[x, y, z, w]`.
+fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    [
+        a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+        a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+        a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+        a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+    ]
+}
+
+/// One value per frame from a track.
+fn per_frame<T: Copy>(track: &Track<T>, frames: u32, what: &str) -> Result<Vec<T>> {
+    match track {
+        Track::Constant(v) => Ok(vec![*v; frames as usize]),
+        Track::Dense(v) if v.len() == frames as usize => Ok(v.clone()),
+        Track::Dense(v) => Err(custom(format!("{what}: {} values for {frames} frames", v.len()))),
+    }
+}
+
+/// Capability edge `Animation -> cast`: a composite, `<stem>_<i>.cast` per written blend, each
+/// with the skeleton and, per bone, position (`tx`, `ty`, `tz`), rotation (`rq`) and, when the
+/// animation has scale, scale (`sx`, `sy`, `sz`) curves.
+pub struct CastAnimationEncode;
+
+#[async_trait]
+impl ConvertHandler for CastAnimationEncode {
+    /// Writes the blends chosen by [`CastOptions::blend`]. Bone 0 gets [`root_fixup`] when
+    /// [`CastOptions::root_fixup`] is `Rsx`. Checks cancellation per blend and per bone. A
+    /// `Constant` track is written as full-length curves like rsx (no collapsing). Additive
+    /// animations write the bone weights as `ab`.
+    async fn convert(&self, source: Value, target: &Target, cx: &Cx) -> Result<Value> {
+        let options = TypedTarget::<CastOptions>::parse(target)?;
+        let opts = options.options();
+        let animation: &dyn Animation = source
+            .as_animation()
+            .ok_or_else(|| custom(format!("`{}` has no Animation capability", source.format())))?;
+        let blends = opts.blend.resolve(animation.blend_count())?;
+        let bones = animation.bones();
+        let weights = animation.bone_weights();
+        let stem = source.as_metadata().and_then(|m| m.name()).map_or_else(|| "animation".to_owned(), stem_of);
+
+        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new("cast"), options.normalized());
+        let mut items: Vec<(String, Value)> = Vec::new();
+        for blend in blends {
+            cx.check_cancelled()?;
+            let info = animation.info(blend)?;
+            let frames = info.frame_count;
+            let mode = if info.additive { "additive" } else { "absolute" };
+            let mut writer = CastWriter::new();
+            writer.animation(&info.name, info.fps, info.looping, bones);
+            for (index, bone) in bones.iter().enumerate() {
+                cx.check_cancelled()?;
+                if frames == 0 {
+                    break;
+                }
+                let track = animation.track(blend, index as u32, cx).await?;
+                let what = format!("bone {}", bone.name);
+                let mut translation = per_frame(&track.translation, frames, &what)?;
+                let mut rotation = per_frame(&track.rotation, frames, &what)?;
+                if index == 0 && opts.root_fixup == RootFixup::Rsx {
+                    for (t, r) in translation.iter_mut().zip(rotation.iter_mut()) {
+                        (*t, *r) = root_fixup(*t, *r);
+                    }
+                }
+                let weight = info.additive.then(|| weights.get(index).copied().unwrap_or(1.0));
+                for (axis, name) in ["tx", "ty", "tz"].into_iter().enumerate() {
+                    let values: Vec<f32> = translation.iter().map(|v| v[axis]).collect();
+                    writer.curve(&bone.name, name, mode, weight, frames, &values)?;
+                }
+                writer.curve(&bone.name, "rq", mode, weight, frames, &rotation.concat())?;
+                if info.has_scale {
+                    let scale = per_frame(&track.scale, frames, &what)?;
+                    for (axis, name) in ["sx", "sy", "sz"].into_iter().enumerate() {
+                        let values: Vec<f32> = scale.iter().map(|v| v[axis]).collect();
+                        writer.curve(&bone.name, name, mode, weight, frames, &values)?;
+                    }
+                }
+            }
+            let value: Value =
+                Arc::new(BlobData::with_format(FormatId::new("cast"), Bytes::from(writer.finish()), key.clone()));
+            items.push((format!("{stem}_{blend}.cast"), value));
+        }
+        Ok(Arc::new(BundleData::named(items, key)))
     }
 }
 
@@ -673,5 +882,147 @@ mod tests {
     fn stems() {
         assert_eq!(stem_of("mdl/props/crate_01.rmdl"), "crate_01");
         assert_eq!(stem_of("plain"), "plain");
+    }
+
+    fn curves(root: &Parsed) -> Vec<&Parsed> {
+        root.children[0].children.iter().filter(|c| c.id == "curv").collect()
+    }
+
+    #[test]
+    fn animation_file_has_anim_node_skeleton_and_curves() {
+        let mut w = CastWriter::new();
+        w.animation("walk", 24.0, true, &[bone("root", None), bone("child", Some(0))]);
+        w.curve("root", "tx", "absolute", None, 3, &[1.0, 2.0, 3.0]).unwrap();
+        w.curve("child", "rq", "absolute", None, 2, &[0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0]).unwrap();
+        let root = parse(&w.finish());
+        let anim = &root.children[0];
+        assert_eq!(anim.id, "anim");
+        assert_ne!(anim.hash, 0);
+        assert_eq!(prop(anim, "fr").0, b"f\0");
+        assert_eq!(prop(anim, "fr").3, 24.0f32.to_le_bytes());
+        assert_eq!(prop(anim, "lo").0, b"b\0");
+        assert_eq!(prop(anim, "lo").3, [1]);
+        assert!(anim.props.iter().all(|p| p.1 != "n"), "rsx writes no name");
+        let ids: Vec<_> = anim.children.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, ["skel", "curv", "curv"]);
+        assert_eq!(anim.children[0].children.len(), 2);
+
+        let c = curves(&root);
+        let tx = c[0];
+        assert_eq!(prop(tx, "nn").3, b"root\0");
+        assert_eq!(prop(tx, "kp").3, b"tx\0");
+        assert_eq!((prop(tx, "kb").0.as_slice(), prop(tx, "kb").2, prop(tx, "kb").3.as_slice()), (&b"b\0"[..], 3, &[0u8, 1, 2][..]));
+        assert_eq!((prop(tx, "kv").0.as_slice(), prop(tx, "kv").2), (&b"f\0"[..], 3));
+        assert_eq!(prop(tx, "kv").3, [1.0f32, 2.0, 3.0].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
+        assert_eq!(prop(tx, "m").3, b"absolute\0");
+        assert!(tx.props.iter().all(|p| p.1 != "ab"), "no weight in absolute mode");
+
+        let rq = c[1];
+        assert_eq!(prop(rq, "nn").3, b"child\0");
+        assert_eq!((prop(rq, "kv").0.as_slice(), prop(rq, "kv").2, prop(rq, "kv").3.len()), (&b"v4"[..], 2, 32));
+
+        let mut looped = CastWriter::new();
+        looped.animation("x", 30.0, false, &[]);
+        assert_eq!(prop(&parse(&looped.finish()).children[0], "lo").3, [0]);
+    }
+
+    #[test]
+    fn additive_curves_carry_their_weight() {
+        let mut w = CastWriter::new();
+        w.animation("delta", 30.0, false, &[bone("root", None)]);
+        w.curve("root", "ty", "additive", Some(0.25), 1, &[5.0]).unwrap();
+        w.curve("root", "tz", "additive", None, 1, &[5.0]).unwrap();
+        w.curve("root", "sx", "absolute", Some(0.5), 1, &[5.0]).unwrap();
+        let root = parse(&w.finish());
+        let c = curves(&root);
+        assert_eq!(prop(c[0], "m").3, b"additive\0");
+        assert_eq!((prop(c[0], "ab").0.as_slice(), prop(c[0], "ab").3.as_slice()), (&b"f\0"[..], &0.25f32.to_le_bytes()[..]));
+        assert_eq!(prop(c[1], "ab").3, 1.0f32.to_le_bytes(), "no weight means 1");
+        assert!(c[2].props.iter().all(|p| p.1 != "ab"));
+    }
+
+    #[test]
+    fn key_buffer_width_follows_the_frame_count() {
+        for (frames, ty) in [(1u32, b"b\0"), (255, b"b\0"), (256, b"h\0"), (65535, b"h\0"), (65536, b"i\0")] {
+            let mut w = CastWriter::new();
+            w.animation("a", 30.0, false, &[]);
+            w.curve("b", "tx", "absolute", None, frames, &vec![0.5; frames as usize]).unwrap();
+            let root = parse(&w.finish());
+            let kb = prop(curves(&root)[0], "kb");
+            assert_eq!(kb.0, ty, "{frames} frames");
+            assert_eq!(kb.2, frames);
+            let width = match ty {
+                b"b\0" => 1,
+                b"h\0" => 2,
+                _ => 4,
+            };
+            assert_eq!(kb.3.len(), frames as usize * width);
+            // the last key is the last frame
+            let last = &kb.3[kb.3.len() - width..];
+            let mut bytes = [0u8; 4];
+            bytes[..width].copy_from_slice(last);
+            assert_eq!(u32::from_le_bytes(bytes), frames - 1);
+        }
+    }
+
+    #[test]
+    fn bad_curves_are_errors_and_add_nothing() {
+        let mut w = CastWriter::new();
+        w.animation("a", 30.0, false, &[]);
+        assert!(w.curve("b", "tx", "absolute", None, 3, &[1.0, 2.0]).is_err(), "too few values");
+        assert!(w.curve("b", "rq", "absolute", None, 2, &[0.0; 4]).is_err(), "a quaternion has four floats");
+        assert!(w.curve("b", "tw", "absolute", None, 1, &[0.0]).is_err(), "unknown key");
+        assert!(w.curve("b", "tx", "relative", None, 1, &[0.0]).is_err(), "unknown mode");
+        assert!(curves(&parse(&w.finish())).is_empty());
+    }
+
+    #[test]
+    fn zero_frames_make_empty_curves() {
+        let mut w = CastWriter::new();
+        w.animation("a", 30.0, false, &[]);
+        w.curve("b", "tx", "absolute", None, 0, &[]).unwrap();
+        let root = parse(&w.finish());
+        assert_eq!(prop(curves(&root)[0], "kb").2, 0);
+    }
+
+    fn euler(roll: f32, pitch: f32, yaw: f32) -> [f32; 4] {
+        let (sr, cr) = (roll * 0.5).sin_cos();
+        let (sp, cp) = (pitch * 0.5).sin_cos();
+        let (sy, cy) = (yaw * 0.5).sin_cos();
+        [sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy, cr * cp * cy + sr * sp * sy]
+    }
+
+    fn near(a: &[f32], b: &[f32]) {
+        for (x, y) in a.iter().zip(b) {
+            assert!((x - y).abs() < 1e-5, "{a:?} != {b:?}");
+        }
+    }
+
+    #[test]
+    fn root_fixup_turns_the_yaw_by_minus_90_and_swaps_the_plane() {
+        let (p, q) = root_fixup([1.0, 2.0, 3.0], [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(p, [2.0, -1.0, 3.0]);
+        let s = std::f32::consts::FRAC_1_SQRT_2;
+        near(&q, &[0.0, 0.0, -s, s]);
+
+        // the same as lowering the Source yaw by 90 degrees
+        let (_, q) = root_fixup([0.0; 3], euler(0.3, 0.2, 0.5));
+        near(&q, &euler(0.3, 0.2, 0.5 - std::f32::consts::FRAC_PI_2));
+        let (_, q) = root_fixup([0.0; 3], euler(0.0, 0.0, std::f32::consts::FRAC_PI_2));
+        near(&q, &[0.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn blend_select() {
+        assert_eq!(BlendSelect::default().resolve(3).unwrap(), vec![0, 1, 2]);
+        assert_eq!(BlendSelect::default().resolve(0).unwrap(), Vec::<u32>::new());
+        assert_eq!(BlendSelect::One(1).resolve(3).unwrap(), vec![1]);
+        assert!(matches!(BlendSelect::One(3).resolve(3).unwrap_err().kind(), ErrorKind::InvalidOptions { .. }));
+        let parsed: CastOptions = serde_json::from_str(r#"{"blend":2,"root_fixup":"none"}"#).unwrap();
+        assert_eq!((parsed.blend, parsed.root_fixup), (BlendSelect::One(2), RootFixup::None));
+        let parsed: CastOptions = serde_json::from_str(r#"{"blend":"all"}"#).unwrap();
+        assert_eq!((parsed.blend, parsed.root_fixup), (BlendSelect::default(), RootFixup::Rsx));
+        assert!(serde_json::from_str::<CastOptions>(r#"{"root_fixup":"flip"}"#).is_err());
+        assert!(serde_json::from_str::<CastOptions>(r#"{"blend":"some"}"#).is_err());
     }
 }

@@ -13,7 +13,7 @@ mod skeleton;
 mod table;
 mod video;
 
-pub use animation::Animation;
+pub use animation::{Animation, AnimationInfo, BoneSample, BoneTrack, Track};
 pub use audio::{Audio, AudioChunk, AudioTrackInfo};
 pub use bitmap::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 pub use blob::{read_all, Blob, CHUNK};
@@ -66,6 +66,10 @@ impl Cap for dyn Metadata {
 
 impl Cap for dyn Mesh {
     const NAME: &'static str = "Mesh";
+}
+
+impl Cap for dyn Animation {
+    const NAME: &'static str = "Animation";
 }
 
 impl Cap for dyn Skeleton {

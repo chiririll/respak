@@ -120,36 +120,36 @@ pub fn variant(asset_version: u32, created_time: u64, source_filename_offset: Op
 }
 
 /// Bounds-checked little-endian reads from a block.
-struct B<'a>(&'a [u8]);
+pub(crate) struct B<'a>(pub(crate) &'a [u8]);
 
 impl<'a> B<'a> {
-    fn get(&self, at: usize, len: usize) -> Result<&'a [u8]> {
+    pub(crate) fn get(&self, at: usize, len: usize) -> Result<&'a [u8]> {
         at.checked_add(len).and_then(|end| self.0.get(at..end)).ok_or_else(|| {
             corrupt(format!("rmdl: {len} bytes at {at:#x} are outside a block of {} bytes", self.0.len()))
         })
     }
-    fn u8(&self, at: usize) -> Result<u8> {
+    pub(crate) fn u8(&self, at: usize) -> Result<u8> {
         Ok(self.get(at, 1)?[0])
     }
-    fn u16(&self, at: usize) -> Result<u16> {
+    pub(crate) fn u16(&self, at: usize) -> Result<u16> {
         Ok(u16::from_le_bytes(self.get(at, 2)?.try_into().expect("2 bytes")))
     }
-    fn i16(&self, at: usize) -> Result<i16> {
+    pub(crate) fn i16(&self, at: usize) -> Result<i16> {
         Ok(self.u16(at)? as i16)
     }
-    fn u32(&self, at: usize) -> Result<u32> {
+    pub(crate) fn u32(&self, at: usize) -> Result<u32> {
         Ok(u32::from_le_bytes(self.get(at, 4)?.try_into().expect("4 bytes")))
     }
-    fn i32(&self, at: usize) -> Result<i32> {
+    pub(crate) fn i32(&self, at: usize) -> Result<i32> {
         Ok(self.u32(at)? as i32)
     }
-    fn u64(&self, at: usize) -> Result<u64> {
+    pub(crate) fn u64(&self, at: usize) -> Result<u64> {
         Ok(u64::from_le_bytes(self.get(at, 8)?.try_into().expect("8 bytes")))
     }
-    fn f32(&self, at: usize) -> Result<f32> {
+    pub(crate) fn f32(&self, at: usize) -> Result<f32> {
         Ok(f32::from_bits(self.u32(at)?))
     }
-    fn floats<const N: usize>(&self, at: usize) -> Result<[f32; N]> {
+    pub(crate) fn floats<const N: usize>(&self, at: usize) -> Result<[f32; N]> {
         let mut out = [0.0; N];
         for (i, v) in out.iter_mut().enumerate() {
             *v = self.f32(at + 4 * i)?;
@@ -157,14 +157,14 @@ impl<'a> B<'a> {
         Ok(out)
     }
     /// A NUL-terminated string that ends within `max` bytes.
-    fn cstr(&self, at: usize, max: usize) -> Result<String> {
+    pub(crate) fn cstr(&self, at: usize, max: usize) -> Result<String> {
         let end = at.saturating_add(max).min(self.0.len());
         let bytes = self.0.get(at..end).ok_or_else(|| corrupt(format!("rmdl: string at {at:#x} is outside its block")))?;
         let nul = bytes.iter().position(|&b| b == 0).ok_or_else(|| corrupt(format!("rmdl: string at {at:#x} has no end")))?;
         Ok(String::from_utf8_lossy(&bytes[..nul]).into_owned())
     }
     /// `base + FIX_OFFSET(u16 at field)`, bounds are checked by the reader that uses it.
-    fn fixed(&self, base: usize, field: usize) -> Result<usize> {
+    pub(crate) fn fixed(&self, base: usize, field: usize) -> Result<usize> {
         Ok(base + fix_offset(self.u16(field)?) as usize)
     }
 }
@@ -309,6 +309,49 @@ pub struct Studio {
     pub bone_map: Vec<u16>,
 }
 
+/// The bones of a studio block (`major` 16 to 20): the split form up to 18, the linear-bone form
+/// from 19. Shared with `arig`, whose block is a cut-down studiohdr.
+pub(crate) fn parse_bones(b: &B, major: u32, layout: StudioLayout) -> Result<Vec<Bone>> {
+    let shift = layout.shift();
+    let bone_count = usize::from(b.u16(0x74)?);
+    if bone_count > MAX_BONES {
+        return Err(corrupt(format!("rmdl: {bone_count} bones")));
+    }
+    let (hdr_base, data_base) = (b.fixed(0, 0x76)?, b.fixed(0, 0x78)?);
+    let linear = if major >= 19 {
+        let lb = b.fixed(0, 0xCA + shift)?;
+        if lb == 0 {
+            return Err(corrupt("rmdl: v19 model without a linear bone block"));
+        }
+        Some(lb)
+    } else {
+        None
+    };
+    let mut bones = Vec::with_capacity(bone_count);
+    for i in 0..bone_count {
+        let h = hdr_base + i * 12;
+        let bone_name = b.cstr(b.fixed(h, h + 10)?, 256)?;
+        let (parent, position, rotation, scale) = match linear {
+            None => {
+                let d = data_base + i * 128;
+                (b.i16(d + 116)?, b.floats::<3>(d + 64)?, b.floats::<4>(d + 76)?, b.floats::<3>(d + 104)?)
+            }
+            Some(lb) => {
+                let d = data_base + i * 16;
+                let at = |field: usize, stride: usize| -> Result<usize> { Ok(b.fixed(lb, lb + field)? + i * stride) };
+                (b.i16(d)?, b.floats::<3>(at(6, 12)?)?, b.floats::<4>(at(8, 16)?)?, b.floats::<3>(at(16, 12)?)?)
+            }
+        };
+        let parent = match parent {
+            -1 => None,
+            p if p >= 0 && (p as usize) < i => Some(p as u32),
+            p => return Err(corrupt(format!("rmdl: bone {i} ({bone_name}) has parent {p}"))),
+        };
+        bones.push(Bone { name: bone_name, parent, position, rotation, scale });
+    }
+    Ok(bones)
+}
+
 impl Studio {
     /// Parses a studio block of `major` version (16 to 20) with the given layout.
     pub fn parse(major: u32, layout: StudioLayout, blob: &[u8]) -> Result<Self> {
@@ -317,43 +360,7 @@ impl Studio {
         let flags = b.i32(0)?;
         let name = b.cstr(0x0A, 33)?;
 
-        // Bones.
-        let bone_count = usize::from(b.u16(0x74)?);
-        if bone_count > MAX_BONES {
-            return Err(corrupt(format!("rmdl: {bone_count} bones")));
-        }
-        let (hdr_base, data_base) = (b.fixed(0, 0x76)?, b.fixed(0, 0x78)?);
-        let linear = if major >= 19 {
-            let lb = b.fixed(0, 0xCA + shift)?;
-            if lb == 0 {
-                return Err(corrupt("rmdl: v19 model without a linear bone block"));
-            }
-            Some(lb)
-        } else {
-            None
-        };
-        let mut bones = Vec::with_capacity(bone_count);
-        for i in 0..bone_count {
-            let h = hdr_base + i * 12;
-            let bone_name = b.cstr(b.fixed(h, h + 10)?, 256)?;
-            let (parent, position, rotation, scale) = match linear {
-                None => {
-                    let d = data_base + i * 128;
-                    (b.i16(d + 116)?, b.floats::<3>(d + 64)?, b.floats::<4>(d + 76)?, b.floats::<3>(d + 104)?)
-                }
-                Some(lb) => {
-                    let d = data_base + i * 16;
-                    let at = |field: usize, stride: usize| -> Result<usize> { Ok(b.fixed(lb, lb + field)? + i * stride) };
-                    (b.i16(d)?, b.floats::<3>(at(6, 12)?)?, b.floats::<4>(at(8, 16)?)?, b.floats::<3>(at(16, 12)?)?)
-                }
-            };
-            let parent = match parent {
-                -1 => None,
-                p if p >= 0 && (p as usize) < i => Some(p as u32),
-                p => return Err(corrupt(format!("rmdl: bone {i} ({bone_name}) has parent {p}"))),
-            };
-            bones.push(Bone { name: bone_name, parent, position, rotation, scale });
-        }
+        let bones = parse_bones(&b, major, layout)?;
 
         // Materials and skins.
         let tex_count = usize::from(b.u16(0x90)?);
@@ -1037,7 +1044,7 @@ impl Detect for RmdlRead {
 }
 
 /// `count` guids at `.mem` offset `at`.
-async fn read_guids(asset: &RpakAsset, at: Option<u64>, count: u32) -> Result<Vec<u64>> {
+pub(crate) async fn read_guids(asset: &RpakAsset, at: Option<u64>, count: u32) -> Result<Vec<u64>> {
     let (Some(at), true) = (at, count > 0) else { return Ok(Vec::new()) };
     if count as usize > MAX_GUIDS {
         return Err(corrupt(format!("rmdl lists {count} animation assets")));

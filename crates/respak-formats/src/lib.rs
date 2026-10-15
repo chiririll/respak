@@ -10,12 +10,14 @@ mod wav;
 
 use respak_core::value::FileData;
 use respak_core::{
-    capability::{Audio, Bitmap, Mesh, Video},
+    capability::{Animation, Audio, Bitmap, Mesh, Video},
     Error, ErrorKind, Plugin, Registry, Result, Value,
 };
 
 pub use bc::decode_rgba8;
-pub use cast::{AllLods, CastEncode, CastOptions, CastWriter, LodSelect};
+pub use cast::{
+    AllBlends, AllLods, BlendSelect, CastAnimationEncode, CastEncode, CastOptions, CastWriter, LodSelect, RootFixup,
+};
 pub use dds::{DdsEncode, DdsImage, DdsOptions, DdsRead};
 pub use frames::{FramesEncode, FramesOptions};
 pub use png::{Mips, PngEncode, PngImage, PngOptions, PngRead};
@@ -46,8 +48,13 @@ impl Plugin for FormatsPlugin {
             .from_cap::<dyn Bitmap>(DdsEncode);
         // Written only: a folder of `frame_00001.png ...` from any video.
         r.format("png.frames").label("PNG frames").from_cap::<dyn Video>(FramesEncode);
-        // Written only: a Cast model (skeleton, materials, meshes) from any mesh.
-        r.format("cast").label("Cast model").extensions(["cast"]).from_cap::<dyn Mesh>(CastEncode);
+        // Written only: a Cast model (skeleton, materials, meshes) from any mesh, or Cast animations
+        // (skeleton, curves) from any animation.
+        r.format("cast")
+            .label("Cast model")
+            .extensions(["cast"])
+            .from_cap::<dyn Mesh>(CastEncode)
+            .from_cap::<dyn Animation>(CastAnimationEncode);
         // Written only: 16-bit PCM from any audio.
         r.format("wav").label("WAV audio").extensions(["wav"]).from_cap::<dyn Audio>(WavEncode);
     }

@@ -2,6 +2,10 @@
 //!
 //! The format code is ported from the C++ tool rsx (AGPL-3.0); each module names its sources.
 
+mod anim_codec;
+mod arig;
+mod aseq;
+mod asqd;
 mod dxbc;
 mod guid;
 mod locate;
@@ -25,9 +29,15 @@ pub mod testing;
 
 use std::sync::Arc;
 
-use respak_core::capability::{Bitmap, Container, Mesh, Metadata, Skeleton};
+use respak_core::capability::{Animation, Bitmap, Container, Mesh, Metadata, Skeleton};
 use respak_core::{Plugin, Registry};
 
+pub use arig::{studio_variant, ArigAsset, ArigHeader, ArigRead, StudioSelect};
+pub use aseq::{
+    variant as aseq_variant, AnimDesc, AseqAsset, AseqHeader, AseqRead, FrameMovement, RigSelect, SectionData, SeqDesc,
+    Weights,
+};
+pub use asqd::{AsqdAsset, AsqdHeader, AsqdRead};
 pub use dxbc::texture_slots;
 pub use guid::string_to_guid;
 pub use locate::{GuidRef, RpakLocate};
@@ -47,6 +57,8 @@ pub use uiia_json::{UiiaJsonEncode, UiiaJsonOptions};
 pub struct RespawnPlugin {
     search: Arc<Vec<String>>,
     ignore_patches: bool,
+    rig: RigSelect,
+    studio: StudioSelect,
 }
 
 impl RespawnPlugin {
@@ -72,6 +84,20 @@ impl RespawnPlugin {
     /// default is to apply patches.
     pub fn ignore_patches(mut self, ignore: bool) -> Self {
         self.ignore_patches = ignore;
+        self
+    }
+
+    /// Which skeleton animation sequences are bound to: `"auto"` (the default: the `arig` or
+    /// `mdl_` that lists the sequence) or the guid (`0x...`) or path of one.
+    pub fn rig(mut self, rig: impl Into<RigSelect>) -> Self {
+        self.rig = rig.into();
+        self
+    }
+
+    /// How the studiohdr layout of an `arig` is found: `"auto"` (a `mdl_` beside it, else a
+    /// heuristic) or a layout name (`"v16"`, `"v17"`, `"v19_2"`).
+    pub fn studio(mut self, studio: impl Into<StudioSelect>) -> Self {
+        self.studio = studio.into();
         self
     }
 }
@@ -130,5 +156,22 @@ impl Plugin for RespawnPlugin {
             .provides::<dyn Metadata>()
             .to("uiia.json", UiiaJsonEncode);
         r.format("uiia.json").label("UI image (JSON)").extensions(["json"]);
+        r.format("aseq")
+            .label("Respawn animation")
+            .from("rpak.asset", AseqRead::new(self.rig.clone()))
+            .extensions(["aseq"])
+            .provides::<dyn Animation>()
+            .provides::<dyn Metadata>();
+        r.format("asqd")
+            .label("Respawn animation data")
+            .from("rpak.asset", AsqdRead)
+            .extensions(["asqd"])
+            .provides::<dyn Metadata>();
+        r.format("arig")
+            .label("Respawn animation rig")
+            .from("rpak.asset", ArigRead::new(self.studio.clone()))
+            .extensions(["arig"])
+            .provides::<dyn Skeleton>()
+            .provides::<dyn Metadata>();
     }
 }

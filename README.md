@@ -16,14 +16,15 @@ Conversion is read-only: writing Respawn formats is not supported.
 | `matl` | materials, converted to JSON plus textures |
 | `uiia` | single tiled UI images (not atlases) |
 | `rmdl` | models (`mdl_`), asset versions 16-20 (current Apex): skeleton, meshes per LOD, materials; converted to Cast |
+| `aseq`, `asqd`, `arig` | animations: sequences (`aseq`, asset versions 12.1-14, RLE data) with their data (`asqd`) and the rig (`arig`) that gives the skeleton; converted to Cast animations, one file per blend |
 | `bik` / `bk2` | Bink 2 video and audio only |
 | `png`, `dds` | plain image files |
 
-Other asset kinds (older models, animations, ...) show up in pak listings but cannot be converted yet.
+Other asset kinds (older models, older or datapoint-compressed animations, ...) show up in pak listings but cannot be converted yet.
 
 ## What it writes
 
-`png`, `dds`, `png.frames` (video to a folder of PNGs), `wav`, `avi`, `mov`, `y4m`, `matl.json`, `uiia.json`, `cast` (models), `rmdl.json` (model metadata), and `file` (unchanged copy).
+`png`, `dds`, `png.frames` (video to a folder of PNGs), `wav`, `avi`, `mov`, `y4m`, `matl.json`, `uiia.json`, `cast` (models and animations), `rmdl.json` (model metadata), and `file` (unchanged copy).
 
 ## Quick start
 

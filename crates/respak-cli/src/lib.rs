@@ -28,6 +28,15 @@ pub struct Cli {
     /// `common(01).rpak` is refused instead of being completed from the files below it.
     #[arg(long)]
     pub no_patches: bool,
+    /// The skeleton animation sequences (`aseq`) are bound to: `auto` (the `arig` or `mdl_` that
+    /// lists the sequence, looked for in its pak and the `common.rpak` beside it), or the guid
+    /// (`0x...`) or path of an `arig` / `mdl_`.
+    #[arg(long, default_value = "auto", value_name = "AUTO|GUID|PATH")]
+    pub rig: String,
+    /// How the studio layout of an `arig` is found: `auto` (a `mdl_` in the same pak, else the
+    /// block itself) or a layout name: `v16`, `v17`, `v19_2`.
+    #[arg(long, default_value = "auto", value_name = "AUTO|LAYOUT")]
+    pub studio: String,
     /// Directory for the plugin cache (e.g. the guid -> pak index); created if missing.
     #[arg(long, value_name = "DIR")]
     pub cache: Option<PathBuf>,

@@ -14,6 +14,8 @@ Paths you pass to commands (`from`, `PATH`) always use `/` and are relative to `
 | `--out DIR` | Output directory, created if missing. Required by every command except `steam` |
 | `--search GLOB` | Extra paks to look in when an asset refers to another asset (such as a material's textures) that is not in its own pak or the `common.rpak` beside it. Relative to `--root`, repeatable, e.g. `--search "paks/Win64/*.rpak"`. Nothing is scanned unless a lookup needs it |
 | `--no-patches` | Do not apply rpak patches. By default `common.rpak` next to a `patch_master.rpak` is opened as its newest patch (`common(NN).rpak`), and a patch file is completed from the files it lists. With this flag `patch_master.rpak` is ignored and a patch file is refused as an unsupported version |
+| `--rig AUTO\|GUID\|PATH` | The skeleton animation sequences (`aseq`) are bound to. `auto` (default) takes the `arig` (else the `mdl_`) that lists the sequence, looked for in its pak and the `common.rpak` beside it. Otherwise the guid (`0x...`) or the path of an `arig` / `mdl_` |
+| `--studio AUTO\|LAYOUT` | How the studio layout of an `arig` is found: `auto` (a `mdl_` in the same pak, else the block itself) or `v16`, `v17`, `v19_2` |
 | `--cache DIR` | Remembers where `--search` found each asset, so later runs are faster. Optional |
 | `--report FILE` | Write the JSON report to a file instead of stdout |
 | `--steam`, `--depot`, `--branch`, `--steam-cache-size` | Read from Steam, see [steam.md](steam.md) |
@@ -97,6 +99,7 @@ A pak is addressed like a folder: `paks/Win64/common.rpak/0x8A3F12C4D5E6F701.txt
 | `matl.json` | material | `textures`: a target (`{"type":"png"}`) | folder with `material.json` and `textures/` |
 | `uiia.json` | UI image | `image`: a target (`{"type":"png"}`) | folder with the image and JSON layout |
 | `cast` | model | `lods`: `0`, `"all"` or a list (0); `skin` (0); `textures` (true); `image`: texture format (`"png"`) | folder with one `<bodypart>_<n>_LOD<m>.cast` per LOD and model, and `textures/` |
+| `cast` | animation | `root_fixup`: `"rsx"` (turn bone 0 by -90 degrees of yaw, position `(x, y)` to `(y, -x)`, as rsx does) or `"none"`; `blend`: `"all"` or one blend index (all) | folder with one `<name>_<blend>.cast` per blend: the skeleton and, per bone, position, rotation (and scale) curves with a key on every frame |
 | `rmdl.json` | model | none | one JSON file: header, bones, body parts, materials, skins, LODs, hitboxes, attachments |
 | `file` | any file | none | unchanged copy |
 
@@ -131,5 +134,5 @@ Logs go to stderr; the default level is warnings. Set `RUST_LOG=info` for more, 
 
 - Read-only: no writing back to Respawn formats.
 - Patched paks, zstd paks, Bink 1 video, `matl` outside versions 15-23 (e.g. Titanfall 2) and swizzled/console textures are unsupported.
-- Models convert only for asset versions 16-20 (current Apex), without blend shapes, physics or animations; older models, animations and in-pak audio cannot be converted; audio is only available from Bink videos.
+- Models convert only for asset versions 16-20 (current Apex), without blend shapes or physics; animations only for `aseq` 12.1-14 with RLE data (no events, IK, blend-grid parameters or datapoint compression); older models and animations and in-pak audio cannot be converted; audio is only available from Bink videos.
 - A Cast material links a texture only when the material's shader slots can be named; otherwise the textures are still written as `slot_<n>` files and a warning says why.

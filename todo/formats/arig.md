@@ -117,3 +117,6 @@ Everything else is the rmdl skeleton decode (v16-18 split bonehdr/bonedata, v19+
 3. Are an `arig`'s bones always identical (names, order, parents) to the owning model's? When a rig and a model both list the same `aseq`, rsx binds the rig. Still open (real-file check).
 4. Which Apex seasons map to asset versions 4, 5, 6, 7? Not stated in rsx for this type. Still open.
 5. File extension: **proposal** `.arig` (the stored FourCC, consistent with `.mdl_`); `.rrig` is rsx's raw-dump extension only.
+
+## Pilot note (2026-10-15)
+Real `arig` v7 (181 bones, first-person arms rig) found by the reverse index for an aseq 14 in the latest depot's `common.rpak`; bones, parents and rest poses are plausible (root `jx_c_delta`, `def_c_hip`, fingers) and the 6-bit flag arrays of the sequence line up with the 181 bones. The studio layout was found without options (`studio` = `auto`).
