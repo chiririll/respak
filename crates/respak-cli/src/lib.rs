@@ -11,7 +11,7 @@ use respak_core::{CancellationToken, Engine, Event};
 
 #[cfg(feature = "steam")]
 pub use commands::steam::{run_steam, SteamCommand};
-pub use commands::{ConvertArgs, CopyArgs, DiscoverArgs, ListArgs, NamesArgs, RunArgs};
+pub use commands::{ConvertArgs, CopyArgs, DiscoverArgs, DumpArgs, ListArgs, NamesArgs, RunArgs};
 
 /// `respak --root <dir> --out <dir> <command>`
 #[derive(Debug, Parser)]
@@ -93,6 +93,10 @@ pub enum Command {
     /// Copy a file, or every file a glob matches, to `--out` unchanged (with `--steam`: download
     /// it). To combine it with conversions, add `{"type":"file"}` as one more output of a `run` request.
     Copy(CopyArgs),
+    /// Write the raw bytes of a pak asset (or every asset a glob matches) to `--out`, whatever its
+    /// kind: the header, and the streamed data (`.stream`, `.opt`) if it has any. Needs no support
+    /// for the asset's format. The asset's CPU data pages are not included.
+    Dump(DumpArgs),
     /// Run a request file (`-` reads stdin): any number of outputs, with globs and lists.
     Run(RunArgs),
     /// Convert a file, or every file a glob matches.
@@ -199,6 +203,7 @@ pub async fn run(
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> anyhow::Result<ExitCode> {
+    let out_dir = cli.out.clone();
     match cli.command {
         #[cfg(feature = "steam")]
         Command::Steam { command } => run_steam(command, out).await,
@@ -208,6 +213,7 @@ pub async fn run(
         Command::Names(args) => commands::names(engine, cancel, args, out, err).await,
         Command::Convert(args) => commands::convert(engine, cancel, args, out, err).await,
         Command::Copy(args) => commands::copy(engine, cancel, args, out, err).await,
+        Command::Dump(args) => commands::dump(engine, cancel, out_dir, args, out, err).await,
         Command::Run(args) => commands::request(engine, cancel, args, out, err).await,
     }
 }
