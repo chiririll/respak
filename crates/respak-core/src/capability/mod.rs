@@ -21,7 +21,7 @@ pub use container::Container;
 pub use mesh::{MaterialTexture, Mesh, MeshInfo, MeshMaterial, MeshModel, MeshPart, ModelInfo};
 pub use metadata::{Dependency, Metadata};
 pub use skeleton::{Bone, Skeleton};
-pub use table::Table;
+pub use table::{Cell, Column, ColumnType, Table};
 pub use video::{FrameFormat, Video, VideoFrame, VideoInfo};
 
 /// Names a capability trait object type (`dyn Bitmap`, ...) so registration can say
@@ -74,6 +74,10 @@ impl Cap for dyn Animation {
 
 impl Cap for dyn Skeleton {
     const NAME: &'static str = "Skeleton";
+}
+
+impl Cap for dyn Table {
+    const NAME: &'static str = "Table";
 }
 
 impl Cap for dyn Audio {

@@ -566,6 +566,21 @@ pub fn oodle_pak(plain: &[u8], restart_blocks: usize, pad_to: usize) -> Vec<u8> 
 
 // ---- general paks, materials, shaders ---------------------------------------------------------
 
+/// A cell of [`PakBuilder::dtbl`]; `Str` is any string-typed cell, `Null` a null string pointer.
+pub enum DtblCell<'a> {
+    Bool(bool),
+    Int(i32),
+    Float(f32),
+    Vector([f32; 3]),
+    Str(&'a str),
+    Null,
+}
+
+/// Sets the pak header's `createdTime` of a built pak.
+pub fn set_created_time(pak: &mut [u8], time: u64) {
+    put(pak, 0x08, &time.to_le_bytes());
+}
+
 /// Builds a pak with arbitrary assets: page 0 holds the headers, page 1 everything else.
 #[derive(Default)]
 pub struct PakBuilder {
@@ -678,6 +693,63 @@ impl PakBuilder {
         self.data_pointer(entry_at, code_at);
         self.misc[entry_at as usize + 8..entry_at as usize + 12].copy_from_slice(&(bytecode.len() as i32).to_le_bytes());
         self.asset(guid, b"shdr", 12, vec![0u8; 32], &[], Some(entry_at));
+    }
+
+    /// A `dtbl` of asset `version` (0 or 1); `wide` uses the V1.1 column record (0x18 bytes).
+    /// Columns are `(name, type)`; cells are packed in column order, the row stride is their sum.
+    pub fn dtbl(&mut self, guid: u64, version: u32, wide: bool, columns: &[(&str, i32)], rows: &[Vec<DtblCell>]) {
+        let size = |ty: i32| match ty {
+            0 => 1,
+            1 | 2 => 4,
+            3 => 12,
+            _ => 8,
+        };
+        let offsets: Vec<u32> = columns.iter().scan(0, |at, &(_, ty)| Some(std::mem::replace(at, *at + size(ty)))).collect();
+        let stride = columns.iter().map(|&(_, ty)| size(ty)).sum::<u32>();
+        let record = if wide { 0x18 } else { 0x10 };
+
+        let names: Vec<u32> = columns.iter().map(|(name, _)| self.string(name)).collect();
+        let mut records = vec![0u8; columns.len() * record];
+        for (i, &(_, ty)) in columns.iter().enumerate() {
+            let r = &mut records[i * record..(i + 1) * record];
+            let at = if wide { 0x10 } else { 0x08 };
+            put(r, at, &ty.to_le_bytes());
+            put(r, at + 4, &offsets[i].to_le_bytes());
+        }
+        let records_at = self.data(&records);
+        for (i, &name) in names.iter().enumerate() {
+            self.data_pointer(records_at + (i * record) as u32, name);
+        }
+
+        let mut block = vec![0u8; rows.len() * stride as usize];
+        let mut strings = Vec::new();
+        for (r, row) in rows.iter().enumerate() {
+            for (c, cell) in row.iter().enumerate() {
+                let at = r * stride as usize + offsets[c] as usize;
+                match cell {
+                    DtblCell::Bool(b) => block[at] = u8::from(*b),
+                    DtblCell::Int(n) => put(&mut block, at, &n.to_le_bytes()),
+                    DtblCell::Float(f) => put(&mut block, at, &f.to_le_bytes()),
+                    DtblCell::Vector(v) => {
+                        for (k, f) in v.iter().enumerate() {
+                            put(&mut block, at + 4 * k, &f.to_le_bytes());
+                        }
+                    }
+                    DtblCell::Str(s) => strings.push((at as u32, self.string(s))),
+                    DtblCell::Null => {}
+                }
+            }
+        }
+        let rows_at = self.data(&block);
+        for (at, target) in strings {
+            self.data_pointer(rows_at + at, target);
+        }
+
+        let mut h = vec![0u8; if version == 0 { 0x20 } else { 0x28 }];
+        put(&mut h, 0, &(columns.len() as i32).to_le_bytes());
+        put(&mut h, 4, &(rows.len() as i32).to_le_bytes());
+        put(&mut h, if version == 0 { 0x18 } else { 0x20 }, &stride.to_le_bytes());
+        self.asset(guid, b"dtbl", version, h, &[(0x08, records_at), (0x10, rows_at)], None);
     }
 
     /// The pak file.

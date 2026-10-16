@@ -6,6 +6,8 @@ mod anim_codec;
 mod arig;
 mod aseq;
 mod asqd;
+mod dtbl;
+mod dtbl_text;
 mod dxbc;
 mod guid;
 mod locate;
@@ -29,7 +31,7 @@ pub mod testing;
 
 use std::sync::Arc;
 
-use respak_core::capability::{Animation, Bitmap, Container, Mesh, Metadata, Skeleton};
+use respak_core::capability::{Animation, Bitmap, Container, Mesh, Metadata, Skeleton, Table};
 use respak_core::{Plugin, Registry};
 
 pub use arig::{studio_variant, ArigAsset, ArigHeader, ArigRead, StudioSelect};
@@ -38,6 +40,8 @@ pub use aseq::{
     Weights,
 };
 pub use asqd::{AsqdAsset, AsqdHeader, AsqdRead};
+pub use dtbl::{variant as dtbl_variant, DtblAsset, DtblHeader, DtblRead, DATA_EXCLUDED};
+pub use dtbl_text::{format_g, to_csv as dtbl_csv, to_json as dtbl_json, DtblCsvEncode, DtblJsonEncode};
 pub use dxbc::texture_slots;
 pub use guid::string_to_guid;
 pub use locate::{GuidRef, RpakLocate};
@@ -173,5 +177,15 @@ impl Plugin for RespawnPlugin {
             .extensions(["arig"])
             .provides::<dyn Skeleton>()
             .provides::<dyn Metadata>();
+        r.format("dtbl")
+            .label("Respawn datatable")
+            .from("rpak.asset", DtblRead)
+            .extensions(["dtbl"])
+            .provides::<dyn Table>()
+            .provides::<dyn Metadata>()
+            .to("dtbl.csv", DtblCsvEncode)
+            .to("dtbl.json", DtblJsonEncode);
+        r.format("dtbl.csv").label("Datatable (CSV)").extensions(["csv"]);
+        r.format("dtbl.json").label("Datatable (JSON)").extensions(["json"]);
     }
 }

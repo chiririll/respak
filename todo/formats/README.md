@@ -7,7 +7,7 @@ Already built, no spec here: `rpak`, `starpak`, `txtr`, `matl` (v15+), `uiia`, `
 rsx = `C:\Users\chiririll\Projects\rsx`. Paths in the specs are relative to `rsx/src`.
 
 ## Index
-**Written so far (2026-10-14):** miles, miles-codecs, uimg, vpk, wrap, wepn, impa. Every other row is planned, not researched yet (the first research run stopped at the session limit). `mt4a` and `txtx` are not supported by rsx (see uimg.md). `wrap`, `wepn` and `impa` are rpak assets, not VPK entries.
+**Written so far (2026-10-14):** miles, miles-codecs, uimg, vpk, wrap, wepn, impa, dtbl. Every other row is planned, not researched yet (the first research run stopped at the session limit). `mt4a` and `txtx` are not supported by rsx (see uimg.md). `wrap`, `wepn` and `impa` are rpak assets, not VPK entries.
 | Spec | rsx kind (FourCC) | What | Group |
 |---|---|---|---|
 | [rmdl](rmdl.md) | `mdl_` | rpak model (studiohdr r5, VG vertex data) | model |
