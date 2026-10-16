@@ -274,7 +274,7 @@ async fn discover_errors_for_a_missing_path_and_ignores_depth_on_plain_files() {
     assert!(matches!(err.kind(), ErrorKind::NotFound { .. }), "{err}");
     env.input.write("f.bin", "AAAA").await.unwrap();
     // A file that is not a container is described as itself, whatever the depth.
-    let d = env.engine.discover("f.bin", &DiscoverOptions { depth: 3 }, &respak_core::CancellationToken::new()).await.unwrap();
+    let d = env.engine.discover("f.bin", &DiscoverOptions { depth: 3, ..Default::default() }, &respak_core::CancellationToken::new()).await.unwrap();
     assert_eq!(d.entries.len(), 1);
 }
 

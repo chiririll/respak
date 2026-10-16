@@ -249,6 +249,6 @@ async fn a_patched_pak_is_discovered_like_any_other() {
     input.write("common.rpak", base()).await.unwrap();
     input.write("common(01).rpak", top()).await.unwrap();
     let engine = Engine::builder().input(input.clone()).output(memory()).plugin(RespawnPlugin::new()).build().unwrap();
-    let d = engine.discover("common(01).rpak", &DiscoverOptions { depth: 1 }, &CancellationToken::new()).await.unwrap();
+    let d = engine.discover("common(01).rpak", &DiscoverOptions { depth: 1, ..Default::default() }, &CancellationToken::new()).await.unwrap();
     assert_eq!(d.entries.len(), 2);
 }

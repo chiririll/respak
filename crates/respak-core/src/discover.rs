@@ -18,6 +18,9 @@ pub struct ListedEntry {
 pub struct DiscoverOptions {
     /// How many container levels to open: 0 describes the item itself, 1 lists a container's items.
     pub depth: u32,
+    /// Read every entry to find its name where its metadata does not carry one without
+    /// decoding (an rpak asset's name is in its header). Slow; an unreadable entry keeps no name.
+    pub names: bool,
 }
 
 /// The result of discovering one path.

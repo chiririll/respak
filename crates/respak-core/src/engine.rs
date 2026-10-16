@@ -291,7 +291,7 @@ impl Engine {
         let cx = self.cx(cancel);
         let value = self.mediator.open(path, &cx).await?;
         let mut entries = Vec::new();
-        self.describe(&value, path.trim_matches('/'), options.depth, &cx, &mut entries).await?;
+        self.describe(&value, path.trim_matches('/'), options, options.depth, &cx, &mut entries).await?;
         Ok(Discovery { path: path.to_owned(), entries })
     }
 
@@ -337,6 +337,7 @@ impl Engine {
         &self,
         value: &Value,
         path: &str,
+        options: &DiscoverOptions,
         depth: u32,
         cx: &Cx,
         out: &mut Vec<DiscoveryEntry>,
@@ -377,6 +378,14 @@ impl Engine {
             entry.name = meta.name().map(str::to_owned);
             entry.kind = meta.kind().map(str::to_owned);
         }
+        if options.names && entry.name.is_none() && entry.format.is_some() {
+            if let Ok(read) = self.mediator.identify(value.clone(), cx).await {
+                if let Some(meta) = read.as_metadata() {
+                    entry.name = meta.name().map(str::to_owned);
+                    entry.kind = entry.kind.or_else(|| meta.kind().map(str::to_owned));
+                }
+            }
+        }
 
         let opens = depth > 0 && entry.format.as_deref().is_some_and(|f| self.mediator.provides_container(f));
         if !opens {
@@ -390,7 +399,7 @@ impl Engine {
             cx.check_cancelled()?;
             let child_path = format!("{}/{rel}", mount_path.trim_end_matches('/'));
             match c.entry(&rel).await {
-                Ok(child) => Box::pin(self.describe(&child, &child_path, depth - 1, cx, out)).await?,
+                Ok(child) => Box::pin(self.describe(&child, &child_path, options, depth - 1, cx, out)).await?,
                 Err(error) => {
                     cx.warn(format!("cannot describe {child_path}: {error}"));
                     out.push(unrecognised(&child_path));

@@ -85,6 +85,10 @@ pub enum Command {
         /// How many container levels to open (1 lists a pak's assets).
         #[arg(long, default_value_t = 0)]
         depth: u32,
+        /// Read every entry to fill in its name where it is not known without decoding (slow,
+        /// like `list --names`).
+        #[arg(long)]
+        names: bool,
     },
     /// Print the entries of containers (rpak, mbnk, ...), one path per line. Nothing is
     /// described or opened, so it is fast; use `discover --depth 1` for formats and targets.
@@ -267,8 +271,8 @@ pub async fn run(
             writeln!(out)?;
             Ok(ExitCode::SUCCESS)
         }
-        Command::Discover { paths, depth } => {
-            let options = DiscoverOptions { depth };
+        Command::Discover { paths, depth, names } => {
+            let options = DiscoverOptions { depth, names };
             let mut found = Vec::new();
             let mut failed = false;
             for path in &paths {

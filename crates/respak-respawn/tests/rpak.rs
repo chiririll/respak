@@ -15,7 +15,7 @@ fn assets() -> Vec<TestAsset> {
 }
 
 fn depth(n: u32) -> DiscoverOptions {
-    DiscoverOptions { depth: n }
+    DiscoverOptions { depth: n, ..Default::default() }
 }
 
 #[tokio::test]

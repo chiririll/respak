@@ -25,8 +25,8 @@ Paths you pass to commands (`from`, `PATH`) always use `/` and are relative to `
 ### `formats`
 Prints the format graph as JSON: every format, its file extensions and what converts to what.
 
-### `discover PATH... [--depth N]`
-Says what each path is and what it can be converted to. `--depth 0` (default) describes the item itself, `--depth 1` lists what is inside a pak.
+### `discover PATH... [--depth N] [--names]`
+Says what each path is and what it can be converted to. `--depth 0` (default) describes the item itself, `--depth 1` lists what is inside a pak. `--names` reads every entry to fill in its `name` where it is not known without decoding (an rpak asset's name is in its header); slow, like `list --names`.
 
 ```sh
 respak --root game --out out discover paks/Win64/common.rpak --depth 1

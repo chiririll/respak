@@ -217,6 +217,24 @@ async fn discover_in_an_rpak_lists_textures_as_convertible() {
 }
 
 #[tokio::test]
+async fn discover_names_reads_the_asset_names() {
+    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    let env = rpak_env();
+    let mut t = TexSpec::new(0x42, 10, 4, 4, 31, 1, vec![9u8; 64]);
+    t.name = Some("texture/ui/icon");
+    env.input.write("c.rpak", build_tex_pak(8, &[t])).await.unwrap();
+    let name_of = |out: &str| {
+        let json: serde_json::Value = serde_json::from_str(out).unwrap();
+        json[0]["entries"][0]["name"].as_str().map(str::to_owned)
+    };
+    let run = invoke(&env, &["discover", "c.rpak", "--depth", "1"]).await;
+    assert_eq!(name_of(&run.out), None);
+    let run = invoke(&env, &["discover", "c.rpak", "--depth", "1", "--names"]).await;
+    assert_eq!(run.code, Some(ExitCode::SUCCESS), "{}", run.err);
+    assert_eq!(name_of(&run.out).as_deref(), Some("texture/ui/icon"));
+}
+
+#[tokio::test]
 async fn an_rpak_bc1_texture_converts_to_png_and_honours_mips() {
     use respak_respawn::testing::{build_tex_pak, TexSpec};
     // 8x8 BC1, 2 permanent mips (smallest first in the file): mip 0 is solid colour 0xF800 (red).
