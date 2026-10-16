@@ -60,7 +60,12 @@ impl FileData {
             Some(r) => ValueKey::file_range(virtual_path, r),
             None => ValueKey::file(virtual_path),
         };
-        Self { op, path: path.into(), range, key }
+        Self {
+            op,
+            path: path.into(),
+            range,
+            key,
+        }
     }
 }
 
@@ -89,11 +94,19 @@ impl Blob for FileData {
             Some(r) => r.end - r.start,
             None => self.op.stat(&self.path).await?.content_length(),
         };
-        let (start, end) = (range.start.min(total), range.end.min(total).max(range.start.min(total)));
+        let (start, end) = (
+            range.start.min(total),
+            range.end.min(total).max(range.start.min(total)),
+        );
         if start == end {
             return Ok(Bytes::new());
         }
-        Ok(self.op.read_with(&self.path).range(base + start..base + end).await?.to_bytes())
+        Ok(self
+            .op
+            .read_with(&self.path)
+            .range(base + start..base + end)
+            .await?
+            .to_bytes())
     }
 }
 
@@ -109,7 +122,11 @@ pub struct BlobData {
 impl BlobData {
     /// A plain `blob` with the given identity.
     pub fn new(bytes: Bytes, key: ValueKey) -> Self {
-        Self { bytes, key, format: FormatId::from_static(BLOB) }
+        Self {
+            bytes,
+            key,
+            format: FormatId::from_static(BLOB),
+        }
     }
 
     /// Encoded bytes of `format`; still a [`Blob`] capability, so it can be written to the output.
@@ -131,7 +148,10 @@ impl Blob for BlobData {
 
     async fn read(&self, range: Range<u64>, _cx: &Cx) -> Result<Bytes> {
         let len = self.bytes.len() as u64;
-        let (start, end) = (range.start.min(len), range.end.min(len).max(range.start.min(len)));
+        let (start, end) = (
+            range.start.min(len),
+            range.end.min(len).max(range.start.min(len)),
+        );
         Ok(self.bytes.slice(start as usize..end as usize))
     }
 }
@@ -204,7 +224,12 @@ core_format!(CompressedData, COMPRESSED);
 impl CompressedData {
     /// A compressed value with the given identity.
     pub fn new(codec: impl Into<String>, data: Bytes, decoded_len: u64, key: ValueKey) -> Self {
-        Self { codec: codec.into(), data, decoded_len, key }
+        Self {
+            codec: codec.into(),
+            data,
+            decoded_len,
+            key,
+        }
     }
 }
 

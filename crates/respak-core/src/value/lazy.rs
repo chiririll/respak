@@ -63,14 +63,27 @@ struct State {
 impl LazyBlob {
     /// A blob of `format` that `init` computes when it is first read.
     pub fn new(format: FormatId, key: ValueKey, init: LazyInit) -> Self {
-        let state = State { init: Some(init), stream: None, spool: Spool::memory(), failed: None };
-        Self { format, key, len: AtomicU64::new(UNKNOWN), state: Mutex::new(state) }
+        let state = State {
+            init: Some(init),
+            stream: None,
+            spool: Spool::memory(),
+            failed: None,
+        };
+        Self {
+            format,
+            key,
+            len: AtomicU64::new(UNKNOWN),
+            state: Mutex::new(state),
+        }
     }
 }
 
 impl std::fmt::Debug for LazyBlob {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LazyBlob").field("format", &self.format).field("key", &self.key).finish_non_exhaustive()
+        f.debug_struct("LazyBlob")
+            .field("format", &self.format)
+            .field("key", &self.key)
+            .finish_non_exhaustive()
     }
 }
 
@@ -87,7 +100,10 @@ impl Data for LazyBlob {
 }
 
 fn failed(message: &str) -> Error {
-    Error::new(ErrorKind::Custom { source: None, message: format!("the conversion failed earlier: {message}") })
+    Error::new(ErrorKind::Custom {
+        source: None,
+        message: format!("the conversion failed earlier: {message}"),
+    })
 }
 
 #[async_trait]
@@ -123,7 +139,10 @@ impl LazyBlob {
                 LazySource::Stream(stream) => state.stream = Some(stream),
                 LazySource::File(file) => {
                     let len = file.metadata().map_err(io_error)?.len();
-                    state.spool = Spool::Disk { file: Arc::new(file), len };
+                    state.spool = Spool::Disk {
+                        file: Arc::new(file),
+                        len,
+                    };
                     self.len.store(len, Ordering::Release);
                 }
             }
@@ -146,7 +165,10 @@ impl LazyBlob {
 }
 
 fn io_error(e: std::io::Error) -> Error {
-    Error::new(ErrorKind::Custom { source: Some(Box::new(e)), message: "lazy blob storage".into() })
+    Error::new(ErrorKind::Custom {
+        source: Some(Box::new(e)),
+        message: "lazy blob storage".into(),
+    })
 }
 
 /// The produced bytes: in memory while they are few, in a temporary file after.
@@ -157,7 +179,10 @@ enum Spool {
 
 impl Spool {
     fn memory() -> Self {
-        Self::Memory { chunks: Vec::new(), len: 0 }
+        Self::Memory {
+            chunks: Vec::new(),
+            len: 0,
+        }
     }
 
     fn len(&self) -> u64 {
@@ -190,10 +215,14 @@ impl Spool {
             .map_err(io_error)?;
             *self = Self::Disk { file, len: *len };
         }
-        let Self::Disk { file, len } = self else { unreachable!("a memory spool was just replaced") };
+        let Self::Disk { file, len } = self else {
+            unreachable!("a memory spool was just replaced")
+        };
         let (file, at) = (file.clone(), *len);
         *len += bytes.len() as u64;
-        cx.blocking(move || write_at(&file, &bytes, at)).await?.map_err(io_error)
+        cx.blocking(move || write_at(&file, &bytes, at))
+            .await?
+            .map_err(io_error)
     }
 
     async fn read(&self, range: Range<u64>, cx: &Cx) -> Result<Bytes> {
@@ -215,7 +244,9 @@ impl Spool {
             }
             Self::Disk { file, .. } => {
                 let file = file.clone();
-                cx.blocking(move || read_at(&file, start, (end - start) as usize)).await?.map_err(io_error)
+                cx.blocking(move || read_at(&file, start, (end - start) as usize))
+                    .await?
+                    .map_err(io_error)
             }
         }
     }

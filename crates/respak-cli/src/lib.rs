@@ -1,14 +1,17 @@
-//! respak-cli library: command implementations.
+//! respak-cli library: the command line and its dispatch; each command lives in `commands/`.
+mod commands;
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use respak_core::broadcast::error::{RecvError, TryRecvError};
-use respak_core::{
-    CancellationToken, ConvertReport, ConvertRequest, DiscoverOptions, Engine, Error, ErrorKind, Event, OutputRequest,
-    OutputResult, TargetSpec,
-};
+use respak_core::{CancellationToken, Engine, Event};
+
+#[cfg(feature = "steam")]
+pub use commands::steam::{run_steam, SteamCommand};
+pub use commands::{ConvertArgs, CopyArgs, DiscoverArgs, ListArgs, RunArgs};
 
 /// `respak --root <dir> --out <dir> <command>`
 #[derive(Debug, Parser)]
@@ -78,68 +81,29 @@ pub enum Command {
     /// Print the format graph as JSON.
     Formats,
     /// Print what each path is and which formats it can be converted to, as JSON.
-    Discover {
-        /// Paths relative to `--root`.
-        #[arg(required = true)]
-        paths: Vec<String>,
-        /// How many container levels to open (1 lists a pak's assets).
-        #[arg(long, default_value_t = 0)]
-        depth: u32,
-        /// Read every entry to fill in its name where it is not known without decoding (slow,
-        /// like `list --names`).
-        #[arg(long)]
-        names: bool,
-    },
+    Discover(DiscoverArgs),
     /// Print the entries of containers (rpak, mbnk, ...), one path per line. Nothing is
     /// described or opened, so it is fast; use `discover --depth 1` for formats and targets.
-    List {
-        /// Container paths relative to `--root`.
-        #[arg(required = true)]
-        paths: Vec<String>,
-        /// Read every entry and print its name after the path (tab-separated), where it has one.
-        /// Slow: an rpak asset's name is stored in its header, and only some kinds can be read.
-        #[arg(long, conflicts_with = "names")]
-        map: bool,
-        /// Read every entry and print only the names, only of entries that have one (slow, see `--map`).
-        #[arg(long)]
-        names: bool,
-    },
+    List(ListArgs),
     /// Copy a file, or every file a glob matches, to `--out` unchanged (with `--steam`: download
     /// it). To combine it with conversions, add `{"type":"file"}` as one more output of a `run` request.
-    Copy {
-        /// Source path or glob, relative to `--root` (or the Steam depots).
-        path: String,
-        /// Output path, relative to `--out`; default: the source path.
-        #[arg(long = "path")]
-        out_path: Option<String>,
-    },
+    Copy(CopyArgs),
     /// Run a request file (`-` reads stdin): any number of outputs, with globs and lists.
-    Run {
-        /// Path of the request JSON, or `-`.
-        request: String,
-    },
+    Run(RunArgs),
     /// Convert a file, or every file a glob matches.
-    Convert {
-        /// Source path or glob, relative to `--root`.
-        path: String,
-        /// Target as JSON, e.g. `{"type":"dds"}`.
-        #[arg(long)]
-        to: String,
-        /// Output path, relative to `--out`.
-        #[arg(long = "path")]
-        out_path: Option<String>,
-        /// Also copy each source file to `--out` unchanged, like `copy`.
-        #[arg(long)]
-        copy: bool,
-    },
+    Convert(ConvertArgs),
 }
 
 /// `500MiB`, `8GiB`, `2GB`, `1024` (bytes): binary units for `KiB`/`MiB`/`GiB`/`TiB`, decimal for `KB`/`MB`/`GB`/`TB`.
 pub fn parse_size(text: &str) -> Result<u64, String> {
     let text = text.trim();
-    let split = text.find(|c: char| !c.is_ascii_digit()).unwrap_or(text.len());
+    let split = text
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(text.len());
     let (digits, unit) = text.split_at(split);
-    let number: u64 = digits.parse().map_err(|_| format!("`{text}` is not a size (try 500MiB or 8GiB)"))?;
+    let number: u64 = digits
+        .parse()
+        .map_err(|_| format!("`{text}` is not a size (try 500MiB or 8GiB)"))?;
     let factor: u64 = match unit.trim().to_ascii_lowercase().as_str() {
         "" | "b" => 1,
         "kb" => 1_000,
@@ -152,48 +116,9 @@ pub fn parse_size(text: &str) -> Result<u64, String> {
         "t" | "tib" => 1 << 40,
         other => return Err(format!("unknown size unit `{other}` in `{text}`")),
     };
-    number.checked_mul(factor).ok_or_else(|| format!("`{text}` is too large"))
-}
-
-/// `respak steam <command>`.
-#[cfg(feature = "steam")]
-#[derive(Debug, Subcommand)]
-pub enum SteamCommand {
-    /// Log in to Steam and store a refresh token in `.respak/account.json`.
-    Login {
-        /// Scan a QR code with the Steam mobile app.
-        #[arg(long, conflicts_with = "user", required_unless_present = "user")]
-        qr: bool,
-        /// Log in with this account name (password prompt, then Steam Guard).
-        #[arg(long)]
-        user: Option<String>,
-    },
-    /// Delete the stored login.
-    Logout,
-}
-
-/// Runs a `steam` command; the state directory is `.respak` in the working directory.
-#[cfg(feature = "steam")]
-pub async fn run_steam(command: SteamCommand, out: &mut impl Write) -> anyhow::Result<ExitCode> {
-    use respak_steam::AccountStore;
-    let store = AccountStore::new(".respak");
-    match command {
-        SteamCommand::Login { qr, user } => {
-            let account = match user {
-                Some(name) if !qr => respak_steam::login_user(&store, &name).await?,
-                _ => respak_steam::login_qr(&store, out).await?,
-            };
-            writeln!(out, "Logged in as {} (steam id {}). Token stored in {}.", account.account_name, account.steam_id, store.path().display())?;
-        }
-        SteamCommand::Logout => {
-            if store.delete()? {
-                writeln!(out, "Logged out: {} deleted.", store.path().display())?;
-            } else {
-                writeln!(out, "Not logged in.")?;
-            }
-        }
-    }
-    Ok(ExitCode::SUCCESS)
+    number
+        .checked_mul(factor)
+        .ok_or_else(|| format!("`{text}` is too large"))
 }
 
 /// One line of progress for `event`, or `None` for events a person does not need to see
@@ -205,8 +130,14 @@ pub fn event_line(event: &Event) -> Option<String> {
         Event::InputOpened { path, entries } => Some(format!("opened {path} ({entries} entries)")),
         Event::OutputWritten { path } => Some(format!("wrote {path}")),
         Event::Custom { source, name, data } if source == "steam" => match name.as_str() {
-            "depot" => Some(format!("steam: depot {} manifest {} ({} files)", data["depot"], data["manifest"], data["files"])),
-            "chunk" => Some(format!("steam: {} chunks, {} bytes downloaded", data["chunks"], data["bytes"])),
+            "depot" => Some(format!(
+                "steam: depot {} manifest {} ({} files)",
+                data["depot"], data["manifest"], data["files"]
+            )),
+            "chunk" => Some(format!(
+                "steam: {} chunks, {} bytes downloaded",
+                data["chunks"], data["bytes"]
+            )),
             _ => None,
         },
         _ => None,
@@ -266,109 +197,11 @@ pub async fn run(
     match cli.command {
         #[cfg(feature = "steam")]
         Command::Steam { command } => run_steam(command, out).await,
-        Command::Formats => {
-            serde_json::to_writer_pretty(&mut *out, &engine.formats())?;
-            writeln!(out)?;
-            Ok(ExitCode::SUCCESS)
-        }
-        Command::Discover { paths, depth, names } => {
-            let options = DiscoverOptions { depth, names };
-            let mut found = Vec::new();
-            let mut failed = false;
-            for path in &paths {
-                match engine.discover(path, &options, cancel).await {
-                    Ok(discovery) => found.push(discovery),
-                    Err(error) => {
-                        writeln!(err, "{path}: {error}")?;
-                        failed = true;
-                    }
-                }
-            }
-            serde_json::to_writer_pretty(&mut *out, &found)?;
-            writeln!(out)?;
-            Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
-        }
-        Command::List { paths, map, names } => {
-            let mut failed = false;
-            for path in &paths {
-                match engine.list(path, map || names, cancel).await {
-                    Ok(entries) => {
-                        for entry in entries {
-                            match (entry.name, names) {
-                                (Some(name), true) => writeln!(out, "{name}")?,
-                                (None, true) => {}
-                                (Some(name), false) => writeln!(out, "{}\t{name}", entry.path)?,
-                                (None, false) => writeln!(out, "{}", entry.path)?,
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        writeln!(err, "{path}: {error}")?;
-                        failed = true;
-                    }
-                }
-            }
-            Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
-        }
-        Command::Convert { path, to, out_path, copy } => {
-            let to: TargetSpec = serde_json::from_str(&to).map_err(|e| {
-                Error::new(ErrorKind::InvalidRequest { message: format!("--to is not a valid target: {e}") })
-            })?;
-            let mut outputs = vec![OutputRequest { from: path.clone().into(), to, path: out_path }];
-            if copy {
-                outputs.push(OutputRequest { from: path.into(), to: file_target(), path: None });
-            }
-            let mut done = engine.convert(&ConvertRequest { version: 1, outputs }, cancel).await?;
-            if copy {
-                skip_assets(&mut done);
-            }
-            report(done, out, err)
-        }
-        Command::Copy { path, out_path } => {
-            let outputs = vec![OutputRequest { from: path.into(), to: file_target(), path: out_path }];
-            let mut done = engine.convert(&ConvertRequest { version: 1, outputs }, cancel).await?;
-            skip_assets(&mut done);
-            report(done, out, err)
-        }
-        Command::Run { request } => {
-            let text = if request == "-" {
-                std::io::read_to_string(std::io::stdin())?
-            } else {
-                std::fs::read_to_string(&request).map_err(|e| {
-                    Error::new(ErrorKind::InvalidRequest { message: format!("cannot read {request}: {e}") })
-                })?
-            };
-            let request: ConvertRequest = serde_json::from_str(&text).map_err(|e| {
-                Error::new(ErrorKind::InvalidRequest { message: format!("the request is not valid: {e}") })
-            })?;
-            report(engine.convert(&request, cancel).await?, out, err)
-        }
+        Command::Formats => commands::formats(engine, out),
+        Command::Discover(args) => commands::discover(engine, cancel, args, out, err).await,
+        Command::List(args) => commands::list(engine, cancel, args, out, err).await,
+        Command::Convert(args) => commands::convert(engine, cancel, args, out, err).await,
+        Command::Copy(args) => commands::copy(engine, cancel, args, out, err).await,
+        Command::Run(args) => commands::request(engine, cancel, args, out, err).await,
     }
-}
-
-/// `{"type":"file"}`: the source unchanged.
-fn file_target() -> TargetSpec {
-    TargetSpec { format: respak_core::FormatId::from_static("file"), options: Default::default(), via: Default::default() }
-}
-
-/// Drops the entries that only say a source is not a file (an asset inside a pak has no bytes of
-/// its own to copy), so copying a glob that reaches into paks copies the real files and goes on.
-fn skip_assets(report: &mut ConvertReport) {
-    report.outputs.retain(|o| {
-        !matches!(&o.result, OutputResult::Err { error } if matches!(error.kind(), ErrorKind::NoPath { to, .. } if to == "file"))
-    });
-}
-
-/// Prints the report as JSON, each failure on `err`; non-zero exit if any output failed.
-fn report(report: ConvertReport, out: &mut impl Write, err: &mut impl Write) -> anyhow::Result<ExitCode> {
-    serde_json::to_writer_pretty(&mut *out, &report)?;
-    writeln!(out)?;
-    let mut failed = false;
-    for output in &report.outputs {
-        if let OutputResult::Err { error } = &output.result {
-            writeln!(err, "{}: {error}", output.from)?;
-            failed = true;
-        }
-    }
-    Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
 }

@@ -41,6 +41,17 @@ Prints the entries of a container (rpak, mbnk, ...), one per line, sorted, relat
 respak --root game list paks/Win64/common.rpak
 ```
 
+### `names [--hashes FILE] [--prefix TEXT]... [--suffix TEXT]... SOURCE...`
+Looks for the names of asset guids. The wanted guids come from `FILE` (a local file; any text, each `0x<16 hex digits>` counts, so a `list` output works), or, without `--hashes`, are the assets of the sources that have no name of their own. Each `SOURCE` is a path or glob on the input (the `--root` folder or the Steam depots).
+
+Everything is read in one pass. A pak's assets are decoded once and each gives its stored name (a name in one pak often names an asset of another), the names of its dependencies, and what the format offers as possible names (a `dtbl`'s asset-path cells). A file of no known format (an executable, a script) is read as bytes and every run of printable ASCII is taken. Paks are not scanned as bytes, their data is compressed; files of a known format with no names in them (textures, video) are skipped. With `--hashes` the search stops as soon as every wanted guid is named; without it the whole input is read, since the unnamed assets are only known at the end.
+
+Each string, and each word in it (split at quotes, spaces, brackets), is hashed and kept when it matches a wanted guid. `--prefix` / `--suffix` also try the string with that text added (e.g. `--prefix datatable/ --suffix .rpak`). Matches print as `0x<GUID><TAB><name>`; progress and the count go to stderr. A match is verified by the hash, so a wrong string can only miss. A file that cannot be read is a warning.
+
+```sh
+respak --root game --out out names --suffix .rpak "paks/Win64/*.rpak" "*.exe"
+```
+
 ### `convert PATH --to TARGET [--path OUT] [--copy]`
 Converts a file or every file a glob matches. `TARGET` is JSON, e.g. `'{"type":"dds"}'`. `--path` sets the output path under `--out`; `--copy` also copies the source file unchanged.
 

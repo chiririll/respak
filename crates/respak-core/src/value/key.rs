@@ -45,18 +45,28 @@ pub enum ValueKey {
 impl ValueKey {
     /// Key of a whole file.
     pub fn file(path: impl Into<String>) -> Self {
-        Self::File { path: path.into(), range: None }
+        Self::File {
+            path: path.into(),
+            range: None,
+        }
     }
 
     /// Key of a byte range of a file.
     pub fn file_range(path: impl Into<String>, range: Range<u64>) -> Self {
-        Self::File { path: path.into(), range: Some(range) }
+        Self::File {
+            path: path.into(),
+            range: Some(range),
+        }
     }
 
     /// Key of a converted value. `options` is normalized here (fields sorted); defaults must
     /// already be filled in. See the type docs.
     pub fn converted(source: Arc<ValueKey>, target: FormatId, options: &Json) -> Self {
-        Self::Converted { source, target, options: normalize(options).to_string() }
+        Self::Converted {
+            source,
+            target,
+            options: normalize(options).to_string(),
+        }
     }
 }
 
@@ -65,7 +75,12 @@ fn normalize(v: &Json) -> Json {
         Json::Object(m) => {
             let mut entries: Vec<_> = m.iter().collect();
             entries.sort_by(|a, b| a.0.cmp(b.0));
-            Json::Object(entries.into_iter().map(|(k, v)| (k.clone(), normalize(v))).collect())
+            Json::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k.clone(), normalize(v)))
+                    .collect(),
+            )
         }
         Json::Array(a) => Json::Array(a.iter().map(normalize).collect()),
         other => other.clone(),
@@ -76,8 +91,15 @@ impl fmt::Display for ValueKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::File { path, range: None } => f.write_str(path),
-            Self::File { path, range: Some(r) } => write!(f, "{path}[{}..{}]", r.start, r.end),
-            Self::Converted { source, target, options } => write!(f, "{source} => {target} {options}"),
+            Self::File {
+                path,
+                range: Some(r),
+            } => write!(f, "{path}[{}..{}]", r.start, r.end),
+            Self::Converted {
+                source,
+                target,
+                options,
+            } => write!(f, "{source} => {target} {options}"),
         }
     }
 }

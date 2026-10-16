@@ -48,9 +48,16 @@ impl FromStr for Version {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Error> {
-        let bad = || Error::new(ErrorKind::InvalidRequest { message: format!("invalid version `{s}`") });
+        let bad = || {
+            Error::new(ErrorKind::InvalidRequest {
+                message: format!("invalid version `{s}`"),
+            })
+        };
         let (major, minor) = s.split_once('.').unwrap_or((s, "0"));
-        Ok(Self { major: major.parse().map_err(|_| bad())?, minor: minor.parse().map_err(|_| bad())? })
+        Ok(Self {
+            major: major.parse().map_err(|_| bad())?,
+            minor: minor.parse().map_err(|_| bad())?,
+        })
     }
 }
 
@@ -66,12 +73,18 @@ pub struct FormatId {
 impl FormatId {
     /// An unversioned id from a static name (usable in `const` context).
     pub const fn from_static(name: &'static str) -> Self {
-        Self { name: Cow::Borrowed(name), version: None }
+        Self {
+            name: Cow::Borrowed(name),
+            version: None,
+        }
     }
 
     /// An unversioned id.
     pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
-        Self { name: name.into(), version: None }
+        Self {
+            name: name.into(),
+            version: None,
+        }
     }
 
     /// The same format with a version.
@@ -92,7 +105,10 @@ impl FormatId {
 
     /// The same format without its version.
     pub fn unversioned(&self) -> Self {
-        Self { name: self.name.clone(), version: None }
+        Self {
+            name: self.name.clone(),
+            version: None,
+        }
     }
 }
 
@@ -114,9 +130,14 @@ impl FromStr for FormatId {
             None => (s, None),
         };
         if name.is_empty() {
-            return Err(Error::new(ErrorKind::InvalidRequest { message: format!("invalid format id `{s}`") }));
+            return Err(Error::new(ErrorKind::InvalidRequest {
+                message: format!("invalid format id `{s}`"),
+            }));
         }
-        Ok(Self { name: Cow::Owned(name.to_owned()), version })
+        Ok(Self {
+            name: Cow::Owned(name.to_owned()),
+            version,
+        })
     }
 }
 

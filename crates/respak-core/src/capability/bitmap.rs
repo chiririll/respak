@@ -158,7 +158,9 @@ impl Bitmap for BitmapBuf {
             .and_then(|l| l.get(level as usize))
             .cloned()
             .ok_or_else(|| {
-                Error::new(ErrorKind::NotFound { path: format!("mip {level} of layer {layer}") })
+                Error::new(ErrorKind::NotFound {
+                    path: format!("mip {level} of layer {layer}"),
+                })
             })
     }
 }

@@ -4,14 +4,18 @@ use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use crate::capability::{Animation, Audio, Bitmap, Blob, Container, Mesh, Metadata, Skeleton, Table, Video};
+use crate::capability::{
+    Animation, Audio, Bitmap, Blob, Container, Mesh, Metadata, NameSource, Skeleton, Table, Video,
+};
 
 mod core_formats;
 mod format;
 mod key;
 mod lazy;
 
-pub use core_formats::{BlobData, BundleData, CompressedData, FileData, BLOB, BUNDLE, COMPRESSED, FILE};
+pub use core_formats::{
+    BlobData, BundleData, CompressedData, FileData, BLOB, BUNDLE, COMPRESSED, FILE,
+};
 pub use format::{FormatId, Version};
 pub use key::ValueKey;
 pub use lazy::{LazyBlob, LazyInit, LazySource};
@@ -63,6 +67,10 @@ pub trait Data: Any + Send + Sync + Debug {
     }
     /// This value as a table.
     fn as_table(&self) -> Option<&dyn Table> {
+        None
+    }
+    /// This value's strings that may be names of other assets.
+    fn as_name_source(&self) -> Option<&dyn NameSource> {
         None
     }
     /// This value as audio.

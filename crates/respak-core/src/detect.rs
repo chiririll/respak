@@ -57,13 +57,17 @@ pub trait ConvertHandler: Send + Sync {
 /// Score helper: the little-endian `u16` at `offset`, if the header is long enough.
 pub fn u16le(header: &[u8], offset: usize) -> Option<u16> {
     let end = offset.checked_add(2)?;
-    Some(u16::from_le_bytes(header.get(offset..end)?.try_into().ok()?))
+    Some(u16::from_le_bytes(
+        header.get(offset..end)?.try_into().ok()?,
+    ))
 }
 
 /// Score helper: the little-endian `u32` at `offset`, if the header is long enough.
 pub fn u32le(header: &[u8], offset: usize) -> Option<u32> {
     let end = offset.checked_add(4)?;
-    Some(u32::from_le_bytes(header.get(offset..end)?.try_into().ok()?))
+    Some(u32::from_le_bytes(
+        header.get(offset..end)?.try_into().ok()?,
+    ))
 }
 
 /// Score helper: whether `value` lies in `range` (a missing value is outside every range).
@@ -73,5 +77,8 @@ pub fn within<T: PartialOrd>(value: Option<T>, range: std::ops::RangeInclusive<T
 
 /// Score helper: whether `header[offset..]` starts with `magic`.
 pub fn magic(header: &[u8], offset: usize, magic: &[u8]) -> bool {
-    offset.checked_add(magic.len()).and_then(|end| header.get(offset..end)) == Some(magic)
+    offset
+        .checked_add(magic.len())
+        .and_then(|end| header.get(offset..end))
+        == Some(magic)
 }

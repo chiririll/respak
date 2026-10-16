@@ -22,7 +22,11 @@ pub struct PluginCache {
 
 impl PluginCache {
     pub(crate) fn new(op: Operator, plugin: &str, version: u32, mediator: Mediator) -> Self {
-        Self { op, prefix: format!("{plugin}/v{version}/"), mediator }
+        Self {
+            op,
+            prefix: format!("{plugin}/v{version}/"),
+            mediator,
+        }
     }
 
     fn path(&self, key: &str) -> String {
@@ -30,7 +34,9 @@ impl PluginCache {
     }
 
     fn warn(&self, what: &str, key: &str, error: impl std::fmt::Display) {
-        self.mediator.publish(Event::Warning { message: format!("cache: cannot {what} `{}`: {error}", self.path(key)) });
+        self.mediator.publish(Event::Warning {
+            message: format!("cache: cannot {what} `{}`: {error}", self.path(key)),
+        });
     }
 
     /// The bytes stored under `key`, if any.

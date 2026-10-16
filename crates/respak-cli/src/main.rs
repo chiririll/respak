@@ -21,7 +21,9 @@ fn fs(root: &std::path::Path) -> anyhow::Result<Operator> {
 async fn main() -> anyhow::Result<ExitCode> {
     // Logs go to stderr; `RUST_LOG=info` shows what Steam is doing, the default is warnings only.
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+        )
         .with_writer(std::io::stderr)
         .init();
     let cli = Cli::parse();
@@ -69,11 +71,17 @@ async fn main() -> anyhow::Result<ExitCode> {
         steam_input = Some(opened);
         operator
     } else {
-        let root = cli.root.as_ref().ok_or_else(|| anyhow::anyhow!("--root (or --steam) is required"))?;
+        let root = cli
+            .root
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("--root (or --steam) is required"))?;
         fs(root)?
     };
     #[cfg(not(feature = "steam"))]
-    let input = fs(cli.root.as_ref().ok_or_else(|| anyhow::anyhow!("--root is required"))?)?;
+    let input = fs(cli
+        .root
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("--root is required"))?)?;
     let mut builder = Engine::builder()
         .input(input)
         .output(fs(out)?)
@@ -100,7 +108,15 @@ async fn main() -> anyhow::Result<ExitCode> {
         }
         None => Box::new(std::io::stdout()),
     };
-    let code = run_with_events(cli, &engine, &cancel, &mut report, &mut std::io::stderr(), &mut std::io::stderr()).await?;
+    let code = run_with_events(
+        cli,
+        &engine,
+        &cancel,
+        &mut report,
+        &mut std::io::stderr(),
+        &mut std::io::stderr(),
+    )
+    .await?;
     report.flush()?;
     drop(report);
     #[cfg(feature = "steam")]

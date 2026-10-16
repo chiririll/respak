@@ -58,5 +58,9 @@ pub trait Video: Send + Sync {
 
     /// Decodes the frames in order, converted to `format`. The stream ends after the last frame;
     /// a damaged or truncated video yields frames up to the damage, then one `Err`.
-    async fn frames(&self, format: FrameFormat, cx: &Cx) -> Result<BoxStream<'static, Result<VideoFrame>>>;
+    async fn frames(
+        &self,
+        format: FrameFormat,
+        cx: &Cx,
+    ) -> Result<BoxStream<'static, Result<VideoFrame>>>;
 }

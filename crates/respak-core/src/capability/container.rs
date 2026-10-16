@@ -29,7 +29,16 @@ pub trait Container: Send + Sync {
     /// exists (`NotFound` otherwise).
     async fn entry(&self, path: &str) -> Result<Value> {
         self.volume().stat(path).await?;
-        let virtual_path = format!("{}/{}", self.mount_path().trim_end_matches('/'), path.trim_start_matches('/'));
-        Ok(std::sync::Arc::new(FileData::new(self.volume(), path, virtual_path, None)))
+        let virtual_path = format!(
+            "{}/{}",
+            self.mount_path().trim_end_matches('/'),
+            path.trim_start_matches('/')
+        );
+        Ok(std::sync::Arc::new(FileData::new(
+            self.volume(),
+            path,
+            virtual_path,
+            None,
+        )))
     }
 }
