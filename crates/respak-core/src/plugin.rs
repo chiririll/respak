@@ -101,7 +101,8 @@ impl Registry {
     /// Runs `plugin.register`, tagging everything it adds with the plugin's id.
     pub fn add(&mut self, plugin: &dyn Plugin) {
         self.current_plugin = plugin.id().to_owned();
-        self.cache_versions.insert(self.current_plugin.clone(), plugin.cache_version());
+        self.cache_versions
+            .insert(self.current_plugin.clone(), plugin.cache_version());
         plugin.register(self);
     }
 
@@ -118,12 +119,20 @@ impl Registry {
             cap_edges: Vec::new(),
         });
         self.last_edge = None;
-        FormatBuilder { index: self.formats.len() - 1, registry: self }
+        FormatBuilder {
+            index: self.formats.len() - 1,
+            registry: self,
+        }
     }
 
     /// Fails if a format name was defined twice, or a direct edge leads to an undefined format.
     pub fn check(&self) -> Result<()> {
-        let custom = |message: String| Error::new(ErrorKind::Custom { source: None, message });
+        let custom = |message: String| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message,
+            })
+        };
         for (i, f) in self.formats.iter().enumerate() {
             if let Some(first) = self.formats[..i].iter().find(|o| o.name == f.name) {
                 return Err(custom(format!(
@@ -134,7 +143,10 @@ impl Registry {
         }
         for d in &self.direct_edges {
             if !self.formats.iter().any(|f| f.name == d.to) {
-                return Err(custom(format!("edge `{}` -> `{}` leads to an undefined format", d.from, d.to)));
+                return Err(custom(format!(
+                    "edge `{}` -> `{}` leads to an undefined format",
+                    d.from, d.to
+                )));
             }
         }
         Ok(())
@@ -165,7 +177,10 @@ impl FormatBuilder<'_> {
 
     /// Read edge: `src` (e.g. `"file"`) → this format, scored and read by `handler`.
     pub fn from(mut self, src: &'static str, handler: impl ReadHandler + 'static) -> Self {
-        self.def().read_edges.push(ReadEdge { from: src, handler: Arc::new(handler) });
+        self.def().read_edges.push(ReadEdge {
+            from: src,
+            handler: Arc::new(handler),
+        });
         self
     }
 
@@ -185,7 +200,12 @@ impl FormatBuilder<'_> {
     /// Capability edge: any value providing `C` → this format.
     pub fn from_cap<C: Cap + ?Sized>(mut self, handler: impl ConvertHandler + 'static) -> Self {
         let order = self.registry.take_order();
-        self.def().cap_edges.push(CapEdge { cap: CapId::of::<C>(), handler: Arc::new(handler), cost: 1, order });
+        self.def().cap_edges.push(CapEdge {
+            cap: CapId::of::<C>(),
+            handler: Arc::new(handler),
+            cost: 1,
+            order,
+        });
         self.registry.last_edge = Some(LastEdge::Cap { format: self.index });
         self
     }
@@ -195,8 +215,16 @@ impl FormatBuilder<'_> {
     pub fn to(mut self, dst: &'static str, handler: impl ConvertHandler + 'static) -> Self {
         let order = self.registry.take_order();
         let from = self.def().name;
-        self.registry.direct_edges.push(DirectEdge { from, to: dst, handler: Arc::new(handler), cost: 1, order });
-        self.registry.last_edge = Some(LastEdge::Direct { index: self.registry.direct_edges.len() - 1 });
+        self.registry.direct_edges.push(DirectEdge {
+            from,
+            to: dst,
+            handler: Arc::new(handler),
+            cost: 1,
+            order,
+        });
+        self.registry.last_edge = Some(LastEdge::Direct {
+            index: self.registry.direct_edges.len() - 1,
+        });
         self
     }
 
@@ -211,9 +239,18 @@ impl FormatBuilder<'_> {
     /// # Panics
     /// If no edge has been added to this format yet (a programming error in the plugin).
     pub fn cost(self, cost: u32) -> Self {
-        match self.registry.last_edge.as_ref().expect("cost() must follow from_cap() or to()") {
+        match self
+            .registry
+            .last_edge
+            .as_ref()
+            .expect("cost() must follow from_cap() or to()")
+        {
             LastEdge::Cap { format } => {
-                self.registry.formats[*format].cap_edges.last_mut().expect("edge exists").cost = cost
+                self.registry.formats[*format]
+                    .cap_edges
+                    .last_mut()
+                    .expect("edge exists")
+                    .cost = cost
             }
             LastEdge::Direct { index } => self.registry.direct_edges[*index].cost = cost,
         }

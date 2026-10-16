@@ -25,7 +25,8 @@ use respak_core::detect::{magic, u32le};
 use respak_core::value::FileData;
 use respak_core::volume::{volume_operator, VolumeEntry, VolumeSource, VolumeStat};
 use respak_core::{
-    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version,
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
 };
 
 use crate::asrc::{AsrcData, StreamHeads};
@@ -38,11 +39,27 @@ pub const MBNK_HEADER_LEN: usize = 0xC8;
 /// `'CBNK'` as it lies on disk.
 const MAGIC: &[u8] = b"KNBC";
 
-const LANG_R2: &[&str] =
-    &["english", "french", "german", "spanish", "italian", "japanese", "polish", "portuguese", "russian", "tchinese", "mspanish"];
-const LANG_R5_9: &[&str] = &["english", "french", "german", "spanish", "italian", "japanese", "polish", "russian", "mandarin"];
-const LANG_R5_10: &[&str] =
-    &["english", "french", "german", "spanish", "italian", "japanese", "polish", "russian", "mandarin", "korean"];
+const LANG_R2: &[&str] = &[
+    "english",
+    "french",
+    "german",
+    "spanish",
+    "italian",
+    "japanese",
+    "polish",
+    "portuguese",
+    "russian",
+    "tchinese",
+    "mspanish",
+];
+const LANG_R5_9: &[&str] = &[
+    "english", "french", "german", "spanish", "italian", "japanese", "polish", "russian",
+    "mandarin",
+];
+const LANG_R5_10: &[&str] = &[
+    "english", "french", "german", "spanish", "italian", "japanese", "polish", "russian",
+    "mandarin", "korean",
+];
 
 /// Header, source-entry and language-table layout of a bank version (`miles.md`, "Bank versions").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +86,12 @@ impl BankLayout {
             49 => (49, 49, LANG_R5_10),
             _ => return None,
         };
-        Some(Self { version, header, source, languages })
+        Some(Self {
+            version,
+            header,
+            source,
+            languages,
+        })
     }
 
     /// Bytes of one source entry.
@@ -97,10 +119,42 @@ struct HeaderFields {
 
 fn header_fields(header: u8) -> HeaderFields {
     match header {
-        13 => HeaderFields { len: 0xC0, sources: 0x48, sources_wide: true, strings: 0x70, localised: 0x9C, unlocalised: 0xA0, build_tag: 0xBC },
-        28 => HeaderFields { len: 0xC0, sources: 0x48, sources_wide: true, strings: 0x70, localised: 0x94, unlocalised: 0x98, build_tag: 0xB0 },
-        45 => HeaderFields { len: 0xC8, sources: 0x50, sources_wide: true, strings: 0x80, localised: 0xA4, unlocalised: 0xA8, build_tag: 0x10 },
-        _ => HeaderFields { len: 0xA0, sources: 0x34, sources_wide: false, strings: 0x70, localised: 0x3C, unlocalised: 0x38, build_tag: 0x10 },
+        13 => HeaderFields {
+            len: 0xC0,
+            sources: 0x48,
+            sources_wide: true,
+            strings: 0x70,
+            localised: 0x9C,
+            unlocalised: 0xA0,
+            build_tag: 0xBC,
+        },
+        28 => HeaderFields {
+            len: 0xC0,
+            sources: 0x48,
+            sources_wide: true,
+            strings: 0x70,
+            localised: 0x94,
+            unlocalised: 0x98,
+            build_tag: 0xB0,
+        },
+        45 => HeaderFields {
+            len: 0xC8,
+            sources: 0x50,
+            sources_wide: true,
+            strings: 0x80,
+            localised: 0xA4,
+            unlocalised: 0xA8,
+            build_tag: 0x10,
+        },
+        _ => HeaderFields {
+            len: 0xA0,
+            sources: 0x34,
+            sources_wide: false,
+            strings: 0x70,
+            localised: 0x3C,
+            unlocalised: 0x38,
+            build_tag: 0x10,
+        },
     }
 }
 
@@ -141,7 +195,9 @@ impl SourceEntry {
 }
 
 fn at<const N: usize>(b: &[u8], off: usize) -> [u8; N] {
-    b[off..off + N].try_into().expect("slice length checked by the caller")
+    b[off..off + N]
+        .try_into()
+        .expect("slice length checked by the caller")
 }
 
 fn u16_at(b: &[u8], off: usize) -> u16 {
@@ -215,8 +271,14 @@ fn read_entry(source: u8, e: &[u8]) -> RawEntry {
 
 /// The NUL-terminated string at `off`.
 fn cstring(bytes: &[u8], off: u64) -> Result<String> {
-    let tail = usize::try_from(off).ok().and_then(|o| bytes.get(o..)).ok_or_else(|| corrupt(format!("mbnk: string offset {off} is past the end")))?;
-    let end = tail.iter().position(|&b| b == 0).ok_or_else(|| corrupt("mbnk: unterminated string"))?;
+    let tail = usize::try_from(off)
+        .ok()
+        .and_then(|o| bytes.get(o..))
+        .ok_or_else(|| corrupt(format!("mbnk: string offset {off} is past the end")))?;
+    let end = tail
+        .iter()
+        .position(|&b| b == 0)
+        .ok_or_else(|| corrupt("mbnk: unterminated string"))?;
     Ok(String::from_utf8_lossy(&tail[..end]).into_owned())
 }
 
@@ -239,13 +301,24 @@ impl Bank {
             return Err(corrupt("mbnk: not a CBNK file"));
         }
         let version = u32le(bytes, 4).expect("length checked") as i32;
-        let layout = BankLayout::for_version(version)
-            .ok_or_else(|| Error::new(ErrorKind::UnsupportedVersion { format: "mbnk".into(), version: version.to_string() }))?;
+        let layout = BankLayout::for_version(version).ok_or_else(|| {
+            Error::new(ErrorKind::UnsupportedVersion {
+                format: "mbnk".into(),
+                version: version.to_string(),
+            })
+        })?;
         let h = header_fields(layout.header);
         if bytes.len() < h.len {
-            return Err(corrupt(format!("mbnk: {} bytes is shorter than the v{version} header", bytes.len())));
+            return Err(corrupt(format!(
+                "mbnk: {} bytes is shorter than the v{version} header",
+                bytes.len()
+            )));
         }
-        let sources_at = if h.sources_wide { u64_at(bytes, h.sources) } else { u64::from(u32_at(bytes, h.sources)) };
+        let sources_at = if h.sources_wide {
+            u64_at(bytes, h.sources)
+        } else {
+            u64::from(u32_at(bytes, h.sources))
+        };
         let strings_at = u64_at(bytes, h.strings);
         let unlocalised = u64::from(u32_at(bytes, h.unlocalised));
         let localised = u64::from(u32_at(bytes, h.localised));
@@ -257,9 +330,17 @@ impl Bank {
             .and_then(|l| l.checked_add(unlocalised))
             .ok_or_else(|| corrupt("mbnk: source count overflows"))?;
         let size = layout.entry_size();
-        let table_len = count.checked_mul(size).ok_or_else(|| corrupt("mbnk: source table size overflows"))?;
-        let table_end = sources_at.checked_add(table_len).filter(|&end| end <= bytes.len() as u64);
-        let table_end = table_end.ok_or_else(|| corrupt(format!("mbnk: {count} sources at {sources_at} do not fit the file")))?;
+        let table_len = count
+            .checked_mul(size)
+            .ok_or_else(|| corrupt("mbnk: source table size overflows"))?;
+        let table_end = sources_at
+            .checked_add(table_len)
+            .filter(|&end| end <= bytes.len() as u64);
+        let table_end = table_end.ok_or_else(|| {
+            corrupt(format!(
+                "mbnk: {count} sources at {sources_at} do not fit the file"
+            ))
+        })?;
 
         let stem = cstring(bytes, strings_at)?;
         let mut sources = Vec::with_capacity(count as usize);
@@ -270,14 +351,26 @@ impl Bank {
             // Bank v48 keeps the names in a block of their own right after the table.
             let name_at = if layout.source == 48 {
                 let first = *first_name.get_or_insert(raw.name_offset);
-                let rel = raw.name_offset.checked_sub(first).ok_or_else(|| corrupt("mbnk: name offset before the first one"))?;
+                let rel = raw
+                    .name_offset
+                    .checked_sub(first)
+                    .ok_or_else(|| corrupt("mbnk: name offset before the first one"))?;
                 table_end + rel
             } else {
-                strings_at.checked_add(raw.name_offset).ok_or_else(|| corrupt("mbnk: name offset overflows"))?
+                strings_at
+                    .checked_add(raw.name_offset)
+                    .ok_or_else(|| corrupt("mbnk: name offset overflows"))?
             };
-            let language = (raw.language != NOT_LOCALISED)
-                .then(|| layout.languages.get(usize::from(raw.language)).map_or_else(|| format!("lang{}", raw.language), |l| (*l).to_owned()));
-            let header_end = raw.header_offset.checked_add(u64::from(raw.header_size)).ok_or_else(|| corrupt("mbnk: header range overflows"))?;
+            let language = (raw.language != NOT_LOCALISED).then(|| {
+                layout
+                    .languages
+                    .get(usize::from(raw.language))
+                    .map_or_else(|| format!("lang{}", raw.language), |l| (*l).to_owned())
+            });
+            let header_end = raw
+                .header_offset
+                .checked_add(u64::from(raw.header_size))
+                .ok_or_else(|| corrupt("mbnk: header range overflows"))?;
             sources.push(SourceEntry {
                 name: cstring(bytes, name_at)?,
                 language,
@@ -298,7 +391,13 @@ impl Bank {
             }
             index.insert(path, i);
         }
-        Ok(Self { layout, build_tag, stem, sources, index })
+        Ok(Self {
+            layout,
+            build_tag,
+            stem,
+            sources,
+            index,
+        })
     }
 
     /// The layout the version table gave.
@@ -338,21 +437,38 @@ impl Bank {
 
     fn is_dir(&self, path: &str) -> bool {
         let prefix = format!("{path}/");
-        self.index.range(prefix.clone()..).next().is_some_and(|(k, _)| k.starts_with(&prefix))
+        self.index
+            .range(prefix.clone()..)
+            .next()
+            .is_some_and(|(k, _)| k.starts_with(&prefix))
     }
 
     fn list(&self, dir: &str) -> Vec<VolumeEntry> {
-        let prefix = if dir.is_empty() { String::new() } else { format!("{dir}/") };
+        let prefix = if dir.is_empty() {
+            String::new()
+        } else {
+            format!("{dir}/")
+        };
         let mut out: Vec<VolumeEntry> = Vec::new();
         for (path, &i) in self.index.range(prefix.clone()..) {
-            let Some(rest) = path.strip_prefix(&prefix) else { break };
+            let Some(rest) = path.strip_prefix(&prefix) else {
+                break;
+            };
             match rest.split_once('/') {
                 Some((folder, _)) => {
                     if out.last().is_none_or(|e| e.name != folder) {
-                        out.push(VolumeEntry { name: folder.to_owned(), is_dir: true, len: 0 });
+                        out.push(VolumeEntry {
+                            name: folder.to_owned(),
+                            is_dir: true,
+                            len: 0,
+                        });
                     }
                 }
-                None => out.push(VolumeEntry { name: rest.to_owned(), is_dir: false, len: self.sources[i].descriptor().len() as u64 }),
+                None => out.push(VolumeEntry {
+                    name: rest.to_owned(),
+                    is_dir: false,
+                    len: self.sources[i].descriptor().len() as u64,
+                }),
             }
         }
         out
@@ -360,7 +476,9 @@ impl Bank {
 }
 
 fn not_found(path: &str) -> Error {
-    Error::new(ErrorKind::NotFound { path: path.to_owned() })
+    Error::new(ErrorKind::NotFound {
+        path: path.to_owned(),
+    })
 }
 
 struct MbnkSource(Arc<Bank>);
@@ -369,10 +487,16 @@ struct MbnkSource(Arc<Bank>);
 impl VolumeSource for MbnkSource {
     async fn stat(&self, path: &str) -> Result<VolumeStat> {
         if path.is_empty() || self.0.is_dir(path) {
-            return Ok(VolumeStat { is_dir: true, len: 0 });
+            return Ok(VolumeStat {
+                is_dir: true,
+                len: 0,
+            });
         }
         let s = self.0.find(path).ok_or_else(|| not_found(path))?;
-        Ok(VolumeStat { is_dir: false, len: s.descriptor().len() as u64 })
+        Ok(VolumeStat {
+            is_dir: false,
+            len: s.descriptor().len() as u64,
+        })
     }
 
     /// The bytes of an `.asrc` entry are its descriptor, never audio data.
@@ -424,11 +548,25 @@ impl Container for MbnkData {
     async fn entry(&self, path: &str) -> Result<Value> {
         let key = ValueKey::file(format!("{}/{path}", self.mount));
         if let Some(source) = self.bank.find(path) {
-            let asrc = AsrcData::open(&self.host, &self.dir, &self.bank, source, key, self.version, &self.heads).await?;
+            let asrc = AsrcData::open(
+                &self.host,
+                &self.dir,
+                &self.bank,
+                source,
+                key,
+                self.version,
+                &self.heads,
+            )
+            .await?;
             return Ok(Arc::new(asrc));
         }
         if path.is_empty() || self.bank.is_dir(path) {
-            return Ok(Arc::new(FileData::new(self.volume.clone(), path, format!("{}/{path}", self.mount), None)));
+            return Ok(Arc::new(FileData::new(
+                self.volume.clone(),
+                path,
+                format!("{}/{path}", self.mount),
+                None,
+            )));
         }
         Err(not_found(path))
     }
@@ -459,16 +597,27 @@ impl Detect for MbnkRead {
         if !magic(input.header, 0, MAGIC) {
             return Ok(None);
         }
-        let Some(version) = u32le(input.header, 4) else { return Ok(None) };
+        let Some(version) = u32le(input.header, 4) else {
+            return Ok(None);
+        };
         let version = version as i32;
         if BankLayout::for_version(version).is_none() {
-            return Err(Error::new(ErrorKind::UnsupportedVersion { format: "mbnk".into(), version: version.to_string() }));
+            return Err(Error::new(ErrorKind::UnsupportedVersion {
+                format: "mbnk".into(),
+                version: version.to_string(),
+            }));
         }
         let mut score = 12;
-        if input.len.is_some_and(|len| u32le(input.header, 8).map(u64::from) == Some(len)) {
+        if input
+            .len
+            .is_some_and(|len| u32le(input.header, 8).map(u64::from) == Some(len))
+        {
             score += 2;
         }
-        Ok(Some(Detected { score, version: Some(Version::new(version as u32)) }))
+        Ok(Some(Detected {
+            score,
+            version: Some(Version::new(version as u32)),
+        }))
     }
 
     fn header_len(&self) -> usize {
@@ -479,9 +628,12 @@ impl Detect for MbnkRead {
 #[async_trait]
 impl ReadHandler for MbnkRead {
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let file = source
-            .downcast_ref::<FileData>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "mbnk must be read from a file".into() }))?;
+        let file = source.downcast_ref::<FileData>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "mbnk must be read from a file".into(),
+            })
+        })?;
         let read = file.op.read_with(&file.path);
         let bytes = match &file.range {
             Some(r) => read.range(r.clone()).await?,
@@ -491,10 +643,23 @@ impl ReadHandler for MbnkRead {
         let bank = Arc::new(Bank::parse(&bytes)?);
         let mount = source.key().to_string();
         let volume = volume_operator(MbnkSource(bank.clone()), &mount);
-        let dir = file.path.rsplit_once('/').map_or(String::new(), |(d, _)| format!("{d}/"));
+        let dir = file
+            .path
+            .rsplit_once('/')
+            .map_or(String::new(), |(d, _)| format!("{d}/"));
         let version = Version::new(bank.layout.version as u32);
         let format = FormatId::new("mbnk").with_version(version);
-        Ok(Arc::new(MbnkData { format, version, key: source.key().clone(), mount, volume, host: file.op.clone(), dir, bank, heads: StreamHeads::default() }))
+        Ok(Arc::new(MbnkData {
+            format,
+            version,
+            key: source.key().clone(),
+            mount,
+            volume,
+            host: file.op.clone(),
+            dir,
+            bank,
+            heads: StreamHeads::default(),
+        }))
     }
 }
 
@@ -520,7 +685,16 @@ pub(crate) mod fixtures {
 
     impl Fx {
         pub(crate) fn new(name: &'static str) -> Self {
-            Self { name, language: 0xFFFF, patch: 0, rate: 48000, frames: 1000, header_off: 0x100, header_size: 24, data_off: 0 }
+            Self {
+                name,
+                language: 0xFFFF,
+                patch: 0,
+                rate: 48000,
+                frames: 1000,
+                header_off: 0x100,
+                header_size: 24,
+                data_off: 0,
+            }
         }
     }
 
@@ -575,7 +749,14 @@ pub(crate) mod fixtures {
 
     /// A bank of `version` with `sources` as its whole entry array; `unlocalised` and `localised`
     /// are the two header counts.
-    pub(crate) fn bank(version: i32, build_tag: u32, stem: &str, sources: &[Fx], unlocalised: u32, localised: u32) -> Vec<u8> {
+    pub(crate) fn bank(
+        version: i32,
+        build_tag: u32,
+        stem: &str,
+        sources: &[Fx],
+        unlocalised: u32,
+        localised: u32,
+    ) -> Vec<u8> {
         let layout = BankLayout::for_version(version).expect("a known version");
         let h = header_fields(layout.header);
         let size = layout.entry_size() as usize;
@@ -595,7 +776,12 @@ pub(crate) mod fixtures {
                 strings.extend(format!("{}\0", f.name).bytes());
                 off
             };
-            write_entry(layout.source, &mut entries[i * size..(i + 1) * size], f, name_off);
+            write_entry(
+                layout.source,
+                &mut entries[i * size..(i + 1) * size],
+                f,
+                name_off,
+            );
         }
         let strings_at = table_end + name_block.len();
         let mut b = vec![0u8; h.len];
@@ -647,11 +833,28 @@ mod tests {
             assert_eq!(b.sources().len(), 1 + langs.len(), "v{version}");
             assert_eq!((b.stem(), b.build_tag()), ("general", 0xBEEF), "v{version}");
             let theme = &b.sources()[0];
-            assert_eq!((theme.name.as_str(), theme.language.as_deref(), theme.sample_rate, theme.sample_count), ("music/theme", None, 48000, 1000), "v{version}");
+            assert_eq!(
+                (
+                    theme.name.as_str(),
+                    theme.language.as_deref(),
+                    theme.sample_rate,
+                    theme.sample_count
+                ),
+                ("music/theme", None, 48000, 1000),
+                "v{version}"
+            );
             assert_eq!(theme.header_range, 0x100..0x118, "v{version}");
             let last = b.sources().last().unwrap();
-            assert_eq!(last.language.as_deref(), langs.last().copied(), "v{version}");
-            assert_eq!(Bank::volume_name(last), format!("vo/hello.{}.asrc", langs.last().unwrap()), "v{version}");
+            assert_eq!(
+                last.language.as_deref(),
+                langs.last().copied(),
+                "v{version}"
+            );
+            assert_eq!(
+                Bank::volume_name(last),
+                format!("vo/hello.{}.asrc", langs.last().unwrap()),
+                "v{version}"
+            );
             assert_eq!(last.patch_idx, ((langs.len() - 1) % 2) as u16, "v{version}");
         }
     }
@@ -677,9 +880,15 @@ mod tests {
     fn an_unknown_version_and_bad_magic() {
         let mut bytes = bank(49, 1, "general", &[Fx::new("a")], 1, 0);
         bytes[4..8].copy_from_slice(&47i32.to_le_bytes());
-        assert!(matches!(Bank::parse(&bytes).unwrap_err().kind(), ErrorKind::UnsupportedVersion { .. }));
+        assert!(matches!(
+            Bank::parse(&bytes).unwrap_err().kind(),
+            ErrorKind::UnsupportedVersion { .. }
+        ));
         bytes[0] = b'X';
-        assert!(matches!(Bank::parse(&bytes).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            Bank::parse(&bytes).unwrap_err().kind(),
+            ErrorKind::Corrupt { .. }
+        ));
     }
 
     #[test]
@@ -688,7 +897,10 @@ mod tests {
         // an entry array past the end of the file
         let mut b = good.clone();
         b[0x38..0x3C].copy_from_slice(&1_000_000u32.to_le_bytes());
-        assert!(matches!(Bank::parse(&b).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            Bank::parse(&b).unwrap_err().kind(),
+            ErrorKind::Corrupt { .. }
+        ));
         // counts that overflow
         let mut b = good.clone();
         b[0x3C..0x40].copy_from_slice(&u32::MAX.to_le_bytes());
@@ -720,7 +932,9 @@ mod tests {
         assert_eq!(names, [("music", true), ("vo", true)]);
         let vo = b.list("vo");
         assert_eq!(vo.len(), 10);
-        assert!(vo.iter().all(|e| !e.is_dir && e.name.starts_with("hello.") && e.len > 0));
+        assert!(vo
+            .iter()
+            .all(|e| !e.is_dir && e.name.starts_with("hello.") && e.len > 0));
         assert!(b.is_dir("music") && !b.is_dir("music/theme.asrc") && !b.is_dir("nope"));
         assert!(b.find("music/theme.asrc").is_some() && b.find("vo/hello.korean.asrc").is_some());
     }
@@ -734,9 +948,14 @@ mod tests {
         assert!(!stat.is_dir);
         let all = src.read("music/theme.asrc", 0..stat.len).await.unwrap();
         assert_eq!(all.len() as u64, stat.len);
-        assert!(std::str::from_utf8(&all).unwrap().starts_with("name=music/theme\n"));
+        assert!(std::str::from_utf8(&all)
+            .unwrap()
+            .starts_with("name=music/theme\n"));
         assert_eq!(src.read("music/theme.asrc", 5..9).await.unwrap().len(), 4);
-        assert!(matches!(src.stat("music/missing.asrc").await.unwrap_err().kind(), ErrorKind::NotFound { .. }));
+        assert!(matches!(
+            src.stat("music/missing.asrc").await.unwrap_err().kind(),
+            ErrorKind::NotFound { .. }
+        ));
         assert!(src.read("nope", 0..1).await.is_err());
     }
 }

@@ -45,7 +45,10 @@ pub struct TextureTarget {
 
 impl Default for TextureTarget {
     fn default() -> Self {
-        Self { format: "png".into(), options: Map::new() }
+        Self {
+            format: "png".into(),
+            options: Map::new(),
+        }
     }
 }
 
@@ -66,7 +69,9 @@ pub(crate) fn hex(guid: u64) -> String {
 
 /// The virtual path of the pak a value from a pak volume lives in.
 pub(crate) fn pak_of(key: &ValueKey) -> String {
-    key.to_string().rsplit_once('/').map_or(String::new(), |(pak, _)| pak.to_owned())
+    key.to_string()
+        .rsplit_once('/')
+        .map_or(String::new(), |(pak, _)| pak.to_owned())
 }
 
 fn is_cancelled(e: &Error) -> bool {
@@ -74,35 +79,59 @@ fn is_cancelled(e: &Error) -> bool {
 }
 
 fn custom(message: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Custom { source: None, message: message.into() })
+    Error::new(ErrorKind::Custom {
+        source: None,
+        message: message.into(),
+    })
 }
 
 /// The pak asset `guid` of `kind` refers to, searched from the pak at `origin`.
 pub(crate) async fn locate(guid: u64, kind: &str, origin: &str, cx: &Cx) -> Result<Value> {
-    cx.mediator.identify(Arc::new(GuidRef::new(guid, kind, origin)), cx).await
+    cx.mediator
+        .identify(Arc::new(GuidRef::new(guid, kind, origin)), cx)
+        .await
 }
 
 /// Bind point -> shader variable name, from the material's shader.
-pub(crate) async fn shader_slots(matl: &MatlAsset, origin: &str, cx: &Cx) -> Result<BTreeMap<u32, String>> {
+pub(crate) async fn shader_slots(
+    matl: &MatlAsset,
+    origin: &str,
+    cx: &Cx,
+) -> Result<BTreeMap<u32, String>> {
     if matl.header.shader_set == 0 {
         return Err(custom("the material has no shader set"));
     }
     let shds = locate(matl.header.shader_set, "shds", origin, cx).await?;
-    let shds_asset = shds.downcast_ref::<RpakAsset>().ok_or_else(|| custom("the shader set is not a pak asset"))?;
-    let pixel = shader::pixel_shader_guid(shds_asset.entry.version, &shds_asset.read_header().await?)?;
+    let shds_asset = shds
+        .downcast_ref::<RpakAsset>()
+        .ok_or_else(|| custom("the shader set is not a pak asset"))?;
+    let pixel =
+        shader::pixel_shader_guid(shds_asset.entry.version, &shds_asset.read_header().await?)?;
     let shdr = locate(pixel, "shdr", &pak_of(shds.key()), cx).await?;
-    let shdr_asset = shdr.downcast_ref::<RpakAsset>().ok_or_else(|| custom("the pixel shader is not a pak asset"))?;
+    let shdr_asset = shdr
+        .downcast_ref::<RpakAsset>()
+        .ok_or_else(|| custom("the pixel shader is not a pak asset"))?;
     dxbc::texture_slots(&shader::bytecode(shdr_asset).await?)
 }
 
 pub(crate) fn file_safe(name: &str) -> String {
-    name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect()
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 #[async_trait]
 impl ConvertHandler for MatlJsonEncode {
     async fn convert(&self, source: Value, target: &Target, cx: &Cx) -> Result<Value> {
-        let matl = source.downcast_ref::<MatlAsset>().ok_or_else(|| custom("matl.json must be made from a matl"))?;
+        let matl = source
+            .downcast_ref::<MatlAsset>()
+            .ok_or_else(|| custom("matl.json must be made from a matl"))?;
         let options = TypedTarget::<MatlJsonOptions>::parse(target)?;
         let texture_target = Target {
             format: FormatId::new(options.options().textures.format.clone()),
@@ -120,7 +149,9 @@ impl ConvertHandler for MatlJsonEncode {
             Ok(names) => names,
             Err(e) if is_cancelled(&e) => return Err(e),
             Err(e) => {
-                cx.warn(format!("material {label}: texture slots are not named ({e}); using slot_<n>"));
+                cx.warn(format!(
+                    "material {label}: texture slots are not named ({e}); using slot_<n>"
+                ));
                 BTreeMap::new()
             }
         };
@@ -130,7 +161,9 @@ impl ConvertHandler for MatlJsonEncode {
         let mut used = HashSet::new();
         for (slot, guid) in matl.bound_textures() {
             cx.check_cancelled()?;
-            let mut name = slot_names.get(&slot).map_or_else(|| format!("slot_{slot}"), |n| file_safe(n));
+            let mut name = slot_names
+                .get(&slot)
+                .map_or_else(|| format!("slot_{slot}"), |n| file_safe(n));
             if !used.insert(name.clone()) {
                 name = format!("{name}_{slot}");
                 used.insert(name.clone());
@@ -142,7 +175,11 @@ impl ConvertHandler for MatlJsonEncode {
             .await;
             let file = match converted {
                 Ok(value) => {
-                    let ext = cx.mediator.extension_of(value.format().name()).unwrap_or(value.format().name()).to_owned();
+                    let ext = cx
+                        .mediator
+                        .extension_of(value.format().name())
+                        .unwrap_or(value.format().name())
+                        .to_owned();
                     let base = format!("textures/{name}");
                     if let Some(bundle) = value.downcast_ref::<BundleData>() {
                         for (n, item) in bundle.names.iter().zip(&bundle.items) {
@@ -154,17 +191,26 @@ impl ConvertHandler for MatlJsonEncode {
                         items.push((path.clone(), value));
                         Some(path)
                     } else {
-                        cx.warn(format!("material {label}: texture {} did not produce a file", hex(guid)));
+                        cx.warn(format!(
+                            "material {label}: texture {} did not produce a file",
+                            hex(guid)
+                        ));
                         None
                     }
                 }
                 Err(e) if is_cancelled(&e) => return Err(e),
                 Err(e) => {
-                    cx.warn(format!("material {label}: texture {} ({name}) is skipped: {e}", hex(guid)));
+                    cx.warn(format!(
+                        "material {label}: texture {} ({name}) is skipped: {e}",
+                        hex(guid)
+                    ));
                     None
                 }
             };
-            textures.insert(name, json!({ "slot": slot, "guid": hex(guid), "file": file }));
+            textures.insert(
+                name,
+                json!({ "slot": slot, "guid": hex(guid), "file": file }),
+            );
         }
 
         let h = &matl.header;
@@ -189,11 +235,20 @@ impl ConvertHandler for MatlJsonEncode {
             "colpassMaterial": hex(h.depth[4]),
             "textures": textures,
         });
-        let bytes = serde_json::to_vec_pretty(&document).map_err(|e| Error::custom("matl.json", e))?;
+        let bytes =
+            serde_json::to_vec_pretty(&document).map_err(|e| Error::custom("matl.json", e))?;
 
-        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new("matl.json"), options.normalized());
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            FormatId::new("matl.json"),
+            options.normalized(),
+        );
         let json_format = FormatId::new("matl.json");
-        let main: Value = Arc::new(BlobData::with_format(json_format, Bytes::from(bytes), key.clone()));
+        let main: Value = Arc::new(BlobData::with_format(
+            json_format,
+            Bytes::from(bytes),
+            key.clone(),
+        ));
         items.insert(0, ("material.json".to_owned(), main));
         Ok(Arc::new(BundleData::named(items, key)))
     }

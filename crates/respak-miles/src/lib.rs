@@ -31,13 +31,26 @@ impl Plugin for MilesPlugin {
     }
 
     fn register(&self, r: &mut Registry) {
-        r.format("mbnk").label("Miles sound bank").from("file", mbnk::MbnkRead).extensions(["mbnk"]).provides::<dyn Container>();
-        r.format("mstr").label("Miles stream file").from("file", mstr::MstrRead).extensions(["mstr"]);
-        r.format("asrc").label("Miles audio source").extensions(["asrc"]).provides::<dyn Audio>().provides::<dyn Metadata>();
+        r.format("mbnk")
+            .label("Miles sound bank")
+            .from("file", mbnk::MbnkRead)
+            .extensions(["mbnk"])
+            .provides::<dyn Container>();
+        r.format("mstr")
+            .label("Miles stream file")
+            .from("file", mstr::MstrRead)
+            .extensions(["mstr"]);
+        r.format("asrc")
+            .label("Miles audio source")
+            .extensions(["asrc"])
+            .provides::<dyn Audio>()
+            .provides::<dyn Metadata>();
     }
 }
 
 /// A damaged file.
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }

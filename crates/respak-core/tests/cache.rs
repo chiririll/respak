@@ -47,7 +47,10 @@ async fn values_round_trip_and_can_be_removed() {
     assert_eq!(cache.get("k").await, None);
 
     cache.put_json("j", &serde_json::json!({"x": [1, 2]})).await;
-    assert_eq!(cache.get_json::<serde_json::Value>("j").await, Some(serde_json::json!({"x": [1, 2]})));
+    assert_eq!(
+        cache.get_json::<serde_json::Value>("j").await,
+        Some(serde_json::json!({"x": [1, 2]}))
+    );
 }
 
 #[tokio::test]
@@ -58,9 +61,16 @@ async fn plugins_and_versions_do_not_see_each_other() {
     assert_eq!(v0.cache("b").unwrap().get("k").await, None);
 
     let v1 = cx_with_cache(&[&Versioned("a", 1)], Some(op.clone()));
-    assert_eq!(v1.cache("a").unwrap().get("k").await, None, "a new cache_version starts empty");
+    assert_eq!(
+        v1.cache("a").unwrap().get("k").await,
+        None,
+        "a new cache_version starts empty"
+    );
     let again = cx_with_cache(&[&Versioned("a", 0)], Some(op));
-    assert_eq!(again.cache("a").unwrap().get("k").await.unwrap().as_ref(), b"a0");
+    assert_eq!(
+        again.cache("a").unwrap().get("k").await.unwrap().as_ref(),
+        b"a0"
+    );
 }
 
 #[tokio::test]

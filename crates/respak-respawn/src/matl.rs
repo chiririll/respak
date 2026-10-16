@@ -30,12 +30,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use respak_core::capability::{Dependency, Metadata};
-use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version};
+use respak_core::{
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
+};
 
 use crate::rpak::{RpakAsset, MEM};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// More slots than this cannot be a material.
@@ -80,7 +85,9 @@ struct Layout {
 }
 
 fn le<const N: usize>(h: &[u8], at: usize) -> Result<[u8; N]> {
-    h.get(at..at + N).and_then(|b| b.try_into().ok()).ok_or_else(|| corrupt("matl header is too short"))
+    h.get(at..at + N)
+        .and_then(|b| b.try_into().ok())
+        .ok_or_else(|| corrupt("matl header is too short"))
 }
 fn u16_at(h: &[u8], at: usize) -> Result<u16> {
     Ok(u16::from_le_bytes(le(h, at)?))
@@ -100,12 +107,41 @@ fn ptr_at(h: &[u8], at: usize) -> Result<Option<u64>> {
 impl MatlHeader {
     /// Parses a header of asset `version`; `h` is the whole header as served by the volume.
     pub fn parse(version: u32, h: &[u8]) -> Result<Self> {
-        let unsupported = |why: String| Error::new(ErrorKind::UnsupportedVersion { format: "matl".into(), version: why });
+        let unsupported = |why: String| {
+            Error::new(ErrorKind::UnsupportedVersion {
+                format: "matl".into(),
+                version: why,
+            })
+        };
         let (layout, variant) = match (version, h.len()) {
-            (15..=21, _) => (Layout { snapshot: false, glue: 0x88 }, 0),
-            (22 | 23, 256) => (Layout { snapshot: false, glue: 0x88 }, 0),
-            (22 | 23, 192) => (Layout { snapshot: true, glue: 0x84 }, 1),
-            (22 | 23, 200) => (Layout { snapshot: true, glue: 0x84 }, 2),
+            (15..=21, _) => (
+                Layout {
+                    snapshot: false,
+                    glue: 0x88,
+                },
+                0,
+            ),
+            (22 | 23, 256) => (
+                Layout {
+                    snapshot: false,
+                    glue: 0x88,
+                },
+                0,
+            ),
+            (22 | 23, 192) => (
+                Layout {
+                    snapshot: true,
+                    glue: 0x84,
+                },
+                1,
+            ),
+            (22 | 23, 200) => (
+                Layout {
+                    snapshot: true,
+                    glue: 0x84,
+                },
+                2,
+            ),
             (v, n) => return Err(unsupported(format!("{v} (header of {n} bytes)"))),
         };
         let mut depth = [0u64; 5];
@@ -113,7 +149,11 @@ impl MatlHeader {
             *d = u64_at(h, 0x30 + 8 * i)?;
         }
         Ok(Self {
-            version: if variant == 0 { Version::new(version) } else { Version::with_minor(version, variant) },
+            version: if variant == 0 {
+                Version::new(version)
+            } else {
+                Version::with_minor(version, variant)
+            },
             guid: u64_at(h, 0x10)?,
             snapshot: if layout.snapshot { u64_at(h, 0x08)? } else { 0 },
             name_at: ptr_at(h, 0x18)?,
@@ -129,7 +169,11 @@ impl MatlHeader {
             slots: {
                 let (tex, streaming) = (ptr_at(h, 0x60)?, ptr_at(h, 0x68)?);
                 match (tex, streaming) {
-                    (Some(t), Some(s)) if s >= t && (s - t) % 8 == 0 && (s - t) / 8 <= MAX_SLOTS => ((s - t) / 8) as u32,
+                    (Some(t), Some(s))
+                        if s >= t && (s - t) % 8 == 0 && (s - t) / 8 <= MAX_SLOTS =>
+                    {
+                        ((s - t) / 8) as u32
+                    }
                     (None, _) | (_, None) => 0,
                     _ => return Err(corrupt("matl texture array bounds are inconsistent")),
                 }
@@ -156,7 +200,11 @@ pub struct MatlAsset {
 impl MatlAsset {
     /// The non-empty slots as `(slot index, texture guid)`.
     pub fn bound_textures(&self) -> impl Iterator<Item = (u32, u64)> + '_ {
-        self.textures.iter().enumerate().filter(|(_, g)| **g != 0).map(|(i, g)| (i as u32, *g))
+        self.textures
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| **g != 0)
+            .map(|(i, g)| (i as u32, *g))
     }
 }
 
@@ -171,7 +219,9 @@ impl Metadata for MatlAsset {
         Some(self.header.guid)
     }
     fn dependencies(&self) -> Vec<Dependency> {
-        self.bound_textures().map(|(_, guid)| Dependency { guid, name: None }).collect()
+        self.bound_textures()
+            .map(|(_, guid)| Dependency { guid, name: None })
+            .collect()
     }
 }
 
@@ -197,16 +247,22 @@ impl Detect for MatlRead {
         let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
             return Ok(None);
         };
-        Ok((asset.entry.kind == *b"matl").then(|| Detected { score: 10, version: Some(Version::new(asset.entry.version)) }))
+        Ok((asset.entry.kind == *b"matl").then(|| Detected {
+            score: 10,
+            version: Some(Version::new(asset.entry.version)),
+        }))
     }
 }
 
 #[async_trait]
 impl ReadHandler for MatlRead {
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "matl must be read from an rpak.asset".into() }))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "matl must be read from an rpak.asset".into(),
+            })
+        })?;
         let header = MatlHeader::parse(asset.entry.version, &asset.read_header().await?)?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
 
@@ -215,7 +271,10 @@ impl ReadHandler for MatlRead {
             None => None,
         };
         let mut surface_props = [None, None];
-        for (slot, at) in surface_props.iter_mut().zip([header.surface_prop_at, header.surface_prop2_at]) {
+        for (slot, at) in surface_props
+            .iter_mut()
+            .zip([header.surface_prop_at, header.surface_prop2_at])
+        {
             if let Some(at) = at {
                 *slot = crate::txtr::read_name(&asset.volume, at, mem_len).await;
             }
@@ -225,15 +284,27 @@ impl ReadHandler for MatlRead {
         if let (Some(at), n) = (header.textures_at, u64::from(header.slots)) {
             if n > 0 {
                 if at.checked_add(n * 8).is_none_or(|end| end > mem_len) {
-                    return Err(corrupt("matl texture array runs past the end of the pak's pages"));
+                    return Err(corrupt(
+                        "matl texture array runs past the end of the pak's pages",
+                    ));
                 }
                 let bytes = asset.read_mem(at, n * 8).await?;
-                textures = bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes"))).collect();
+                textures = bytes
+                    .chunks_exact(8)
+                    .map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes")))
+                    .collect();
             }
         }
 
         let format = FormatId::new("matl").with_version(header.version);
-        Ok(Arc::new(MatlAsset { format, key: source.key().clone(), header, name, surface_props, textures }))
+        Ok(Arc::new(MatlAsset {
+            format,
+            key: source.key().clone(),
+            header,
+            name,
+            surface_props,
+            textures,
+        }))
     }
 }
 
@@ -244,7 +315,9 @@ mod tests {
     /// A header of `len` bytes with recognisable values.
     fn header(len: usize, v23: bool) -> Vec<u8> {
         let mut h = vec![0u8; len];
-        let put = |h: &mut Vec<u8>, at: usize, bytes: &[u8]| h[at..at + bytes.len()].copy_from_slice(bytes);
+        let put = |h: &mut Vec<u8>, at: usize, bytes: &[u8]| {
+            h[at..at + bytes.len()].copy_from_slice(bytes)
+        };
         put(&mut h, 0x08, &0x5555u64.to_le_bytes());
         put(&mut h, 0x10, &0xAABBu64.to_le_bytes());
         put(&mut h, 0x18, &0x100u64.to_le_bytes());
@@ -278,8 +351,14 @@ mod tests {
         ] {
             let h = MatlHeader::parse(version, &header(len, v23)).unwrap();
             assert_eq!(h.version, expect, "v{version}/{len}");
-            assert_eq!((h.guid, h.shader_set, h.size, h.features), (0xAABB, 0x77, [512, 256, 1], 9));
-            assert_eq!((h.name_at, h.surface_prop_at, h.samplers, h.glue), (Some(0x100), None, [1, 2, 3, 4], [0xA1, 0xA2]));
+            assert_eq!(
+                (h.guid, h.shader_set, h.size, h.features),
+                (0xAABB, 0x77, [512, 256, 1], 9)
+            );
+            assert_eq!(
+                (h.name_at, h.surface_prop_at, h.samplers, h.glue),
+                (Some(0x100), None, [1, 2, 3, 4], [0xA1, 0xA2])
+            );
             assert_eq!(h.depth, [0x1000, 0x1001, 0x1002, 0x1003, 0x1004]);
             assert_eq!((h.textures_at, h.slots), (Some(0x200), 3));
             assert_eq!(h.snapshot, if v23 { 0x5555 } else { 0 });
@@ -290,13 +369,20 @@ mod tests {
     fn unknown_versions_and_header_sizes_are_unsupported() {
         for (version, len) in [(12, 240), (14, 240), (24, 240), (22, 230), (23, 256 + 8)] {
             let err = MatlHeader::parse(version, &header(len.max(0x90), false)).unwrap_err();
-            assert!(matches!(err.kind(), ErrorKind::UnsupportedVersion { .. }), "{version}/{len}: {err}");
+            assert!(
+                matches!(err.kind(), ErrorKind::UnsupportedVersion { .. }),
+                "{version}/{len}: {err}"
+            );
         }
     }
 
     #[test]
     fn inconsistent_texture_arrays_are_corrupt() {
-        for (tex, streaming) in [(0x218u64, 0x200u64), (0x200, 0x205), (0x200, 0x200 + 8 * 1000)] {
+        for (tex, streaming) in [
+            (0x218u64, 0x200u64),
+            (0x200, 0x205),
+            (0x200, 0x200 + 8 * 1000),
+        ] {
             let mut h = header(240, false);
             h[0x60..0x68].copy_from_slice(&tex.to_le_bytes());
             h[0x68..0x70].copy_from_slice(&streaming.to_le_bytes());

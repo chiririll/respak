@@ -15,7 +15,11 @@ pub struct Env {
 pub fn env() -> Env {
     let input = Operator::new(Memory::default()).unwrap();
     let output = Operator::new(Memory::default()).unwrap();
-    let engine = Engine::builder().input(input.clone()).output(output).plugin(RespawnPlugin::new()).build().unwrap();
+    let engine = Engine::builder()
+        .input(input.clone())
+        .output(output)
+        .plugin(RespawnPlugin::new())
+        .build()
+        .unwrap();
     Env { engine, input }
 }
-

@@ -2,9 +2,12 @@
 //! packets, and building the buffers the planar and packed codecs take.
 
 use nihav_core::codecs::{EncodeParameters, NAEncoder, RegisteredEncoders};
-use nihav_core::formats::{ColourModel, NAPixelChromaton, NAPixelFormaton, RGBSubmodel, YUV420_FORMAT};
+use nihav_core::formats::{
+    ColourModel, NAPixelChromaton, NAPixelFormaton, RGBSubmodel, YUV420_FORMAT,
+};
 use nihav_core::frame::{
-    alloc_video_buffer, FrameType, NABufferType, NACodecInfo, NACodecTypeInfo, NAFrame, NATimeInfo, NAVideoInfo,
+    alloc_video_buffer, FrameType, NABufferType, NACodecInfo, NACodecTypeInfo, NAFrame, NATimeInfo,
+    NAVideoInfo,
 };
 use respak_core::capability::{FrameFormat, VideoFrame};
 use respak_core::{Error, ErrorKind, Result};
@@ -26,7 +29,15 @@ pub(crate) fn stream_codec(codec: &str) -> Option<(&'static str, NAPixelFormaton
 /// 8-bit RGB stored as B, G, R and a padding byte (what the ZMBV encoder takes).
 pub(crate) fn bgr0() -> NAPixelFormaton {
     let c = |comp_offs| {
-        Some(NAPixelChromaton { h_ss: 0, v_ss: 0, packed: true, depth: 8, shift: 0, comp_offs, next_elem: 4 })
+        Some(NAPixelChromaton {
+            h_ss: 0,
+            v_ss: 0,
+            packed: true,
+            depth: 8,
+            shift: 0,
+            comp_offs,
+            next_elem: 4,
+        })
     };
     NAPixelFormaton {
         model: ColourModel::RGB(RGBSubmodel::RGB),
@@ -50,10 +61,17 @@ pub(crate) struct Driver {
 }
 
 impl Driver {
-    pub fn open(step: &'static str, nihav: &str, info: NAVideoInfo, setup: &CodecSetup) -> Result<Self> {
+    pub fn open(
+        step: &'static str,
+        nihav: &str,
+        info: NAVideoInfo,
+        setup: &CodecSetup,
+    ) -> Result<Self> {
         let mut registry = RegisteredEncoders::new();
         nihav_commonfmt::generic_register_all_encoders(&mut registry);
-        let create = registry.find_encoder(nihav).ok_or_else(|| backend(step, "not built in"))?;
+        let create = registry
+            .find_encoder(nihav)
+            .ok_or_else(|| backend(step, "not built in"))?;
         let mut encoder = create();
         let wanted = EncodeParameters {
             format: NACodecTypeInfo::Video(info),
@@ -63,16 +81,26 @@ impl Driver {
             tb_den: setup.fps.0,
             flags: 0,
         };
-        let params = encoder.negotiate_format(&wanted).map_err(|e| backend(step, e))?;
+        let params = encoder
+            .negotiate_format(&wanted)
+            .map_err(|e| backend(step, e))?;
         encoder.init(0, params).map_err(|e| backend(step, e))?;
-        Ok(Self { step, encoder, info, fps: setup.fps, next: 0 })
+        Ok(Self {
+            step,
+            encoder,
+            info,
+            fps: setup.fps,
+            next: 0,
+        })
     }
 
     pub fn push(&mut self, buffer: NABufferType, out: &mut Vec<Packet>) -> Result<()> {
         let ts = NATimeInfo::new(Some(self.next), None, Some(1), self.fps.1, self.fps.0);
         self.next += 1;
         let frame = NAFrame::new(ts, FrameType::I, true, NACodecInfo::new_dummy(), buffer);
-        self.encoder.encode(&frame).map_err(|e| backend(self.step, e))?;
+        self.encoder
+            .encode(&frame)
+            .map_err(|e| backend(self.step, e))?;
         self.drain(out)
     }
 
@@ -82,8 +110,15 @@ impl Driver {
     }
 
     fn drain(&mut self, out: &mut Vec<Packet>) -> Result<()> {
-        while let Some(packet) = self.encoder.get_packet().map_err(|e| backend(self.step, e))? {
-            out.push(Packet { data: packet.get_buffer().to_vec(), keyframe: packet.is_keyframe() });
+        while let Some(packet) = self
+            .encoder
+            .get_packet()
+            .map_err(|e| backend(self.step, e))?
+        {
+            out.push(Packet {
+                data: packet.get_buffer().to_vec(),
+                keyframe: packet.is_keyframe(),
+            });
         }
         Ok(())
     }
@@ -96,7 +131,9 @@ impl Driver {
 }
 
 fn bad(frame: &VideoFrame, what: &str) -> Error {
-    Error::new(ErrorKind::Corrupt { context: format!("frame {}: {what}", frame.index) })
+    Error::new(ErrorKind::Corrupt {
+        context: format!("frame {}: {what}", frame.index),
+    })
 }
 
 /// How the samples of a YUV frame are changed on the way into a buffer.
@@ -154,16 +191,26 @@ pub(crate) fn yuv420_buffer(
         return Err(bad(frame, "expected three YUV 4:2:0 planes"));
     }
     let mut buffer = alloc_video_buffer(info, 1).map_err(|e| backend(step, e))?;
-    let NABufferType::Video(vbuf) = &mut buffer else { return Err(backend(step, "no video buffer")) };
+    let NABufferType::Video(vbuf) = &mut buffer else {
+        return Err(backend(step, "no video buffer"));
+    };
     let offsets = [vbuf.get_offset(0), vbuf.get_offset(1), vbuf.get_offset(2)];
     let strides = [vbuf.get_stride(0), vbuf.get_stride(1), vbuf.get_stride(2)];
-    let dims = [vbuf.get_dimensions(0), vbuf.get_dimensions(1), vbuf.get_dimensions(2)];
+    let dims = [
+        vbuf.get_dimensions(0),
+        vbuf.get_dimensions(1),
+        vbuf.get_dimensions(2),
+    ];
     let data = vbuf
         .as_mut()
         .and_then(|b| b.get_data_mut())
         .ok_or_else(|| backend(step, "the frame buffer is shared"))?;
     for plane in 0..3 {
-        let (src_w, src_h) = if plane == 0 { source } else { (source.0.div_ceil(2), source.1.div_ceil(2)) };
+        let (src_w, src_h) = if plane == 0 {
+            source
+        } else {
+            (source.0.div_ceil(2), source.1.div_ceil(2))
+        };
         let (dst_w, dst_h) = dims[plane];
         let (src, src_stride) = (&frame.planes[plane], frame.strides[plane]);
         if src_w == 0 || src_h == 0 || src.len() < (src_h - 1) * src_stride + src_w {
@@ -181,7 +228,11 @@ pub(crate) fn yuv420_buffer(
 }
 
 /// An `Rgba8` frame as a packed buffer of B, G, R and a zero byte per pixel.
-pub(crate) fn bgr0_buffer(frame: &VideoFrame, info: NAVideoInfo, step: &str) -> Result<NABufferType> {
+pub(crate) fn bgr0_buffer(
+    frame: &VideoFrame,
+    info: NAVideoInfo,
+    step: &str,
+) -> Result<NABufferType> {
     if frame.format != FrameFormat::Rgba8 || frame.planes.len() != 1 || frame.strides.len() != 1 {
         return Err(bad(frame, "expected one RGBA plane"));
     }
@@ -221,7 +272,11 @@ mod tests {
         assert_eq!(e(128, false), 128);
         // Chroma 16..=240 is symmetric around 128, so its ends land on 0.5 and 255.5.
         assert!(e(16, false) <= 1 && e(240, false) == 255);
-        assert_eq!((e(0, true), e(255, true)), (0, 255), "out of range values clamp");
+        assert_eq!(
+            (e(0, true), e(255, true)),
+            (0, 255),
+            "out of range values clamp"
+        );
     }
 
     #[test]

@@ -51,8 +51,17 @@ impl RadaHeader {
             3 => 48000,
             other => return Err(corrupt(format!("rada: sample rate code {other}"))),
         };
-        let u64le = |at: usize| u64::from(u32le(header, at).expect("length checked")) | u64::from(u32le(header, at + 4).expect("length checked")) << 32;
-        Ok(Self { version: header[8], channels, sample_rate, frame_count: u64le(0x10), file_size: u64le(0x18) })
+        let u64le = |at: usize| {
+            u64::from(u32le(header, at).expect("length checked"))
+                | u64::from(u32le(header, at + 4).expect("length checked")) << 32
+        };
+        Ok(Self {
+            version: header[8],
+            channels,
+            sample_rate,
+            frame_count: u64le(0x10),
+            file_size: u64le(0x18),
+        })
     }
 }
 
@@ -74,8 +83,20 @@ mod tests {
     #[test]
     fn parses_the_shape() {
         let h = RadaHeader::parse(&header(3, 2, 96_000, 5000)).unwrap();
-        assert_eq!(h, RadaHeader { version: 1, channels: 2, sample_rate: 48000, frame_count: 96_000, file_size: 5000 });
-        assert_eq!(RadaHeader::parse(&header(0, 1, 1, 1)).unwrap().sample_rate, 24000);
+        assert_eq!(
+            h,
+            RadaHeader {
+                version: 1,
+                channels: 2,
+                sample_rate: 48000,
+                frame_count: 96_000,
+                file_size: 5000
+            }
+        );
+        assert_eq!(
+            RadaHeader::parse(&header(0, 1, 1, 1)).unwrap().sample_rate,
+            24000
+        );
     }
 
     #[test]

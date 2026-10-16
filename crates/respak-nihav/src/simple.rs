@@ -24,7 +24,11 @@ impl Codec for Cinepak {
             let (w, h) = (setup.width as usize, setup.height as usize);
             let info = NAVideoInfo::new(w.div_ceil(4) * 4, h.div_ceil(4) * 4, false, YUV420_FORMAT);
             let driver = Driver::open(STEP, "cinepak", info, setup)?;
-            Ok(Box::new(Planar { driver, source: (w, h), range: Range::Keep }) as Box<dyn FrameEncoder>)
+            Ok(Box::new(Planar {
+                driver,
+                source: (w, h),
+                range: Range::Keep,
+            }) as Box<dyn FrameEncoder>)
         })
     }
 }
@@ -44,7 +48,11 @@ impl Codec for RawVideo {
             let (w, h) = (setup.width as usize, setup.height as usize);
             let info = NAVideoInfo::new(w, h, false, YUV420_FORMAT);
             let driver = Driver::open(STEP, "rawvideo", info, setup)?;
-            Ok(Box::new(Planar { driver, source: (w, h), range: Range::to_limited(setup.full_range) }) as Box<dyn FrameEncoder>)
+            Ok(Box::new(Planar {
+                driver,
+                source: (w, h),
+                range: Range::to_limited(setup.full_range),
+            }) as Box<dyn FrameEncoder>)
         })
     }
 }
@@ -61,7 +69,9 @@ impl Codec for Zmbv {
         const STEP: &str = "zmbv encoder";
         guarded(STEP, || {
             let info = NAVideoInfo::new(setup.width as usize, setup.height as usize, false, bgr0());
-            Ok(Box::new(Packed { driver: Driver::open(STEP, "zmbv", info, setup)? }) as Box<dyn FrameEncoder>)
+            Ok(Box::new(Packed {
+                driver: Driver::open(STEP, "zmbv", info, setup)?,
+            }) as Box<dyn FrameEncoder>)
         })
     }
 }
@@ -77,7 +87,10 @@ impl FrameEncoder for Packed {
     }
 
     fn coded_size(&self) -> (u32, u32) {
-        (self.driver.info.get_width() as u32, self.driver.info.get_height() as u32)
+        (
+            self.driver.info.get_width() as u32,
+            self.driver.info.get_height() as u32,
+        )
     }
 
     fn encode(&mut self, frame: &VideoFrame, out: &mut Vec<Packet>) -> Result<()> {

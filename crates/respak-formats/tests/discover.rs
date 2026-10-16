@@ -8,8 +8,12 @@ use respak_formats::FormatsPlugin;
 fn env() -> (Engine, Operator, Operator) {
     let input = Operator::new(Memory::default()).unwrap();
     let output = Operator::new(Memory::default()).unwrap();
-    let engine =
-        Engine::builder().input(input.clone()).output(output.clone()).plugin(FormatsPlugin).build().unwrap();
+    let engine = Engine::builder()
+        .input(input.clone())
+        .output(output.clone())
+        .plugin(FormatsPlugin)
+        .build()
+        .unwrap();
     (engine, input, output)
 }
 
@@ -18,7 +22,10 @@ fn png() -> Vec<u8> {
     let mut enc = png::Encoder::new(&mut out, 2, 2);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().unwrap().write_image_data(&[7; 16]).unwrap();
+    enc.write_header()
+        .unwrap()
+        .write_image_data(&[7; 16])
+        .unwrap();
     out
 }
 
@@ -48,13 +55,27 @@ async fn discover_a_png_and_a_dds() {
     input.write("icon.png", png()).await.unwrap();
     input.write("icon.dds", dds()).await.unwrap();
 
-    let d = engine.discover("icon.png", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap();
+    let d = engine
+        .discover(
+            "icon.png",
+            &DiscoverOptions::default(),
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
     let e = &d.entries[0];
     assert_eq!((e.format.as_deref(), e.score), (Some("png"), 13));
     assert!(e.alternatives.is_empty());
     assert_eq!(target_names(e), ["dds"]);
 
-    let d = engine.discover("icon.dds", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap();
+    let d = engine
+        .discover(
+            "icon.dds",
+            &DiscoverOptions::default(),
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
     let e = &d.entries[0];
     assert_eq!((e.format.as_deref(), e.score), (Some("dds"), 13));
     assert_eq!(target_names(e), ["png"]);
@@ -64,7 +85,15 @@ async fn discover_a_png_and_a_dds() {
 async fn a_dds_named_png_is_discovered_as_dds() {
     let (engine, input, _) = env();
     input.write("fake.png", dds()).await.unwrap();
-    let e = &engine.discover("fake.png", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap().entries[0];
+    let e = &engine
+        .discover(
+            "fake.png",
+            &DiscoverOptions::default(),
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap()
+        .entries[0];
     // No extension bonus: the `.png` candidate did not match, so every edge was scored.
     assert_eq!((e.format.as_deref(), e.score), (Some("dds"), 12));
     assert!(e.alternatives.is_empty());
@@ -74,7 +103,16 @@ async fn a_dds_named_png_is_discovered_as_dds() {
 async fn every_listed_target_converts() {
     let (engine, input, output) = env();
     input.write("icon.png", png()).await.unwrap();
-    let e = engine.discover("icon.png", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap().entries.remove(0);
+    let e = engine
+        .discover(
+            "icon.png",
+            &DiscoverOptions::default(),
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap()
+        .entries
+        .remove(0);
     assert!(!e.targets.is_empty());
     for t in &e.targets {
         let json = serde_json::json!({
@@ -82,8 +120,15 @@ async fn every_listed_target_converts() {
             "outputs": [{ "from": e.path, "to": { "type": t.format, "via": [] }, "path": format!("out.{}", t.format) }]
         });
         let request: ConvertRequest = serde_json::from_value(json).unwrap();
-        let report = engine.convert(&request, &respak_core::CancellationToken::new()).await.unwrap();
-        assert!(matches!(report.outputs[0].result, OutputResult::Ok { .. }), "{}", t.format);
+        let report = engine
+            .convert(&request, &respak_core::CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(
+            matches!(report.outputs[0].result, OutputResult::Ok { .. }),
+            "{}",
+            t.format
+        );
         assert!(output.exists(&format!("out.{}", t.format)).await.unwrap());
     }
 }
@@ -92,11 +137,25 @@ async fn every_listed_target_converts() {
 async fn formats_describes_png_and_dds() {
     let (engine, ..) = env();
     let json = serde_json::to_value(engine.formats()).unwrap();
-    let find = |n: &str| json["formats"].as_array().unwrap().iter().find(|f| f["name"] == n).unwrap().clone();
+    let find = |n: &str| {
+        json["formats"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == n)
+            .unwrap()
+            .clone()
+    };
     let (png, dds) = (find("png"), find("dds"));
     assert_eq!(png["extensions"], serde_json::json!(["png"]));
     assert_eq!(png["provides"], serde_json::json!(["Bitmap"]));
-    assert_eq!(png["produced_by"], serde_json::json!([{ "kind": "capability", "from": "Bitmap", "cost": 2 }]));
-    assert_eq!(dds["produced_by"], serde_json::json!([{ "kind": "capability", "from": "Bitmap", "cost": 1 }]));
+    assert_eq!(
+        png["produced_by"],
+        serde_json::json!([{ "kind": "capability", "from": "Bitmap", "cost": 2 }])
+    );
+    assert_eq!(
+        dds["produced_by"],
+        serde_json::json!([{ "kind": "capability", "from": "Bitmap", "cost": 1 }])
+    );
     assert_eq!(dds["plugin"], "formats");
 }

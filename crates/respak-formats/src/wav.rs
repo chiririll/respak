@@ -6,7 +6,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use respak_core::value::BlobData;
-use respak_core::{ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey};
+use respak_core::{
+    ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{audio_of, corrupt, unsupported};
@@ -67,11 +69,17 @@ impl ConvertHandler for WavEncode {
         let track = options.options().track;
         let info = *tracks.get(track as usize).ok_or_else(|| {
             Error::new(ErrorKind::InvalidOptions {
-                message: format!("track {track}: the source has {} audio track(s)", tracks.len()),
+                message: format!(
+                    "track {track}: the source has {} audio track(s)",
+                    tracks.len()
+                ),
             })
         })?;
         if info.channels == 0 || info.sample_rate == 0 {
-            return Err(corrupt(format!("audio track {track} has {} channels at {} Hz", info.channels, info.sample_rate)));
+            return Err(corrupt(format!(
+                "audio track {track} has {} channels at {} Hz",
+                info.channels, info.sample_rate
+            )));
         }
 
         let mut chunks = audio.samples(track, cx).await?;
@@ -96,7 +104,15 @@ impl ConvertHandler for WavEncode {
         let mut out = Vec::with_capacity(HEADER_LEN + data.len());
         out.extend_from_slice(&header(info.channels, info.sample_rate, data_len));
         out.extend_from_slice(&data);
-        let key = ValueKey::converted(Arc::new(source.key().clone()), target.format.unversioned(), options.normalized());
-        Ok(Arc::new(BlobData::with_format(FormatId::new("wav"), Bytes::from(out), key)))
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            target.format.unversioned(),
+            options.normalized(),
+        );
+        Ok(Arc::new(BlobData::with_format(
+            FormatId::new("wav"),
+            Bytes::from(out),
+            key,
+        )))
     }
 }

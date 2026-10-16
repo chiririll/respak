@@ -26,9 +26,18 @@ impl Codec for Mjpeg {
     fn open(&self, setup: &CodecSetup) -> Result<Box<dyn FrameEncoder>> {
         guarded(STEP, || {
             let (w, h) = (setup.width as usize, setup.height as usize);
-            let info = NAVideoInfo::new(w.div_ceil(16) * 16, h.div_ceil(16) * 16, false, YUV420_FORMAT);
+            let info = NAVideoInfo::new(
+                w.div_ceil(16) * 16,
+                h.div_ceil(16) * 16,
+                false,
+                YUV420_FORMAT,
+            );
             let driver = Driver::open(STEP, "jpeg", info, setup)?;
-            Ok(Box::new(Planar { driver, source: (w, h), range: Range::to_full(setup.full_range) }) as Box<dyn FrameEncoder>)
+            Ok(Box::new(Planar {
+                driver,
+                source: (w, h),
+                range: Range::to_full(setup.full_range),
+            }) as Box<dyn FrameEncoder>)
         })
     }
 }
@@ -47,7 +56,10 @@ impl FrameEncoder for Planar {
     }
 
     fn coded_size(&self) -> (u32, u32) {
-        (self.driver.info.get_width() as u32, self.driver.info.get_height() as u32)
+        (
+            self.driver.info.get_width() as u32,
+            self.driver.info.get_height() as u32,
+        )
     }
 
     fn encode(&mut self, frame: &VideoFrame, out: &mut Vec<Packet>) -> Result<()> {

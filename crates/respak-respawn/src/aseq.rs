@@ -34,13 +34,18 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
-use respak_core::capability::{Animation, AnimationInfo, Bone, BoneSample, BoneTrack, Dependency, Metadata, Track};
+use respak_core::capability::{
+    Animation, AnimationInfo, Bone, BoneSample, BoneTrack, Dependency, Metadata, Track,
+};
 use respak_core::{
-    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version,
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::anim_codec::{self, BoneFrame, FlagWidth, RleHeader, SectionIndex, BONE_POS, BONE_ROT, BONE_SCALE};
+use crate::anim_codec::{
+    self, BoneFrame, FlagWidth, RleHeader, SectionIndex, BONE_POS, BONE_ROT, BONE_SCALE,
+};
 use crate::arig::{explicit_rig, owner_of};
 use crate::asqd::AsqdAsset;
 use crate::matl_json::{hex, locate, pak_of};
@@ -48,11 +53,16 @@ use crate::rmdl::{fix_offset, read_guids, B};
 use crate::rpak::{RpakAsset, MEM};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: "aseq".into(), version: version.into() })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: "aseq".into(),
+        version: version.into(),
+    })
 }
 
 const HEADER_LEN: usize = 64;
@@ -161,7 +171,10 @@ impl AseqHeader {
             return Err(unsupported(version.to_string()));
         }
         if header.len() != HEADER_LEN {
-            return Err(corrupt(format!("aseq header is {} bytes, expected {HEADER_LEN}", header.len())));
+            return Err(corrupt(format!(
+                "aseq header is {} bytes, expected {HEADER_LEN}",
+                header.len()
+            )));
         }
         let h = B(header);
         let ptr = |at: usize| -> Result<Option<u64>> {
@@ -217,7 +230,9 @@ impl SeqDesc {
         let group_size = [b.u8(at + 0x54)?, b.u8(at + 0x55)?];
         let blends = usize::from(group_size[0]) * usize::from(group_size[1]);
         if blends == 0 {
-            return Err(corrupt(format!("aseq `{label}` has no animations (group size {group_size:?})")));
+            return Err(corrupt(format!(
+                "aseq `{label}` has no animations (group size {group_size:?})"
+            )));
         }
         let table = b.fixed(at, at + 0x2A)?;
         let anim_offsets = (0..blends)
@@ -228,14 +243,27 @@ impl SeqDesc {
             1 => Weights::Zero,
             _ => {
                 let list = b.fixed(at, at + 0x52)?;
-                Weights::List((0..bone_count).map(|i| b.f32(list + 4 * i)).collect::<Result<_>>()?)
+                Weights::List(
+                    (0..bone_count)
+                        .map(|i| b.f32(list + 4 * i))
+                        .collect::<Result<_>>()?,
+                )
             }
         };
         // Autolayers are only listed as dependencies, so a table that does not fit is not an error.
         let count = usize::from(b.u16(at + 0x4E)?).min(MAX_AUTOLAYERS);
         let layers = b.fixed(at, at + 0x50)?;
-        let autolayers = (0..count).map_while(|i| b.u64(layers + 0x20 * i).ok()).collect();
-        Ok(Self { label, flags, group_size, anim_offsets, weights, autolayers })
+        let autolayers = (0..count)
+            .map_while(|i| b.u64(layers + 0x20 * i).ok())
+            .collect();
+        Ok(Self {
+            label,
+            flags,
+            group_size,
+            anim_offsets,
+            weights,
+            autolayers,
+        })
     }
 }
 
@@ -264,7 +292,11 @@ impl FrameMovement {
     fn parse(b: &B, at: usize, frame_count: u32) -> Result<Self> {
         let scale = b.floats::<4>(at)?;
         let section_frames = b.i32(at + 0x10)?;
-        let count = if section_frames > 0 { (frame_count.max(1) as usize - 1) / section_frames as usize + 1 } else { 1 };
+        let count = if section_frames > 0 {
+            (frame_count.max(1) as usize - 1) / section_frames as usize + 1
+        } else {
+            1
+        };
         if count > MAX_SECTIONS {
             return Err(corrupt(format!("frame movement with {count} sections")));
         }
@@ -279,7 +311,11 @@ impl FrameMovement {
                 Ok(tracks)
             })
             .collect::<Result<_>>()?;
-        Ok(Self { scale, section_frames, sections })
+        Ok(Self {
+            scale,
+            section_frames,
+            sections,
+        })
     }
 
     /// The accumulated movement on `frame`: position and yaw in degrees.
@@ -290,7 +326,10 @@ impl FrameMovement {
         } else {
             (0, frame)
         };
-        let tracks = self.sections.get(section).ok_or_else(|| corrupt(format!("frame movement has no section for frame {frame}")))?;
+        let tracks = self
+            .sections
+            .get(section)
+            .ok_or_else(|| corrupt(format!("frame movement has no section for frame {frame}")))?;
         let mut v = [0.0; 4];
         for (k, track) in tracks.iter().enumerate() {
             if let Some(at) = track {
@@ -336,34 +375,63 @@ impl AnimDesc {
         if !(0.0..=2048.0).contains(&fps) {
             return Err(corrupt(format!("animation with {fps} frames per second")));
         }
-        let frame_count = u32::try_from(frames).ok().filter(|&n| n <= 0x20000).ok_or_else(|| corrupt(format!("animation with {frames} frames")))?;
-        let name = if b.u16(at + 0x0C)? == 0 { String::new() } else { b.cstr(b.fixed(at, at + 0x0C)?, 256)? };
+        let frame_count = u32::try_from(frames)
+            .ok()
+            .filter(|&n| n <= 0x20000)
+            .ok_or_else(|| corrupt(format!("animation with {frames} frames")))?;
+        let name = if b.u16(at + 0x0C)? == 0 {
+            String::new()
+        } else {
+            b.cstr(b.fixed(at, at + 0x0C)?, 256)?
+        };
         let asqd = b.u64(at + 0x18)?;
         let stall_frames = b.u16(at + 0x2C)?;
         let section_frames = b.u16(at + 0x2E)?;
 
         let mut sections = Vec::new();
         if section_frames != 0 && b.u16(at + 0x2A)? != 0 {
-            let count = (frame_count as usize).saturating_sub(usize::from(stall_frames) + 1) / usize::from(section_frames) + 2;
+            let count = (frame_count as usize).saturating_sub(usize::from(stall_frames) + 1)
+                / usize::from(section_frames)
+                + 2;
             let table = b.fixed(at, at + 0x2A)?;
             // A table that ends early stays short; `locate` reports the missing entry when it is needed.
             for entry in (0..count.min(MAX_SECTIONS)).map_while(|i| b.i32(table + 4 * i).ok()) {
-                sections.push(if entry < 0 { SectionData::Extra(!entry as u32) } else { SectionData::Asqd(entry as u32) });
+                sections.push(if entry < 0 {
+                    SectionData::Extra(!entry as u32)
+                } else {
+                    SectionData::Asqd(entry as u32)
+                });
             }
         }
         let movement = if flags & ANIM_FRAMEMOVEMENT != 0 && b.u16(at + 0x0E)? != 0 {
-            Some(FrameMovement::parse(&b, b.fixed(at, at + 0x0E)?, frame_count)?)
+            Some(FrameMovement::parse(
+                &b,
+                b.fixed(at, at + 0x0E)?,
+                frame_count,
+            )?)
         } else {
             None
         };
-        Ok(Self { name, fps, flags, frame_count, asqd, stall_frames, section_frames, sections, movement })
+        Ok(Self {
+            name,
+            fps,
+            flags,
+            frame_count,
+            asqd,
+            stall_frames,
+            section_frames,
+            sections,
+            movement,
+        })
     }
 
     /// Where the data of `frame` is and the section-local frame (`Stall_2`). Frames before `stall_frames` are held by section 0, which is the
     /// start of the `asqd` blob (`Asqd(0)`).
     pub fn locate(&self, frame: u32) -> Result<(SectionData, u32)> {
         if frame >= self.frame_count {
-            return Err(Error::new(ErrorKind::NotFound { path: format!("frame {frame}") }));
+            return Err(Error::new(ErrorKind::NotFound {
+                path: format!("frame {frame}"),
+            }));
         }
         let (stall, sf) = (u32::from(self.stall_frames), u32::from(self.section_frames));
         if sf == 0 || self.frame_count <= 1 || frame < stall {
@@ -376,7 +444,13 @@ impl AnimDesc {
         self.sections
             .get(index as usize)
             .map(|&s| (s, local))
-            .ok_or_else(|| corrupt(format!("animation `{}`: no section {index} for frame {frame} (the table has {})", self.name, self.sections.len())))
+            .ok_or_else(|| {
+                corrupt(format!(
+                    "animation `{}`: no section {index} for frame {frame} (the table has {})",
+                    self.name,
+                    self.sections.len()
+                ))
+            })
     }
 
     /// Whether the animation has RLE data to decode.
@@ -401,7 +475,12 @@ impl Extra {
         if offset >= end {
             return Ok(Bytes::new());
         }
-        Ok(self.volume.read_with(&self.path).range(self.base + offset..self.base + end).await?.to_bytes())
+        Ok(self
+            .volume
+            .read_with(&self.path)
+            .range(self.base + offset..self.base + end)
+            .await?
+            .to_bytes())
     }
 }
 
@@ -468,11 +547,19 @@ impl AseqAsset {
     }
 
     fn anim(&self, blend: u32) -> Result<&AnimDesc> {
-        self.anims.get(blend as usize).ok_or_else(|| Error::new(ErrorKind::NotFound { path: format!("blend {blend}") }))
+        self.anims.get(blend as usize).ok_or_else(|| {
+            Error::new(ErrorKind::NotFound {
+                path: format!("blend {blend}"),
+            })
+        })
     }
 
     fn bone(&self, bone: u32) -> Result<&Bone> {
-        self.bones.get(bone as usize).ok_or_else(|| Error::new(ErrorKind::NotFound { path: format!("bone {bone}") }))
+        self.bones.get(bone as usize).ok_or_else(|| {
+            Error::new(ErrorKind::NotFound {
+                path: format!("bone {bone}"),
+            })
+        })
     }
 
     fn label(&self) -> String {
@@ -485,13 +572,22 @@ impl AseqAsset {
             return Ok(v.clone());
         }
         let asset = locate(guid, "asqd", &self.origin, cx).await?;
-        let value = cx.mediator.identify_as(asset, &FormatId::new("asqd"), cx).await?;
+        let value = cx
+            .mediator
+            .identify_as(asset, &FormatId::new("asqd"), cx)
+            .await?;
         self.asqds.lock().expect("lock").insert(guid, value.clone());
         Ok(value)
     }
 
     /// Up to `want` bytes at the start of `section` of the animation `anim`.
-    async fn window(&self, anim: &AnimDesc, section: SectionData, want: u64, cx: &Cx) -> Result<Bytes> {
+    async fn window(
+        &self,
+        anim: &AnimDesc,
+        section: SectionData,
+        want: u64,
+        cx: &Cx,
+    ) -> Result<Bytes> {
         match section {
             SectionData::Asqd(offset) => {
                 let value = self.asqd(anim.asqd, cx).await?;
@@ -525,7 +621,10 @@ impl AseqAsset {
             match anim_codec::index_section(&bytes, self.bones.len(), self.width)? {
                 Some(index) => {
                     let keep = bytes.len().min(index.extent + TRACK_REACH);
-                    break Section { block: bytes.slice(..keep), index };
+                    break Section {
+                        block: bytes.slice(..keep),
+                        index,
+                    };
                 }
                 None if (bytes.len() as u64) < want || want >= MAX_SECTION => {
                     return Err(corrupt(format!(
@@ -537,16 +636,27 @@ impl AseqAsset {
             }
         };
         let decoded = Arc::new(decoded);
-        self.sections.lock().expect("lock").insert((blend, section), decoded.clone());
+        self.sections
+            .lock()
+            .expect("lock")
+            .insert((blend, section), decoded.clone());
         Ok(decoded)
     }
 
     /// The rest values of a bone: the bind pose, or the identity for an additive animation.
     fn rest(&self, bone: &Bone, additive: bool) -> Channels {
         if additive {
-            Channels { translation: ([0.0; 3], false), rotation: ([0.0, 0.0, 0.0, 1.0], false), scale: ([1.0; 3], false) }
+            Channels {
+                translation: ([0.0; 3], false),
+                rotation: ([0.0, 0.0, 0.0, 1.0], false),
+                scale: ([1.0; 3], false),
+            }
         } else {
-            Channels { translation: (bone.position, false), rotation: (bone.rotation, false), scale: (bone.scale, false) }
+            Channels {
+                translation: (bone.position, false),
+                rotation: (bone.rotation, false),
+                scale: (bone.scale, false),
+            }
         }
     }
 
@@ -571,7 +681,14 @@ impl AseqAsset {
             if let Some(header_at) = section.index.headers[slot] {
                 let header = RleHeader::parse(&section.block, header_at)?;
                 let flags = section.index.flags[slot] & (BONE_POS | BONE_ROT | BONE_SCALE);
-                let data = anim_codec::decode_bone(&section.block, header_at + 2, header, flags, local, self.default_euler[slot])?;
+                let data = anim_codec::decode_bone(
+                    &section.block,
+                    header_at + 2,
+                    header,
+                    flags,
+                    local,
+                    self.default_euler[slot],
+                )?;
                 out = self.merge(rest_bone, additive, data);
             }
         }
@@ -584,7 +701,8 @@ impl AseqAsset {
                 out.translation.0 = add(out.translation.0, position);
                 if yaw != 0.0 {
                     let half = yaw.to_radians() * 0.5;
-                    out.rotation.0 = anim_codec::quat_mul([0.0, 0.0, half.sin(), half.cos()], out.rotation.0);
+                    out.rotation.0 =
+                        anim_codec::quat_mul([0.0, 0.0, half.sin(), half.cos()], out.rotation.0);
                 }
                 out.translation.1 = true;
                 out.rotation.1 |= yaw != 0.0;
@@ -597,13 +715,21 @@ impl AseqAsset {
     fn merge(&self, bone: &Bone, additive: bool, data: BoneFrame) -> Channels {
         let mut out = self.rest(bone, additive);
         if let Some((v, constant)) = data.translation {
-            out.translation = if constant { (v, false) } else { (add(out.translation.0, v), true) };
+            out.translation = if constant {
+                (v, false)
+            } else {
+                (add(out.translation.0, v), true)
+            };
         }
         if let Some((q, constant)) = data.rotation {
             out.rotation = (q, !constant);
         }
         if let Some((v, constant)) = data.scale {
-            out.scale = if constant { (v, false) } else { (add(out.scale.0, v), true) };
+            out.scale = if constant {
+                (v, false)
+            } else {
+                (add(out.scale.0, v), true)
+            };
         }
         out
     }
@@ -616,7 +742,9 @@ fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
 /// A channel over all frames: a constant if no frame was a track and all values are equal.
 fn collapse<T: PartialEq + Copy>(frames: Vec<(T, bool)>) -> Track<T> {
     match frames.first() {
-        Some(&(first, false)) if frames.iter().all(|&(v, tracked)| !tracked && v == first) => Track::Constant(first),
+        Some(&(first, false)) if frames.iter().all(|&(v, tracked)| !tracked && v == first) => {
+            Track::Constant(first)
+        }
         _ => Track::Dense(frames.into_iter().map(|(v, _)| v).collect()),
     }
 }
@@ -630,7 +758,11 @@ impl Animation for AseqAsset {
     /// Name, fps, frame count, looping (`0x1`), additive (`0x4`) and scale (seqdesc `0x20000`).
     fn info(&self, blend: u32) -> Result<AnimationInfo> {
         let anim = self.anim(blend)?;
-        let name = if anim.name.is_empty() { format!("{}_{blend}", self.seq.label) } else { anim.name.clone() };
+        let name = if anim.name.is_empty() {
+            format!("{}_{blend}", self.seq.label)
+        } else {
+            anim.name.clone()
+        };
         Ok(AnimationInfo {
             name,
             fps: anim.fps,
@@ -663,11 +795,19 @@ impl Animation for AseqAsset {
             return Ok(BoneTrack {
                 translation: Track::Constant(rest.translation.0),
                 rotation: Track::Constant(rest.rotation.0),
-                scale: Track::Constant(if self.seq.flags & ANIM_VALID != 0 { rest.scale.0 } else { [1.0; 3] }),
+                scale: Track::Constant(if self.seq.flags & ANIM_VALID != 0 {
+                    rest.scale.0
+                } else {
+                    [1.0; 3]
+                }),
             });
         }
         let n = anim.frame_count as usize;
-        let (mut t, mut r, mut s) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
+        let (mut t, mut r, mut s) = (
+            Vec::with_capacity(n),
+            Vec::with_capacity(n),
+            Vec::with_capacity(n),
+        );
         for frame in 0..anim.frame_count {
             if frame % 256 == 0 {
                 cx.check_cancelled()?;
@@ -677,16 +817,26 @@ impl Animation for AseqAsset {
             r.push(c.rotation);
             s.push(c.scale);
         }
-        Ok(BoneTrack { translation: collapse(t), rotation: collapse(r), scale: collapse(s) })
+        Ok(BoneTrack {
+            translation: collapse(t),
+            rotation: collapse(r),
+            scale: collapse(s),
+        })
     }
 
     async fn sample(&self, blend: u32, bone: u32, frame: u32, cx: &Cx) -> Result<BoneSample> {
         let anim = self.anim(blend)?;
         if frame >= anim.frame_count {
-            return Err(Error::new(ErrorKind::NotFound { path: format!("frame {frame}") }));
+            return Err(Error::new(ErrorKind::NotFound {
+                path: format!("frame {frame}"),
+            }));
         }
         let c = self.channels(blend, bone, frame, cx).await?;
-        Ok(BoneSample { translation: c.translation.0, rotation: c.rotation.0, scale: c.scale.0 })
+        Ok(BoneSample {
+            translation: c.translation.0,
+            rotation: c.rotation.0,
+            scale: c.scale.0,
+        })
     }
 }
 
@@ -701,7 +851,10 @@ impl Metadata for AseqAsset {
         Some(self.guid)
     }
     fn dependencies(&self) -> Vec<Dependency> {
-        self.dependencies.iter().map(|&guid| Dependency { guid, name: None }).collect()
+        self.dependencies
+            .iter()
+            .map(|&guid| Dependency { guid, name: None })
+            .collect()
     }
 }
 
@@ -741,7 +894,10 @@ impl Detect for AseqRead {
         let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
             return Ok(None);
         };
-        Ok((asset.entry.kind == *b"aseq").then(|| Detected { score: 10, version: Some(Version::new(asset.entry.version)) }))
+        Ok((asset.entry.kind == *b"aseq").then(|| Detected {
+            score: 10,
+            version: Some(Version::new(asset.entry.version)),
+        }))
     }
 }
 
@@ -750,11 +906,17 @@ impl ReadHandler for AseqRead {
     /// Parses the header, the seqdesc and the animdescs, resolves the rig (`MissingDependency` if
     /// there is none) and checks that the bone weight list fits it.
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "aseq must be read from an rpak.asset".into() }))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "aseq must be read from an rpak.asset".into(),
+            })
+        })?;
         if asset.entry.kind != *b"aseq" {
-            return Err(Error::new(ErrorKind::Custom { source: None, message: "the asset is not an aseq".into() }));
+            return Err(Error::new(ErrorKind::Custom {
+                source: None,
+                message: "the asset is not an aseq".into(),
+            }));
         }
         let version = variant(asset.entry.version, asset.pak_created_time)?;
         let header = AseqHeader::parse(version, &asset.read_header().await?)?;
@@ -768,11 +930,21 @@ impl ReadHandler for AseqRead {
             RigSelect::Auto => owner_of(asset.entry.guid, &origin, cx).await?,
             RigSelect::Explicit(name) => explicit_rig(name, &origin, cx).await?,
         };
-        let skeleton = rig.as_skeleton().ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "the rig has no skeleton".into() }))?;
+        let skeleton = rig.as_skeleton().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "the rig has no skeleton".into(),
+            })
+        })?;
         let bones = skeleton.bones().to_vec();
         let rig_guid = rig.as_metadata().and_then(|m| m.guid()).unwrap_or(0);
 
-        let block = asset.read_mem(header.data_offset, SEQ_WINDOW.min(mem_len - header.data_offset)).await?;
+        let block = asset
+            .read_mem(
+                header.data_offset,
+                SEQ_WINDOW.min(mem_len - header.data_offset),
+            )
+            .await?;
         let seq = SeqDesc::parse(&block, 0, bones.len())?;
         let anims = seq
             .anim_offsets
@@ -787,20 +959,37 @@ impl ReadHandler for AseqRead {
         let models = read_guids(asset, header.models.0, header.models.1).await?;
         let settings = read_guids(asset, header.settings.0, header.settings.1).await?;
         let mut dependencies: Vec<u64> = Vec::new();
-        for &guid in anims.iter().map(|a| &a.asqd).chain(&seq.autolayers).chain(&models).chain(&settings) {
+        for &guid in anims
+            .iter()
+            .map(|a| &a.asqd)
+            .chain(&seq.autolayers)
+            .chain(&models)
+            .chain(&settings)
+        {
             if guid != 0 && !dependencies.contains(&guid) {
                 dependencies.push(guid);
             }
         }
 
         let extra = match header.extra {
-            (Some(at), len) if len > 0 => Some(Extra { volume: asset.volume.clone(), path: MEM.to_owned(), base: at, len: u64::from(len) }),
-            (None, len) if len > 0 => {
-                asset.stream.clone().map(|path| Extra { volume: asset.volume.clone(), path, base: 0, len: u64::from(len) })
-            }
+            (Some(at), len) if len > 0 => Some(Extra {
+                volume: asset.volume.clone(),
+                path: MEM.to_owned(),
+                base: at,
+                len: u64::from(len),
+            }),
+            (None, len) if len > 0 => asset.stream.clone().map(|path| Extra {
+                volume: asset.volume.clone(),
+                path,
+                base: 0,
+                len: u64::from(len),
+            }),
             _ => None,
         };
-        let default_euler = bones.iter().map(|b| anim_codec::quat_to_euler(b.rotation)).collect();
+        let default_euler = bones
+            .iter()
+            .map(|b| anim_codec::quat_to_euler(b.rotation))
+            .collect();
         Ok(Arc::new(AseqAsset {
             format: FormatId::new("aseq").with_version(version),
             key: source.key().clone(),

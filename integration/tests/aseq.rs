@@ -7,7 +7,9 @@ use opendal::{services::Memory, Operator};
 use respak_cli::{run, Cli};
 use respak_core::{CancellationToken, ConvertRequest, Engine, ErrorKind, OutputResult};
 use respak_formats::FormatsPlugin;
-use respak_respawn::testing::aseq::{bone, quat64, raw_track, section, value_ptr, vec48, Anim, Seq, Weights};
+use respak_respawn::testing::aseq::{
+    bone, quat64, raw_track, section, value_ptr, vec48, Anim, Seq, Weights,
+};
 use respak_respawn::testing::{rmdl, PakBuilder};
 use respak_respawn::RespawnPlugin;
 use serde_json::{json, Value};
@@ -45,7 +47,10 @@ fn walk_section() -> Vec<u8> {
     data.extend(value_ptr(14, 0b010, 0, 0));
     data.extend(raw_track(&[10, 20, 30, 40]));
     data.extend(raw_track(&[1000, 2000, 3000, 4000]));
-    section(true, &[(3, bone(0x6, &data)), (2, bone(0, &quat64([0.5; 4])))])
+    section(
+        true,
+        &[(3, bone(0x6, &data)), (2, bone(0, &quat64([0.5; 4])))],
+    )
 }
 
 /// A constant position of bone 0 only.
@@ -59,14 +64,27 @@ fn studio() -> Vec<u8> {
 
 /// `paks/anim.rpak` with the rig, two `asqd` and a sequence of two blends.
 async fn env_with(seq: Seq, blobs: &[(u64, Vec<u8>)]) -> Env {
-    let env = Env { input: mem(), output: mem() };
+    let env = Env {
+        input: mem(),
+        output: mem(),
+    };
     let mut pak = PakBuilder::new();
     pak.arig(RIG, "anim/rig", 5, &studio(), &[SEQ]);
     for (guid, blob) in blobs {
         pak.asqd(*guid, blob);
     }
-    pak.aseq(SEQ, "anim/walk.rseq", 14, &respak_respawn::testing::aseq::seq_block(&seq), &[], None);
-    env.input.write("paks/anim.rpak", pak.build(8)).await.unwrap();
+    pak.aseq(
+        SEQ,
+        "anim/walk.rseq",
+        14,
+        &respak_respawn::testing::aseq::seq_block(&seq),
+        &[],
+        None,
+    );
+    env.input
+        .write("paks/anim.rpak", pak.build(8))
+        .await
+        .unwrap();
     env
 }
 
@@ -77,15 +95,28 @@ fn walk() -> Seq {
 }
 
 async fn walk_env() -> Env {
-    env_with(walk(), &[(DATA_A, walk_section()), (DATA_B, still_section([7.0, 8.0, 9.0]))]).await
+    env_with(
+        walk(),
+        &[
+            (DATA_A, walk_section()),
+            (DATA_B, still_section([7.0, 8.0, 9.0])),
+        ],
+    )
+    .await
 }
 
 fn request(to: Value, path: &str) -> ConvertRequest {
-    serde_json::from_value(json!({ "version": 1, "outputs": [{ "from": ASEQ, "to": to, "path": path }] })).unwrap()
+    serde_json::from_value(
+        json!({ "version": 1, "outputs": [{ "from": ASEQ, "to": to, "path": path }] }),
+    )
+    .unwrap()
 }
 
 async fn convert(engine: &Engine, to: Value, path: &str) -> OutputResult {
-    let report = engine.convert(&request(to, path), &CancellationToken::new()).await.unwrap();
+    let report = engine
+        .convert(&request(to, path), &CancellationToken::new())
+        .await
+        .unwrap();
     report.outputs.into_iter().next().unwrap().result
 }
 
@@ -107,7 +138,12 @@ struct Node {
 
 impl Node {
     fn prop(&self, name: &str) -> &[u8] {
-        &self.props.iter().find(|p| p.0 == name).unwrap_or_else(|| panic!("no property {name} in {}", self.id)).2
+        &self
+            .props
+            .iter()
+            .find(|p| p.0 == name)
+            .unwrap_or_else(|| panic!("no property {name} in {}", self.id))
+            .2
     }
     fn has(&self, name: &str) -> bool {
         self.props.iter().any(|p| p.0 == name)
@@ -128,7 +164,9 @@ fn parse_node(b: &[u8], at: usize) -> (Node, usize) {
     let mut p = at + 24;
     let mut props = Vec::new();
     for _ in 0..pc {
-        let ty = String::from_utf8_lossy(&b[p..p + 2]).trim_end_matches('\0').to_owned();
+        let ty = String::from_utf8_lossy(&b[p..p + 2])
+            .trim_end_matches('\0')
+            .to_owned();
         let name_len = u16::from_le_bytes([b[p + 2], b[p + 3]]) as usize;
         let arr = u32_at(b, p + 4) as usize;
         let name = String::from_utf8(b[p + 8..p + 8 + name_len].to_vec()).unwrap();
@@ -153,7 +191,14 @@ fn parse_node(b: &[u8], at: usize) -> (Node, usize) {
         p = next;
     }
     assert_eq!(p - at, size, "{id}: nodeSize");
-    (Node { id, props, children }, p)
+    (
+        Node {
+            id,
+            props,
+            children,
+        },
+        p,
+    )
 }
 
 async fn cast_of(env: &Env, path: &str) -> Node {
@@ -165,7 +210,9 @@ async fn cast_of(env: &Env, path: &str) -> Node {
 }
 
 fn floats(b: &[u8]) -> Vec<f32> {
-    b.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect()
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect()
 }
 
 fn near(a: &[f32], b: &[f32]) {
@@ -179,7 +226,10 @@ fn near(a: &[f32], b: &[f32]) {
 fn curve<'a>(anim: &'a Node, bone: &str, key: &str) -> &'a Node {
     anim.kids("curv")
         .into_iter()
-        .find(|c| c.prop("nn") == format!("{bone}\0").as_bytes() && c.prop("kp") == format!("{key}\0").as_bytes())
+        .find(|c| {
+            c.prop("nn") == format!("{bone}\0").as_bytes()
+                && c.prop("kp") == format!("{key}\0").as_bytes()
+        })
         .unwrap_or_else(|| panic!("no curve {bone}.{key}"))
 }
 
@@ -233,7 +283,11 @@ async fn an_aseq_converts_to_one_cast_per_blend() {
     assert_eq!(bones[0].prop("n"), b"root\0");
     assert_eq!(bones[1].prop("n"), b"arm\0");
     assert_eq!(bones[1].prop("p"), 0u32.to_le_bytes());
-    assert_eq!(anim.kids("curv").len(), 8, "tx, ty, tz and rq for two bones; no scale");
+    assert_eq!(
+        anim.kids("curv").len(),
+        8,
+        "tx, ty, tz and rq for two bones; no scale"
+    );
 
     // bone 0 with the root fix-up: position (x, y, z) -> (y, -x, z), the yaw turned by -90 degrees
     near(&values(anim, "root", "tx"), &[2.0; 4]);
@@ -243,7 +297,15 @@ async fn an_aseq_converts_to_one_cast_per_blend() {
     for (f, q) in pitch_quats().iter().enumerate() {
         near(&rq[4 * f..4 * f + 4], &mul(yaw_minus_90(), *q));
     }
-    assert_eq!(curve(anim, "root", "rq").props.iter().find(|p| p.0 == "kv").unwrap().1, "v4");
+    assert_eq!(
+        curve(anim, "root", "rq")
+            .props
+            .iter()
+            .find(|p| p.0 == "kv")
+            .unwrap()
+            .1,
+        "v4"
+    );
     assert_eq!(curve(anim, "root", "tx").prop("kb"), [0, 1, 2, 3]);
     assert_eq!(curve(anim, "root", "tx").prop("m"), b"absolute\0");
     assert!(!curve(anim, "root", "tx").has("ab"));
@@ -265,7 +327,11 @@ async fn an_aseq_converts_to_one_cast_per_blend() {
 #[tokio::test]
 async fn the_root_fixup_option_keeps_bone_0_as_stored() {
     let env = walk_env().await;
-    let written = files(&engine(&env), json!({ "type": "cast", "root_fixup": "none" })).await;
+    let written = files(
+        &engine(&env),
+        json!({ "type": "cast", "root_fixup": "none" }),
+    )
+    .await;
     let anim = &cast_of(&env, &written[0]).await.children[0];
     near(&values(anim, "root", "tx"), &[6.0, 11.0, 16.0, 21.0]);
     near(&values(anim, "root", "ty"), &[2.0; 4]);
@@ -283,10 +349,19 @@ async fn blend_picks_one_file_and_a_missing_blend_is_invalid() {
     let env = walk_env().await;
     let written = files(&engine(&env), json!({ "type": "cast", "blend": 1 })).await;
     assert_eq!(written, ["out/walk/walk_1.cast"]);
-    let OutputResult::Err { error } = convert(&engine(&env), json!({ "type": "cast", "blend": 2 }), "out/x").await else {
+    let OutputResult::Err { error } = convert(
+        &engine(&env),
+        json!({ "type": "cast", "blend": 2 }),
+        "out/x",
+    )
+    .await
+    else {
         panic!("blend 2 does not exist");
     };
-    assert!(matches!(error.kind(), ErrorKind::InvalidOptions { .. }), "{error}");
+    assert!(
+        matches!(error.kind(), ErrorKind::InvalidOptions { .. }),
+        "{error}"
+    );
 }
 
 #[tokio::test]
@@ -300,7 +375,11 @@ async fn additive_animations_write_their_bone_weights() {
     data.extend(raw_track(&[10, 20]));
     let blob = section(true, &[(1, bone(0x4, &data)), (0, vec![])]);
     let env = env_with(seq, &[(DATA_A, blob)]).await;
-    let written = files(&engine(&env), json!({ "type": "cast", "root_fixup": "none" })).await;
+    let written = files(
+        &engine(&env),
+        json!({ "type": "cast", "root_fixup": "none" }),
+    )
+    .await;
     let anim = &cast_of(&env, &written[0]).await.children[0];
     for key in ["tx", "ty", "tz", "rq"] {
         assert_eq!(curve(anim, "root", key).prop("m"), b"additive\0");
@@ -310,7 +389,10 @@ async fn additive_animations_write_their_bone_weights() {
     near(&values(anim, "root", "tx"), &[10.0, 20.0]);
     near(&values(anim, "root", "ty"), &[0.0, 0.0]);
     near(&values(anim, "arm", "tx"), &[0.0, 0.0]);
-    near(&values(anim, "arm", "rq"), &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+    near(
+        &values(anim, "arm", "rq"),
+        &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    );
 }
 
 #[tokio::test]
@@ -322,7 +404,11 @@ async fn scale_curves_are_written_only_for_sequences_with_scale() {
     data.extend(vec48([2.0, 2.0, 2.0]));
     let blob = section(true, &[(7, bone(0, &data)), (0, vec![])]);
     let env = env_with(seq, &[(DATA_A, blob)]).await;
-    let written = files(&engine(&env), json!({ "type": "cast", "root_fixup": "none" })).await;
+    let written = files(
+        &engine(&env),
+        json!({ "type": "cast", "root_fixup": "none" }),
+    )
+    .await;
     let anim = &cast_of(&env, &written[0]).await.children[0];
     assert_eq!(anim.kids("curv").len(), 14);
     near(&values(anim, "root", "sx"), &[2.0, 2.0]);
@@ -343,44 +429,93 @@ async fn a_long_animation_keys_every_frame_with_a_wide_enough_buffer() {
     data.extend(track);
     let blob = section(true, &[(1, bone(0x4, &data)), (0, vec![])]);
     let env = env_with(Seq::new("long", vec![anim]), &[(DATA_A, blob)]).await;
-    let written = files(&engine(&env), json!({ "type": "cast", "root_fixup": "none" })).await;
+    let written = files(
+        &engine(&env),
+        json!({ "type": "cast", "root_fixup": "none" }),
+    )
+    .await;
     let anim = &cast_of(&env, &written[0]).await.children[0];
     let tx = curve(anim, "root", "tx");
     assert_eq!(tx.props.iter().find(|p| p.0 == "kb").unwrap().1, "h");
     assert_eq!(tx.prop("kb").len(), 600);
     let xs = floats(tx.prop("kv"));
-    assert_eq!((xs.len(), xs[0], xs[254], xs[255], xs[299]), (300, 1.0, 255.0, 256.0, 300.0), "the rest pose x is 1");
+    assert_eq!(
+        (xs.len(), xs[0], xs[254], xs[255], xs[299]),
+        (300, 1.0, 255.0, 256.0, 300.0),
+        "the rest pose x is 1"
+    );
 }
 
 #[tokio::test]
 async fn errors_are_reported_per_output() {
     // no rig
-    let env = Env { input: mem(), output: mem() };
+    let env = Env {
+        input: mem(),
+        output: mem(),
+    };
     let mut pak = PakBuilder::new();
-    pak.aseq(SEQ, "anim/walk.rseq", 14, &respak_respawn::testing::aseq::seq_block(&walk()), &[], None);
-    env.input.write("paks/anim.rpak", pak.build(8)).await.unwrap();
-    let OutputResult::Err { error } = convert(&engine(&env), json!({ "type": "cast" }), "out/walk").await else {
+    pak.aseq(
+        SEQ,
+        "anim/walk.rseq",
+        14,
+        &respak_respawn::testing::aseq::seq_block(&walk()),
+        &[],
+        None,
+    );
+    env.input
+        .write("paks/anim.rpak", pak.build(8))
+        .await
+        .unwrap();
+    let OutputResult::Err { error } =
+        convert(&engine(&env), json!({ "type": "cast" }), "out/walk").await
+    else {
         panic!("no rig");
     };
-    assert!(matches!(error.kind(), ErrorKind::MissingDependency { .. }), "{error}");
+    assert!(
+        matches!(error.kind(), ErrorKind::MissingDependency { .. }),
+        "{error}"
+    );
 
     // no asqd
     let env = env_with(walk(), &[]).await;
-    let OutputResult::Err { error } = convert(&engine(&env), json!({ "type": "cast" }), "out/walk").await else {
+    let OutputResult::Err { error } =
+        convert(&engine(&env), json!({ "type": "cast" }), "out/walk").await
+    else {
         panic!("no asqd");
     };
-    assert!(matches!(error.kind(), ErrorKind::MissingDependency { .. }), "{error}");
+    assert!(
+        matches!(error.kind(), ErrorKind::MissingDependency { .. }),
+        "{error}"
+    );
 
     // a version below 12.1
-    let env = Env { input: mem(), output: mem() };
+    let env = Env {
+        input: mem(),
+        output: mem(),
+    };
     let mut pak = PakBuilder::new();
     pak.arig(RIG, "anim/rig", 5, &studio(), &[SEQ]);
-    pak.aseq(SEQ, "anim/walk.rseq", 11, &respak_respawn::testing::aseq::seq_block(&walk()), &[], None);
-    env.input.write("paks/anim.rpak", pak.build(8)).await.unwrap();
-    let OutputResult::Err { error } = convert(&engine(&env), json!({ "type": "cast" }), "out/walk").await else {
+    pak.aseq(
+        SEQ,
+        "anim/walk.rseq",
+        11,
+        &respak_respawn::testing::aseq::seq_block(&walk()),
+        &[],
+        None,
+    );
+    env.input
+        .write("paks/anim.rpak", pak.build(8))
+        .await
+        .unwrap();
+    let OutputResult::Err { error } =
+        convert(&engine(&env), json!({ "type": "cast" }), "out/walk").await
+    else {
         panic!("version 11");
     };
-    assert!(matches!(error.kind(), ErrorKind::UnsupportedVersion { .. }), "{error}");
+    assert!(
+        matches!(error.kind(), ErrorKind::UnsupportedVersion { .. }),
+        "{error}"
+    );
 }
 
 #[tokio::test]
@@ -388,15 +523,23 @@ async fn a_cancelled_convert_writes_nothing() {
     let env = walk_env().await;
     let token = CancellationToken::new();
     token.cancel();
-    let report = engine(&env).convert(&request(json!({ "type": "cast" }), "out/walk"), &token).await.unwrap();
-    let OutputResult::Err { error } = &report.outputs[0].result else { panic!("{:?}", report.outputs[0].result) };
+    let report = engine(&env)
+        .convert(&request(json!({ "type": "cast" }), "out/walk"), &token)
+        .await
+        .unwrap();
+    let OutputResult::Err { error } = &report.outputs[0].result else {
+        panic!("{:?}", report.outputs[0].result)
+    };
     assert!(matches!(error.kind(), ErrorKind::Cancelled), "{error}");
     assert!(!env.output.exists("out/walk/walk_0.cast").await.unwrap());
 }
 
 #[tokio::test]
 async fn the_cli_binds_a_sequence_to_an_explicit_rig() {
-    let env = Env { input: mem(), output: mem() };
+    let env = Env {
+        input: mem(),
+        output: mem(),
+    };
     let path = "anim/rig_by_path";
     let guid = respak_respawn::string_to_guid(path);
     let mut pak = PakBuilder::new();
@@ -404,8 +547,18 @@ async fn the_cli_binds_a_sequence_to_an_explicit_rig() {
     pak.arig(guid, path, 5, &studio(), &[]);
     pak.asqd(DATA_A, &walk_section());
     pak.asqd(DATA_B, &still_section([7.0, 8.0, 9.0]));
-    pak.aseq(SEQ, "anim/walk.rseq", 14, &respak_respawn::testing::aseq::seq_block(&walk()), &[], None);
-    env.input.write("paks/anim.rpak", pak.build(8)).await.unwrap();
+    pak.aseq(
+        SEQ,
+        "anim/walk.rseq",
+        14,
+        &respak_respawn::testing::aseq::seq_block(&walk()),
+        &[],
+        None,
+    );
+    env.input
+        .write("paks/anim.rpak", pak.build(8))
+        .await
+        .unwrap();
 
     let invoke = |args: Vec<&'static str>, env: &Env, rig: Option<&'static str>| {
         let mut all = vec!["respak", "--root", "in", "--out", "out"];
@@ -414,12 +567,26 @@ async fn the_cli_binds_a_sequence_to_an_explicit_rig() {
         }
         all.extend(args);
         let cli = Cli::try_parse_from(all).unwrap();
-        let plugin = RespawnPlugin::new().rig(cli.rig.clone()).studio(cli.studio.clone());
-        let engine = Engine::builder().input(env.input.clone()).output(env.output.clone()).plugin(FormatsPlugin).plugin(plugin).build().unwrap();
+        let plugin = RespawnPlugin::new()
+            .rig(cli.rig.clone())
+            .studio(cli.studio.clone());
+        let engine = Engine::builder()
+            .input(env.input.clone())
+            .output(env.output.clone())
+            .plugin(FormatsPlugin)
+            .plugin(plugin)
+            .build()
+            .unwrap();
         async move {
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            let code = run(cli, &engine, &CancellationToken::new(), &mut out, &mut err).await.unwrap();
-            (code, String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap())
+            let code = run(cli, &engine, &CancellationToken::new(), &mut out, &mut err)
+                .await
+                .unwrap();
+            (
+                code,
+                String::from_utf8(out).unwrap(),
+                String::from_utf8(err).unwrap(),
+            )
         }
     };
     let convert = vec!["convert", ASEQ, "--to", r#"{"type":"cast","blend":0}"#];
@@ -429,7 +596,12 @@ async fn the_cli_binds_a_sequence_to_an_explicit_rig() {
     let (code, out, err) = invoke(convert, &env, Some("anim/rig_by_path")).await;
     assert_eq!(code, ExitCode::SUCCESS, "{err}");
     let report: Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(report["outputs"][0]["result"]["Ok"]["files"][0], "0x0000000000000010/walk_0.cast");
-    let anim = &cast_of(&env, "0x0000000000000010/walk_0.cast").await.children[0];
+    assert_eq!(
+        report["outputs"][0]["result"]["Ok"]["files"][0],
+        "0x0000000000000010/walk_0.cast"
+    );
+    let anim = &cast_of(&env, "0x0000000000000010/walk_0.cast")
+        .await
+        .children[0];
     assert_eq!(anim.kids("curv").len(), 8);
 }

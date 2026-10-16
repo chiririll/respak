@@ -19,9 +19,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use opendal::Operator;
-use respak_core::capability::{Cell, Column, ColumnType, Dependency, Metadata, Table};
+use respak_core::capability::{Cell, Column, ColumnType, Dependency, Metadata, NameSource, Table};
 use respak_core::{
-    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version,
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
 };
 
 use crate::matl_json::hex;
@@ -39,16 +40,23 @@ pub const DATA_EXCLUDED: &str = "!!DATA EXCLUDED!!";
 const MAX_STRING: u64 = 1 << 20;
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// The layout variant: `0`, `1` or `1.1` (see the module docs).
 pub fn variant(asset_version: u32, created_time: u64) -> Result<Version> {
     match asset_version {
         0 => Ok(Version::new(0)),
-        1 if created_time > CREATED_V1_1_FROM && created_time < CREATED_V1_1_TO => Ok(Version::with_minor(1, 1)),
+        1 if created_time > CREATED_V1_1_FROM && created_time < CREATED_V1_1_TO => {
+            Ok(Version::with_minor(1, 1))
+        }
         1 => Ok(Version::new(1)),
-        other => Err(Error::new(ErrorKind::UnsupportedVersion { format: "dtbl".into(), version: other.to_string() })),
+        other => Err(Error::new(ErrorKind::UnsupportedVersion {
+            format: "dtbl".into(),
+            version: other.to_string(),
+        })),
     }
 }
 
@@ -73,15 +81,24 @@ impl DtblHeader {
     /// Parses a relocated header of variant `version`; a length other than the variant's
     /// (0x20 or 0x28) or a negative count is `Corrupt`.
     pub fn parse(version: Version, h: &[u8]) -> Result<Self> {
-        let (len, stride_at) = if version.major == 0 { (0x20, 0x18) } else { (0x28, 0x20) };
+        let (len, stride_at) = if version.major == 0 {
+            (0x20, 0x18)
+        } else {
+            (0x28, 0x20)
+        };
         if h.len() != len {
-            return Err(corrupt(format!("dtbl@{version} header is {} bytes, expected {len}", h.len())));
+            return Err(corrupt(format!(
+                "dtbl@{version} header is {} bytes, expected {len}",
+                h.len()
+            )));
         }
         let b = B(h);
         let count = |at: usize, what: &str| -> Result<u32> {
             u32::try_from(b.i32(at)?).map_err(|_| corrupt(format!("dtbl: negative {what}")))
         };
-        let ptr = |at: usize| -> Result<Option<u64>> { b.u64(at).map(|p| (p != 0 && p != u64::MAX).then_some(p)) };
+        let ptr = |at: usize| -> Result<Option<u64>> {
+            b.u64(at).map(|p| (p != 0 && p != u64::MAX).then_some(p))
+        };
         Ok(Self {
             version,
             num_columns: count(0x00, "column count")?,
@@ -167,6 +184,29 @@ impl Metadata for DtblAsset {
     }
 }
 
+/// The text cells of `asset` and `asset_noprecache` columns are asset paths; plain `string` cells
+/// can be too (a settings key, a model name).
+impl NameSource for DtblAsset {
+    fn name_candidates(&self) -> Vec<String> {
+        let text: Vec<usize> = (0..self.columns.len())
+            .filter(|&i| {
+                matches!(
+                    self.columns[i].ty,
+                    ColumnType::String | ColumnType::Asset | ColumnType::AssetNoPrecache
+                )
+            })
+            .collect();
+        self.rows
+            .iter()
+            .flat_map(|row| text.iter().filter_map(|&i| row.get(i)))
+            .filter_map(|cell| match cell {
+                Cell::String(s) if !s.is_empty() => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
 impl Data for DtblAsset {
     fn format(&self) -> &FormatId {
         &self.format
@@ -180,17 +220,28 @@ impl Data for DtblAsset {
     fn as_metadata(&self) -> Option<&dyn Metadata> {
         Some(self)
     }
+    fn as_name_source(&self) -> Option<&dyn NameSource> {
+        Some(self)
+    }
 }
 
 /// `len` bytes of `.mem` at `at`, `Corrupt` (naming `what`) when they leave it.
-async fn read_block(volume: &Operator, at: Option<u64>, len: u64, mem_len: u64, what: &str) -> Result<Vec<u8>> {
+async fn read_block(
+    volume: &Operator,
+    at: Option<u64>,
+    len: u64,
+    mem_len: u64,
+    what: &str,
+) -> Result<Vec<u8>> {
     if len == 0 {
         return Ok(Vec::new());
     }
     let at = at.ok_or_else(|| corrupt(format!("dtbl: the {what} pointer is null")))?;
     match at.checked_add(len) {
         Some(end) if end <= mem_len => Ok(volume.read_with(MEM).range(at..end).await?.to_vec()),
-        _ => Err(corrupt(format!("dtbl: {len} bytes of {what} at {at:#x} are outside the pak's data"))),
+        _ => Err(corrupt(format!(
+            "dtbl: {len} bytes of {what} at {at:#x} are outside the pak's data"
+        ))),
     }
 }
 
@@ -210,7 +261,9 @@ async fn read_cstr(volume: &Operator, at: u64, mem_len: u64) -> Result<Vec<u8>> 
         pos = end;
         chunk *= 2;
     }
-    Err(corrupt(format!("dtbl: the string at {at:#x} does not end inside the pak's data")))
+    Err(corrupt(format!(
+        "dtbl: the string at {at:#x} does not end inside the pak's data"
+    )))
 }
 
 /// The string a `.mem` pointer slot points to (an empty string for a null pointer).
@@ -219,7 +272,9 @@ async fn read_string(asset: &RpakAsset, slot: &[u8], mem_len: u64, what: &str) -
     if slot == [0; 8] {
         return Ok(String::new());
     }
-    let at = asset.mem_offset_of(slot).ok_or_else(|| corrupt(format!("dtbl: the {what} points outside the pak's pages")))?;
+    let at = asset
+        .mem_offset_of(slot)
+        .ok_or_else(|| corrupt(format!("dtbl: the {what} points outside the pak's pages")))?;
     let bytes = read_cstr(&asset.volume, at, mem_len).await?;
     if bytes.first() == Some(&0x0f) {
         return Ok(DATA_EXCLUDED.to_owned());
@@ -249,11 +304,17 @@ impl Detect for DtblRead {
 impl ReadHandler for DtblRead {
     /// Reads the whole table: column names, rows and the strings they point to.
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "dtbl must be read from an rpak.asset".into() }))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "dtbl must be read from an rpak.asset".into(),
+            })
+        })?;
         if asset.entry.kind != *b"dtbl" {
-            return Err(Error::new(ErrorKind::Custom { source: None, message: "the asset is not a dtbl".into() }));
+            return Err(Error::new(ErrorKind::Custom {
+                source: None,
+                message: "the asset is not a dtbl".into(),
+            }));
         }
         let version = variant(asset.entry.version, asset.pak_created_time)?;
         let header = DtblHeader::parse(version, &asset.read_header().await?)?;
@@ -261,24 +322,51 @@ impl ReadHandler for DtblRead {
         let mem_len = volume.stat(MEM).await?.content_length();
 
         let col_size = header.column_size();
-        let records = read_block(volume, header.columns, u64::from(header.num_columns) * col_size, mem_len, "columns").await?;
-        let (type_at, offset_at) = if col_size == 0x18 { (0x10, 0x14) } else { (0x08, 0x0C) };
+        let records = read_block(
+            volume,
+            header.columns,
+            u64::from(header.num_columns) * col_size,
+            mem_len,
+            "columns",
+        )
+        .await?;
+        let (type_at, offset_at) = if col_size == 0x18 {
+            (0x10, 0x14)
+        } else {
+            (0x08, 0x0C)
+        };
         let mut columns = Vec::with_capacity(header.num_columns as usize);
         let mut offsets = Vec::with_capacity(header.num_columns as usize);
         for record in records.chunks_exact(col_size as usize) {
             let b = B(record);
             let index = columns.len();
             let raw = b.i32(type_at)?;
-            let ty = column_type(raw).ok_or_else(|| corrupt(format!("dtbl: column {index} has unknown type {raw}")))?;
-            let offset = u32::try_from(b.i32(offset_at)?).ok().filter(|&o| o.checked_add(cell_size(ty)).is_some_and(|end| end <= header.row_stride));
-            let offset = offset.ok_or_else(|| corrupt(format!("dtbl: column {index} is outside the row stride {}", header.row_stride)))?;
+            let ty = column_type(raw)
+                .ok_or_else(|| corrupt(format!("dtbl: column {index} has unknown type {raw}")))?;
+            let offset = u32::try_from(b.i32(offset_at)?).ok().filter(|&o| {
+                o.checked_add(cell_size(ty))
+                    .is_some_and(|end| end <= header.row_stride)
+            });
+            let offset = offset.ok_or_else(|| {
+                corrupt(format!(
+                    "dtbl: column {index} is outside the row stride {}",
+                    header.row_stride
+                ))
+            })?;
             let name = read_string(asset, &record[..8], mem_len, "column name").await?;
             columns.push(Column { name, ty });
             offsets.push(offset as usize);
         }
 
         let stride = header.row_stride as usize;
-        let block = read_block(volume, header.rows, u64::from(header.num_rows) * u64::from(header.row_stride), mem_len, "rows").await?;
+        let block = read_block(
+            volume,
+            header.rows,
+            u64::from(header.num_rows) * u64::from(header.row_stride),
+            mem_len,
+            "rows",
+        )
+        .await?;
         let mut rows = Vec::with_capacity(header.num_rows as usize);
         for i in 0..header.num_rows as usize {
             let row = B(&block[i * stride..(i + 1) * stride]);
@@ -290,7 +378,9 @@ impl ReadHandler for DtblRead {
                     ColumnType::Float => Cell::Float(row.f32(at)?),
                     ColumnType::Vector => Cell::Vector(row.floats::<3>(at)?),
                     ColumnType::String | ColumnType::Asset | ColumnType::AssetNoPrecache => {
-                        Cell::String(read_string(asset, row.get(at, 8)?, mem_len, "string cell").await?)
+                        Cell::String(
+                            read_string(asset, row.get(at, 8)?, mem_len, "string cell").await?,
+                        )
                     }
                 });
             }
@@ -328,16 +418,28 @@ mod tests {
     fn the_variant_comes_from_the_asset_version_and_pak_date() {
         assert_eq!(variant(0, 0).unwrap(), Version::new(0));
         assert_eq!(variant(1, CREATED_V1_1_FROM).unwrap(), Version::new(1));
-        assert_eq!(variant(1, CREATED_V1_1_FROM + 1).unwrap(), Version::with_minor(1, 1));
-        assert_eq!(variant(1, CREATED_V1_1_TO - 1).unwrap(), Version::with_minor(1, 1));
+        assert_eq!(
+            variant(1, CREATED_V1_1_FROM + 1).unwrap(),
+            Version::with_minor(1, 1)
+        );
+        assert_eq!(
+            variant(1, CREATED_V1_1_TO - 1).unwrap(),
+            Version::with_minor(1, 1)
+        );
         assert_eq!(variant(1, CREATED_V1_1_TO).unwrap(), Version::new(1));
-        assert!(matches!(variant(2, 0).unwrap_err().kind(), ErrorKind::UnsupportedVersion { .. }));
+        assert!(matches!(
+            variant(2, 0).unwrap_err().kind(),
+            ErrorKind::UnsupportedVersion { .. }
+        ));
     }
 
     #[test]
     fn both_header_layouts_parse() {
         let h = DtblHeader::parse(Version::new(0), &header(false, 3, 5, 24)).unwrap();
-        assert_eq!((h.num_columns, h.num_rows, h.columns, h.rows, h.row_stride), (3, 5, Some(0x100), Some(0x200), 24));
+        assert_eq!(
+            (h.num_columns, h.num_rows, h.columns, h.rows, h.row_stride),
+            (3, 5, Some(0x100), Some(0x200), 24)
+        );
         assert_eq!(h.column_size(), 0x10);
         let h = DtblHeader::parse(Version::with_minor(1, 1), &header(true, 3, 5, 24)).unwrap();
         assert_eq!((h.row_stride, h.column_size()), (24, 0x18));

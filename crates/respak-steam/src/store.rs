@@ -60,7 +60,11 @@ pub struct ChunkStore {
 /// What `load` fails with when the token is triggered; `get_one` turns it into [`Error::Cancelled`].
 const CANCELLED: &str = "cancelled";
 
-async fn load(inner: Arc<Inner>, depot: u32, chunk: ChunkRef) -> std::result::Result<Bytes, String> {
+async fn load(
+    inner: Arc<Inner>,
+    depot: u32,
+    chunk: ChunkRef,
+) -> std::result::Result<Bytes, String> {
     if inner.cancel.is_cancelled() {
         return Err(CANCELLED.into());
     }
@@ -76,7 +80,8 @@ async fn load(inner: Arc<Inner>, depot: u32, chunk: ChunkRef) -> std::result::Re
         fetched = inner.source.fetch(depot, &chunk) => fetched,
         () = inner.cancel.cancelled() => return Err(CANCELLED.into()),
     };
-    let (data, downloaded) = fetched.map_err(|e| format!("depot {depot} chunk {}: {e}", chunk.hex()))?;
+    let (data, downloaded) =
+        fetched.map_err(|e| format!("depot {depot} chunk {}: {e}", chunk.hex()))?;
     let count = inner.downloaded.fetch_add(1, Ordering::Relaxed) + 1;
     let bytes = inner.bytes.fetch_add(downloaded, Ordering::Relaxed) + downloaded;
     inner.events.publish(Event::Custom {
@@ -85,7 +90,9 @@ async fn load(inner: Arc<Inner>, depot: u32, chunk: ChunkRef) -> std::result::Re
         data: serde_json::json!({ "depot": depot, "chunk": chunk.hex(), "downloaded": downloaded, "chunks": count, "bytes": bytes }),
     });
     if let Err(e) = inner.cache.put(depot, &chunk, &data).await {
-        inner.events.publish(Event::Warning { message: format!("cannot cache chunk {}: {e}", chunk.hex()) });
+        inner.events.publish(Event::Warning {
+            message: format!("cannot cache chunk {}: {e}", chunk.hex()),
+        });
     }
     Ok(data)
 }
@@ -104,7 +111,9 @@ impl ChunkStore {
             bytes: AtomicU64::new(0),
             hits: AtomicU64::new(0),
         };
-        Self { inner: Arc::new(inner) }
+        Self {
+            inner: Arc::new(inner),
+        }
     }
 
     /// Makes the store stop when `cancel` is triggered and publish what it does to `events`.
@@ -119,12 +128,33 @@ impl ChunkStore {
     async fn get_one(&self, depot: u32, chunk: &ChunkRef) -> Result<Bytes> {
         let key = (depot, chunk.sha);
         let shared = {
-            let mut inflight = self.inner.inflight.lock().unwrap_or_else(|e| e.into_inner());
-            inflight.entry(key).or_insert_with(|| load(self.inner.clone(), depot, chunk.clone()).boxed().shared()).clone()
+            let mut inflight = self
+                .inner
+                .inflight
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            inflight
+                .entry(key)
+                .or_insert_with(|| {
+                    load(self.inner.clone(), depot, chunk.clone())
+                        .boxed()
+                        .shared()
+                })
+                .clone()
         };
         let result = shared.await;
-        self.inner.inflight.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
-        result.map_err(|e| if e == CANCELLED { Error::Cancelled } else { Error::Fetch(e) })
+        self.inner
+            .inflight
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&key);
+        result.map_err(|e| {
+            if e == CANCELLED {
+                Error::Cancelled
+            } else {
+                Error::Fetch(e)
+            }
+        })
     }
 
     /// The decompressed chunks `chunks`, in order.
@@ -175,7 +205,14 @@ pub(crate) mod tests {
             for (c, d) in chunks.iter_mut().zip(&data) {
                 c.adler = SteamAdler32::compute(d).0;
             }
-            Arc::new(Self { chunks, data, calls: 0.into(), active: 0.into(), peak: 0.into(), fail: false })
+            Arc::new(Self {
+                chunks,
+                data,
+                calls: 0.into(),
+                active: 0.into(),
+                peak: 0.into(),
+                fail: false,
+            })
         }
     }
 
@@ -196,7 +233,11 @@ pub(crate) mod tests {
     }
 
     fn store(fake: &Arc<Fake>, dir: &std::path::Path, parallel: usize) -> ChunkStore {
-        ChunkStore::new(ChunkCache::open(dir, 1 << 30).unwrap(), fake.clone(), parallel)
+        ChunkStore::new(
+            ChunkCache::open(dir, 1 << 30).unwrap(),
+            fake.clone(),
+            parallel,
+        )
     }
 
     #[tokio::test]
@@ -209,7 +250,14 @@ pub(crate) mod tests {
             assert_eq!(r.unwrap(), fake.data[0]);
         }
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
-        assert_eq!(store.stats(), Stats { chunks_downloaded: 1, bytes_downloaded: 50, cache_hits: 0 });
+        assert_eq!(
+            store.stats(),
+            Stats {
+                chunks_downloaded: 1,
+                bytes_downloaded: 50,
+                cache_hits: 0
+            }
+        );
     }
 
     #[tokio::test]
@@ -241,12 +289,22 @@ pub(crate) mod tests {
     async fn everything_cached_makes_no_source_call_even_in_a_new_process() {
         let fake = Fake::new(&[100; 4]);
         let dir = tempfile::tempdir().unwrap();
-        store(&fake, dir.path(), 8).get_many(1, &fake.chunks).await.unwrap();
+        store(&fake, dir.path(), 8)
+            .get_many(1, &fake.chunks)
+            .await
+            .unwrap();
         let again = Fake::new(&[100; 4]);
         let second = store(&again, dir.path(), 8);
         assert_eq!(second.get_many(1, &again.chunks).await.unwrap(), again.data);
         assert_eq!(again.calls.load(Ordering::SeqCst), 0);
-        assert_eq!(second.stats(), Stats { chunks_downloaded: 0, bytes_downloaded: 0, cache_hits: 4 });
+        assert_eq!(
+            second.stats(),
+            Stats {
+                chunks_downloaded: 0,
+                bytes_downloaded: 0,
+                cache_hits: 4
+            }
+        );
     }
 
     #[tokio::test]
@@ -255,10 +313,23 @@ pub(crate) mod tests {
         Arc::get_mut(&mut fake).unwrap().fail = true;
         let dir = tempfile::tempdir().unwrap();
         let store = store(&fake, dir.path(), 8);
-        let message = store.read(7, &fake.chunks, 0..10).await.unwrap_err().to_string();
-        assert!(message.contains("depot 7") && message.contains(&fake.chunks[0].hex()) && message.contains("CDN said no"), "{message}");
+        let message = store
+            .read(7, &fake.chunks, 0..10)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("depot 7")
+                && message.contains(&fake.chunks[0].hex())
+                && message.contains("CDN said no"),
+            "{message}"
+        );
         assert!(store.read(7, &fake.chunks, 0..10).await.is_err());
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 2, "a failure is not remembered");
+        assert_eq!(
+            fake.calls.load(Ordering::SeqCst),
+            2,
+            "a failure is not remembered"
+        );
     }
 
     #[tokio::test]
@@ -268,7 +339,10 @@ pub(crate) mod tests {
         let cancel = CancellationToken::new();
         cancel.cancel();
         let store = store(&fake, dir.path(), 8).with_cancel_events(cancel, Events::new(16));
-        assert!(matches!(store.get_many(1, &fake.chunks).await, Err(Error::Cancelled)));
+        assert!(matches!(
+            store.get_many(1, &fake.chunks).await,
+            Err(Error::Cancelled)
+        ));
         assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
     }
 
@@ -285,9 +359,15 @@ pub(crate) mod tests {
                 cancel.cancel();
             }
         });
-        assert!(matches!(store.get_many(1, &fake.chunks).await, Err(Error::Cancelled)));
+        assert!(matches!(
+            store.get_many(1, &fake.chunks).await,
+            Err(Error::Cancelled)
+        ));
         trigger.await.unwrap();
-        assert!(fake.calls.load(Ordering::SeqCst) <= 2, "only the running fetches started");
+        assert!(
+            fake.calls.load(Ordering::SeqCst) <= 2,
+            "only the running fetches started"
+        );
         assert_eq!(store.stats().chunks_downloaded, 0);
     }
 
@@ -297,7 +377,8 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let events = Events::new(16);
         let mut rx = events.subscribe();
-        let store = store(&fake, dir.path(), 1).with_cancel_events(CancellationToken::new(), events);
+        let store =
+            store(&fake, dir.path(), 1).with_cancel_events(CancellationToken::new(), events);
         store.get_many(1, &fake.chunks).await.unwrap();
         for n in 1..=3u64 {
             match rx.try_recv().unwrap() {

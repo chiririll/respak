@@ -16,7 +16,10 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use respak_core::capability::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 use respak_core::value::{BlobData, BundleData};
-use respak_core::{ConvertHandler, Cx, Data, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey};
+use respak_core::{
+    ConvertHandler, Cx, Data, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value,
+    ValueKey,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 
@@ -37,7 +40,10 @@ pub struct UimgJsonOptions {
 pub struct UimgJsonEncode;
 
 fn custom(message: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Custom { source: None, message: message.into() })
+    Error::new(ErrorKind::Custom {
+        source: None,
+        message: message.into(),
+    })
 }
 
 /// A cut-out sprite, for the image encoders.
@@ -66,7 +72,17 @@ fn safe_path(path: &str) -> Option<String> {
     let parts: Vec<String> = path
         .split(['/', '\\'])
         .filter(|p| !matches!(*p, "" | "." | ".."))
-        .map(|p| p.chars().map(|c| if c.is_control() || "<>:\"|?*".contains(c) { '_' } else { c }).collect())
+        .map(|p| {
+            p.chars()
+                .map(|c| {
+                    if c.is_control() || "<>:\"|?*".contains(c) {
+                        '_'
+                    } else {
+                        c
+                    }
+                })
+                .collect()
+        })
         .collect();
     (!parts.is_empty()).then(|| parts.join("/"))
 }
@@ -86,8 +102,16 @@ fn scaled(rect: Rect, header: (u32, u32), tex: (u32, u32)) -> Option<Rect> {
     let sx = |v: u32| (u64::from(v) * u64::from(tex.0)).div_ceil(u64::from(header.0)) as u32;
     let sy = |v: u32| (u64::from(v) * u64::from(tex.1)).div_ceil(u64::from(header.1)) as u32;
     let (x, y) = (sx(rect.x), sy(rect.y));
-    let (width, height) = (sx(rect.width).min(tex.0.saturating_sub(x)), sy(rect.height).min(tex.1.saturating_sub(y)));
-    (width != 0 && height != 0).then_some(Rect { x, y, width, height })
+    let (width, height) = (
+        sx(rect.width).min(tex.0.saturating_sub(x)),
+        sy(rect.height).min(tex.1.saturating_sub(y)),
+    );
+    (width != 0 && height != 0).then_some(Rect {
+        x,
+        y,
+        width,
+        height,
+    })
 }
 
 /// Puts a converted image into the bundle at `base`; the name of the file, or `None`.
@@ -99,7 +123,11 @@ fn place(value: &Value, base: &str, items: &mut Vec<(String, Value)>, cx: &Cx) -
         return Some(base.to_owned());
     }
     value.as_blob()?;
-    let ext = cx.mediator.extension_of(value.format().name()).unwrap_or(value.format().name()).to_owned();
+    let ext = cx
+        .mediator
+        .extension_of(value.format().name())
+        .unwrap_or(value.format().name())
+        .to_owned();
     let path = format!("{base}.{ext}");
     items.push((path.clone(), value.clone()));
     Some(path)
@@ -118,12 +146,18 @@ fn layout(s: &Sprite) -> Json {
 #[async_trait]
 impl ConvertHandler for UimgJsonEncode {
     async fn convert(&self, source: Value, target: &Target, cx: &Cx) -> Result<Value> {
-        let uimg = source.downcast_ref::<UimgAsset>().ok_or_else(|| custom("uimg.json must be made from a uimg"))?;
+        let uimg = source
+            .downcast_ref::<UimgAsset>()
+            .ok_or_else(|| custom("uimg.json must be made from a uimg"))?;
         let options = TypedTarget::<UimgJsonOptions>::parse(target)?;
         let image = &options.options().image;
         let image_target = Target {
             format: FormatId::new(image.format.clone()),
-            options: if image.options.is_empty() { Json::Null } else { Json::Object(image.options.clone()) },
+            options: if image.options.is_empty() {
+                Json::Null
+            } else {
+                Json::Object(image.options.clone())
+            },
             via: Vec::new(),
         };
         let h = uimg.header();
@@ -131,7 +165,11 @@ impl ConvertHandler for UimgJsonEncode {
         let mut items: Vec<(String, Value)> = Vec::new();
 
         // The atlas.
-        let atlas = match cx.mediator.convert(source.clone(), image_target.clone(), cx).await {
+        let atlas = match cx
+            .mediator
+            .convert(source.clone(), image_target.clone(), cx)
+            .await
+        {
             Ok(value) => {
                 let file = place(&value, "atlas", &mut items, cx);
                 if file.is_none() {
@@ -141,7 +179,10 @@ impl ConvertHandler for UimgJsonEncode {
             }
             Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
             Err(e) => {
-                cx.warn(format!("uimg {label}: the atlas {} is skipped: {e}", hex(h.atlas_guid)));
+                cx.warn(format!(
+                    "uimg {label}: the atlas {} is skipped: {e}",
+                    hex(h.atlas_guid)
+                ));
                 None
             }
         };
@@ -174,9 +215,13 @@ impl ConvertHandler for UimgJsonEncode {
             if let Some((tw, th, rgba)) = &pixels {
                 let cut = rect.and_then(|r| scaled(r, (h.width, h.height), (*tw, *th)));
                 match cut {
-                    None => cx.warn(format!("uimg {label}: sprite {index} ({}) is empty and is skipped", s.path)),
+                    None => cx.warn(format!(
+                        "uimg {label}: sprite {index} ({}) is empty and is skipped",
+                        s.path
+                    )),
                     Some(cut) => {
-                        let mut path = safe_path(&s.path).unwrap_or_else(|| format!("0x{:08X}", s.hash));
+                        let mut path =
+                            safe_path(&s.path).unwrap_or_else(|| format!("0x{:08X}", s.hash));
                         if !used.insert(path.to_lowercase()) {
                             path = format!("{path}_{index}");
                             used.insert(path.to_lowercase());
@@ -190,23 +235,39 @@ impl ConvertHandler for UimgJsonEncode {
                             mip_count: 1,
                             format: PixelFormat::Rgba8,
                         };
-                        let bitmap = BitmapBuf::new(info, vec![vec![Bytes::from(crop(rgba, *tw, cut))]])?;
-                        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new("uimg.sprite"), &json!({ "index": index }));
-                        let sprite: Value = Arc::new(SpriteImage { format: FormatId::new("uimg.sprite"), key, bitmap });
+                        let bitmap =
+                            BitmapBuf::new(info, vec![vec![Bytes::from(crop(rgba, *tw, cut))]])?;
+                        let key = ValueKey::converted(
+                            Arc::new(source.key().clone()),
+                            FormatId::new("uimg.sprite"),
+                            &json!({ "index": index }),
+                        );
+                        let sprite: Value = Arc::new(SpriteImage {
+                            format: FormatId::new("uimg.sprite"),
+                            key,
+                            bitmap,
+                        });
                         match cx.mediator.convert(sprite, image_target.clone(), cx).await {
                             Ok(value) => {
                                 file = place(&value, &format!("sprites/{path}"), &mut items, cx);
                                 if file.is_none() {
-                                    cx.warn(format!("uimg {label}: sprite {index} ({}) did not produce a file", s.path));
+                                    cx.warn(format!(
+                                        "uimg {label}: sprite {index} ({}) did not produce a file",
+                                        s.path
+                                    ));
                                 }
                             }
                             Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
-                            Err(e) => cx.warn(format!("uimg {label}: sprite {index} ({}) is skipped: {e}", s.path)),
+                            Err(e) => cx.warn(format!(
+                                "uimg {label}: sprite {index} ({}) is skipped: {e}",
+                                s.path
+                            )),
                         }
                     }
                 }
             }
-            let (x, y, width, height) = rect.map_or((0, 0, 0, 0), |r| (r.x, r.y, r.width, r.height));
+            let (x, y, width, height) =
+                rect.map_or((0, 0, 0, 0), |r| (r.x, r.y, r.width, r.height));
             sprites.push(json!({
                 "index": index,
                 "path": s.path,
@@ -231,10 +292,19 @@ impl ConvertHandler for UimgJsonEncode {
             "unkCount": h.unk_count,
             "sprites": sprites,
         });
-        let bytes = serde_json::to_vec_pretty(&document).map_err(|e| Error::custom("uimg.json", e))?;
+        let bytes =
+            serde_json::to_vec_pretty(&document).map_err(|e| Error::custom("uimg.json", e))?;
 
-        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new("uimg.json"), options.normalized());
-        let main: Value = Arc::new(BlobData::with_format(FormatId::new("uimg.json"), Bytes::from(bytes), key.clone()));
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            FormatId::new("uimg.json"),
+            options.normalized(),
+        );
+        let main: Value = Arc::new(BlobData::with_format(
+            FormatId::new("uimg.json"),
+            Bytes::from(bytes),
+            key.clone(),
+        ));
         items.insert(0, ("uimg.json".to_owned(), main));
         Ok(Arc::new(BundleData::named(items, key)))
     }
@@ -253,11 +323,53 @@ mod tests {
 
     #[test]
     fn rects_follow_the_texture_size() {
-        let r = Rect { x: 4, y: 8, width: 8, height: 8 };
+        let r = Rect {
+            x: 4,
+            y: 8,
+            width: 8,
+            height: 8,
+        };
         assert_eq!(scaled(r, (64, 64), (64, 64)), Some(r));
-        assert_eq!(scaled(r, (64, 64), (128, 128)), Some(Rect { x: 8, y: 16, width: 16, height: 16 }));
+        assert_eq!(
+            scaled(r, (64, 64), (128, 128)),
+            Some(Rect {
+                x: 8,
+                y: 16,
+                width: 16,
+                height: 16
+            })
+        );
         // Cut at the texture's edge.
-        assert_eq!(scaled(Rect { x: 60, y: 0, width: 8, height: 8 }, (64, 64), (64, 64)), Some(Rect { x: 60, y: 0, width: 4, height: 8 }));
-        assert_eq!(scaled(Rect { x: 70, y: 0, width: 8, height: 8 }, (64, 64), (64, 64)), None);
+        assert_eq!(
+            scaled(
+                Rect {
+                    x: 60,
+                    y: 0,
+                    width: 8,
+                    height: 8
+                },
+                (64, 64),
+                (64, 64)
+            ),
+            Some(Rect {
+                x: 60,
+                y: 0,
+                width: 4,
+                height: 8
+            })
+        );
+        assert_eq!(
+            scaled(
+                Rect {
+                    x: 70,
+                    y: 0,
+                    width: 8,
+                    height: 8
+                },
+                (64, 64),
+                (64, 64)
+            ),
+            None
+        );
     }
 }

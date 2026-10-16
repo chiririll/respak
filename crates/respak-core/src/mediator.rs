@@ -56,7 +56,11 @@ struct Scan<'a> {
 impl Mediator {
     /// A mediator over a checked registry.
     pub fn new(registry: Registry) -> Self {
-        Self { registry: Arc::new(registry), events: Events::new(DEFAULT_EVENT_CAPACITY), middleware: crate::middleware::builtins().into() }
+        Self {
+            registry: Arc::new(registry),
+            events: Events::new(DEFAULT_EVENT_CAPACITY),
+            middleware: crate::middleware::builtins().into(),
+        }
     }
 
     /// Replaces the event channel (the builder's `event_capacity`).
@@ -92,7 +96,12 @@ impl Mediator {
         self.registry
             .formats
             .iter()
-            .flat_map(|f| f.read_edges.iter().filter(|e| e.from == from).map(move |e| (f, e)))
+            .flat_map(|f| {
+                f.read_edges
+                    .iter()
+                    .filter(|e| e.from == from)
+                    .map(move |e| (f, e))
+            })
             .collect()
     }
 
@@ -100,23 +109,44 @@ impl Mediator {
     /// matched (what `identify` needs); with `full` true both phases are scored.
     async fn scan<'a>(&'a self, source: &Value, cx: &Cx, full: bool) -> Result<Scan<'a>> {
         let candidates = self.candidates(source.format().name());
-        let header_len = candidates.iter().map(|(_, e)| e.handler.header_len()).max().unwrap_or(0);
+        let header_len = candidates
+            .iter()
+            .map(|(_, e)| e.handler.header_len())
+            .max()
+            .unwrap_or(0);
         let (header, len) = probe_data(source, header_len).await?;
         let extension = extension_of_key(source.key());
-        let probe = Probe { source, extension: extension.as_deref(), len, header: &header };
+        let probe = Probe {
+            source,
+            extension: extension.as_deref(),
+            len,
+            header: &header,
+        };
 
-        let (by_ext, others): (Vec<_>, Vec<_>) = candidates
-            .into_iter()
-            .partition(|(f, _)| extension.as_deref().is_some_and(|x| f.extensions.contains(&x)));
+        let (by_ext, others): (Vec<_>, Vec<_>) = candidates.into_iter().partition(|(f, _)| {
+            extension
+                .as_deref()
+                .is_some_and(|x| f.extensions.contains(&x))
+        });
 
         let mut first = score_all(&by_ext, &probe, cx).await?;
         if first.is_empty() {
             let primary = score_all(&others, &probe, cx).await?;
-            return Ok(Scan { primary: sorted(primary), rest: Vec::new() });
+            return Ok(Scan {
+                primary: sorted(primary),
+                rest: Vec::new(),
+            });
         }
-        let rest = if full { score_all(&others, &probe, cx).await? } else { Vec::new() };
+        let rest = if full {
+            score_all(&others, &probe, cx).await?
+        } else {
+            Vec::new()
+        };
         first = sorted(first);
-        Ok(Scan { primary: first, rest: sorted(rest) })
+        Ok(Scan {
+            primary: first,
+            rest: sorted(rest),
+        })
     }
 
     /// Scores read edges from `source`'s format and applies the winner.
@@ -125,8 +155,16 @@ impl Mediator {
     /// score wins; a tie is `AmbiguousFormat`, no match `UnknownFormat`.
     pub async fn identify(&self, source: Value, cx: &Cx) -> Result<Value> {
         let scan = self.scan(&source, cx, false).await?;
-        let top = scan.primary.first().map(|h| h.2.score).ok_or_else(|| Error::new(ErrorKind::UnknownFormat))?;
-        let mut winners: Vec<_> = scan.primary.into_iter().filter(|h| h.2.score == top).collect();
+        let top = scan
+            .primary
+            .first()
+            .map(|h| h.2.score)
+            .ok_or_else(|| Error::new(ErrorKind::UnknownFormat))?;
+        let mut winners: Vec<_> = scan
+            .primary
+            .into_iter()
+            .filter(|h| h.2.score == top)
+            .collect();
         if winners.len() > 1 {
             return Err(Error::new(ErrorKind::AmbiguousFormat {
                 candidates: winners.iter().map(|(f, _, _)| f.name.to_owned()).collect(),
@@ -146,12 +184,23 @@ impl Mediator {
             .into_iter()
             .find(|(f, _)| f.name == format.name())
             .ok_or_else(|| {
-                Error::new(ErrorKind::NoPath { from: source.format().to_string(), to: format.to_string() })
+                Error::new(ErrorKind::NoPath {
+                    from: source.format().to_string(),
+                    to: format.to_string(),
+                })
             })?;
         let (header, len) = probe_data(&source, edge.handler.header_len()).await?;
         let extension = extension_of_key(source.key());
-        let probe = Probe { source: &source, extension: extension.as_deref(), len, header: &header };
-        let mut detected = edge.handler.score(&probe, cx).await?.unwrap_or(Detected { score: 0, version: None });
+        let probe = Probe {
+            source: &source,
+            extension: extension.as_deref(),
+            len,
+            header: &header,
+        };
+        let mut detected = edge.handler.score(&probe, cx).await?.unwrap_or(Detected {
+            score: 0,
+            version: None,
+        });
         if let Some(v) = format.version() {
             detected.version = Some(v);
         }
@@ -172,7 +221,10 @@ impl Mediator {
                 if let Some(v) = d.version {
                     format = format.with_version(v);
                 }
-                Hit { format, score: d.score }
+                Hit {
+                    format,
+                    score: d.score,
+                }
             })
             .collect())
     }
@@ -186,7 +238,12 @@ impl Mediator {
         Next::new(&self.middleware, self).run(&req, cx).await
     }
 
-    pub(crate) async fn convert_unwrapped(&self, source: Value, to: Target, cx: &Cx) -> Result<Value> {
+    pub(crate) async fn convert_unwrapped(
+        &self,
+        source: Value,
+        to: Target,
+        cx: &Cx,
+    ) -> Result<Value> {
         let target = to.format.name();
         let mut value = source;
         if value.format().name() == target {
@@ -204,7 +261,11 @@ impl Mediator {
             let next = if i == last {
                 to.clone()
             } else {
-                Target { format: FormatId::new(step.to.clone()), options: serde_json::Value::Null, via: Vec::new() }
+                Target {
+                    format: FormatId::new(step.to.clone()),
+                    options: serde_json::Value::Null,
+                    via: Vec::new(),
+                }
             };
             value = handler.convert(value, &next, cx).await?;
         }
@@ -212,8 +273,12 @@ impl Mediator {
     }
 
     fn plan_inner(&self, from: &FormatId, to: &str, via: &[String]) -> Result<graph::Planned> {
-        let planned = graph::plan(&self.registry, from.name(), to, via)
-            .ok_or_else(|| Error::new(ErrorKind::NoPath { from: from.to_string(), to: to.to_owned() }))?;
+        let planned = graph::plan(&self.registry, from.name(), to, via).ok_or_else(|| {
+            Error::new(ErrorKind::NoPath {
+                from: from.to_string(),
+                to: to.to_owned(),
+            })
+        })?;
         if planned.alternatives > 0 {
             self.publish(Event::Warning {
                 message: format!(
@@ -246,7 +311,10 @@ impl Mediator {
     /// Whether values of `format` provide the [`Container`](crate::capability::Container) capability.
     pub fn provides_container(&self, format: &str) -> bool {
         let id = crate::plugin::CapId::of::<dyn crate::capability::Container>();
-        self.registry.formats.iter().any(|f| f.name == format && f.provides.contains(&id))
+        self.registry
+            .formats
+            .iter()
+            .any(|f| f.name == format && f.provides.contains(&id))
     }
 
     /// The whole graph as data.
@@ -256,7 +324,11 @@ impl Mediator {
 
     /// The extension output files of `format` get (its first registered extension).
     pub fn extension_of(&self, format: &str) -> Option<&str> {
-        self.registry.formats.iter().find(|f| f.name == format).and_then(|f| f.extensions.first().copied())
+        self.registry
+            .formats
+            .iter()
+            .find(|f| f.name == format)
+            .and_then(|f| f.extensions.first().copied())
     }
 }
 
@@ -266,7 +338,11 @@ fn sorted(mut hits: Vec<Scored<'_>>) -> Vec<Scored<'_>> {
     hits
 }
 
-async fn score_all<'a>(candidates: &[Candidate<'a>], probe: &Probe<'_>, cx: &Cx) -> Result<Vec<Scored<'a>>> {
+async fn score_all<'a>(
+    candidates: &[Candidate<'a>],
+    probe: &Probe<'_>,
+    cx: &Cx,
+) -> Result<Vec<Scored<'a>>> {
     let mut hits = Vec::new();
     for &(f, e) in candidates {
         if let Some(d) = e.handler.score(probe, cx).await? {
@@ -287,7 +363,15 @@ async fn probe_data(source: &Value, header_len: usize) -> Result<(Vec<u8>, Optio
         None => file.op.stat(&file.path).await?.content_length(),
     };
     let n = (header_len as u64).min(len);
-    let header = if n == 0 { Vec::new() } else { file.op.read_with(&file.path).range(start..start + n).await?.to_vec() };
+    let header = if n == 0 {
+        Vec::new()
+    } else {
+        file.op
+            .read_with(&file.path)
+            .range(start..start + n)
+            .await?
+            .to_vec()
+    };
     Ok((header, Some(len)))
 }
 
@@ -336,13 +420,20 @@ struct Limits {
 impl Cx {
     /// A context with nothing mounted yet. One context serves one `Engine` call.
     pub fn new(mediator: Mediator, input: Operator, output: Operator) -> Self {
-        Self { mediator, input, output, mounts: Arc::default(),
+        Self {
+            mediator,
+            input,
+            output,
+            mounts: Arc::default(),
             written: Arc::default(),
             linked: Arc::default(),
             cache: None,
             chain: Arc::default(),
             cancel: CancellationToken::new(),
-            limits: Arc::new(Limits { blocking: Semaphore::new(Semaphore::MAX_PERMITS), io: Semaphore::new(Semaphore::MAX_PERMITS) }),
+            limits: Arc::new(Limits {
+                blocking: Semaphore::new(Semaphore::MAX_PERMITS),
+                io: Semaphore::new(Semaphore::MAX_PERMITS),
+            }),
         }
     }
 
@@ -377,7 +468,12 @@ impl Cx {
     /// `cache_version`. `None` if the host configured no cache; plugins must work without it.
     pub fn cache(&self, plugin: &str) -> Option<crate::cache::PluginCache> {
         let op = self.cache.clone()?;
-        Some(crate::cache::PluginCache::new(op, plugin, self.mediator.cache_version(plugin), self.mediator.clone()))
+        Some(crate::cache::PluginCache::new(
+            op,
+            plugin,
+            self.mediator.cache_version(plugin),
+            self.mediator.clone(),
+        ))
     }
 
     /// The requests being served on the way to this one, outermost first.
@@ -401,7 +497,10 @@ impl Cx {
     /// Bounds `blocking` and `io` to the given numbers of concurrent tasks.
     pub fn with_limits(mut self, blocking: usize, io: usize) -> Self {
         let clamp = |n: usize| n.clamp(1, Semaphore::MAX_PERMITS);
-        self.limits = Arc::new(Limits { blocking: Semaphore::new(clamp(blocking)), io: Semaphore::new(clamp(io)) });
+        self.limits = Arc::new(Limits {
+            blocking: Semaphore::new(clamp(blocking)),
+            io: Semaphore::new(clamp(io)),
+        });
         self
     }
 
@@ -415,7 +514,9 @@ impl Cx {
 
     /// Publishes `Event::Warning`.
     pub fn warn(&self, message: impl Into<String>) {
-        self.mediator.publish(Event::Warning { message: message.into() });
+        self.mediator.publish(Event::Warning {
+            message: message.into(),
+        });
     }
 
     /// Runs CPU-heavy or blocking `f` on the blocking pool, bounded by `blocking_limit`.
@@ -425,9 +526,17 @@ impl Cx {
         T: Send + 'static,
     {
         self.check_cancelled()?;
-        let _permit = self.limits.blocking.acquire().await.expect("semaphore is never closed");
+        let _permit = self
+            .limits
+            .blocking
+            .acquire()
+            .await
+            .expect("semaphore is never closed");
         tokio::task::spawn_blocking(f).await.map_err(|e| {
-            Error::new(ErrorKind::Custom { source: None, message: format!("blocking task failed: {e}") })
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: format!("blocking task failed: {e}"),
+            })
         })
     }
 
@@ -438,7 +547,12 @@ impl Cx {
         T: Send,
     {
         self.check_cancelled()?;
-        let _permit = self.limits.io.acquire().await.expect("semaphore is never closed");
+        let _permit = self
+            .limits
+            .io
+            .acquire()
+            .await
+            .expect("semaphore is never closed");
         Ok(fut.await)
     }
 
@@ -447,7 +561,9 @@ impl Cx {
         let mut written = self.written.lock().unwrap();
         match written.get(path) {
             Some(k) if *k == key.to_string() => Ok(false),
-            Some(_) => Err(Error::new(ErrorKind::OutputConflict { path: path.to_owned() })),
+            Some(_) => Err(Error::new(ErrorKind::OutputConflict {
+                path: path.to_owned(),
+            })),
             None => {
                 written.insert(path.to_owned(), key.to_string());
                 Ok(true)
@@ -460,7 +576,12 @@ impl Cx {
     /// The first writer of a path wins. Writing the same key to the same path again is skipped
     /// (`Ok`, nothing written); a different key is `OutputConflict`. Returns whether the file
     /// was written.
-    pub async fn write(&self, path: &str, key: &crate::value::ValueKey, bytes: bytes::Bytes) -> Result<bool> {
+    pub async fn write(
+        &self,
+        path: &str,
+        key: &crate::value::ValueKey,
+        bytes: bytes::Bytes,
+    ) -> Result<bool> {
         if !self.claim(path, key)? {
             return Ok(false);
         }
@@ -469,7 +590,9 @@ impl Cx {
             self.written.lock().unwrap().remove(path);
             return Err(e.into());
         }
-        self.mediator.publish(Event::OutputWritten { path: path.to_owned() });
+        self.mediator.publish(Event::OutputWritten {
+            path: path.to_owned(),
+        });
         Ok(true)
     }
 
@@ -490,7 +613,9 @@ impl Cx {
             self.written.lock().unwrap().remove(path);
             return Err(e);
         }
-        self.mediator.publish(Event::OutputWritten { path: path.to_owned() });
+        self.mediator.publish(Event::OutputWritten {
+            path: path.to_owned(),
+        });
         Ok(true)
     }
 

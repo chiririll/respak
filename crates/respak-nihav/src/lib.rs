@@ -41,14 +41,20 @@ impl Plugin for NihavPlugin {
             .provides::<dyn Video>()
             .provides::<dyn Audio>();
         let codecs = || -> Vec<Arc<dyn Codec>> {
-            vec![Arc::new(Mjpeg), Arc::new(Cinepak), Arc::new(Zmbv), Arc::new(RawVideo)]
+            vec![
+                Arc::new(Mjpeg),
+                Arc::new(Cinepak),
+                Arc::new(Zmbv),
+                Arc::new(RawVideo),
+            ]
         };
-        let mut video_file = |name: &'static str, label: &'static str, container: NihavContainer| {
-            r.format(name)
-                .label(label)
-                .extensions([name])
-                .from_cap::<dyn Video>(VideoFileEncode::new(Arc::new(container), codecs()));
-        };
+        let mut video_file =
+            |name: &'static str, label: &'static str, container: NihavContainer| {
+                r.format(name)
+                    .label(label)
+                    .extensions([name])
+                    .from_cap::<dyn Video>(VideoFileEncode::new(Arc::new(container), codecs()));
+            };
         video_file("avi", "AVI video", NihavContainer::avi());
         video_file("mov", "QuickTime video", NihavContainer::mov());
         video_file("y4m", "YUV4MPEG2 video", NihavContainer::y4m());
@@ -57,7 +63,10 @@ impl Plugin for NihavPlugin {
 
 /// A NihAV failure as an error that says which step failed.
 fn backend(step: &str, e: impl Debug) -> Error {
-    Error::new(ErrorKind::Custom { source: None, message: format!("{step}: {e:?}") })
+    Error::new(ErrorKind::Custom {
+        source: None,
+        message: format!("{step}: {e:?}"),
+    })
 }
 
 /// Runs `f`, turning a panic inside NihAV into an error.

@@ -10,9 +10,14 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::{BoxStream, StreamExt};
-use respak_core::capability::{Audio, AudioChunk, AudioTrackInfo, FrameFormat, Video, VideoFrame, VideoInfo};
+use respak_core::capability::{
+    Audio, AudioChunk, AudioTrackInfo, FrameFormat, Video, VideoFrame, VideoInfo,
+};
 use respak_core::value::FileData;
-use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version};
+use respak_core::{
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
+};
 
 use crate::bik_decode;
 
@@ -20,7 +25,9 @@ use crate::bik_decode;
 const STREAM_BUFFER: usize = 4;
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// The fixed part of a Bink header.
@@ -70,7 +77,9 @@ impl BikHeader {
         if !revision.is_ascii_lowercase() {
             return None;
         }
-        let field = |at: usize| u32::from_le_bytes([header[at], header[at + 1], header[at + 2], header[at + 3]]);
+        let field = |at: usize| {
+            u32::from_le_bytes([header[at], header[at + 1], header[at + 2], header[at + 3]])
+        };
         let parsed = Self {
             major,
             revision,
@@ -110,9 +119,14 @@ impl Detect for BikRead {
     /// `UnsupportedVersion` instead of `UnknownFormat`. `Version { major: 2, minor: letter - 'a' }`
     /// (`major: 1` for Bink 1).
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(header) = BikHeader::parse(input.header) else { return Ok(None) };
+        let Some(header) = BikHeader::parse(input.header) else {
+            return Ok(None);
+        };
         let ext = u32::from(matches!(input.extension, Some("bik" | "bk2")));
-        Ok(Some(Detected { score: 12 + ext, version: Some(header.version()) }))
+        Ok(Some(Detected {
+            score: 12 + ext,
+            version: Some(header.version()),
+        }))
     }
 
     fn header_len(&self) -> usize {
@@ -132,16 +146,20 @@ impl ReadHandler for BikRead {
                 version: format!("Bink 1 (BIK{letter})"),
             }));
         }
-        let file = source
-            .downcast_ref::<FileData>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "bik must be read from a file".into() }))?;
+        let file = source.downcast_ref::<FileData>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "bik must be read from a file".into(),
+            })
+        })?;
         let reader = file.op.read_with(&file.path);
         let bytes = match &file.range {
             Some(r) => reader.range(r.clone()).await?,
             None => reader.await?,
         }
         .to_bytes();
-        let header = BikHeader::parse(&bytes).ok_or_else(|| corrupt("bik: the header is not a Bink 2 header"))?;
+        let header = BikHeader::parse(&bytes)
+            .ok_or_else(|| corrupt("bik: the header is not a Bink 2 header"))?;
         // The demuxer sizes its frame index from the header without checking the file, so a
         // damaged frame count would ask for gigabytes (and abort, which cannot be caught).
         // The index (4 bytes per frame, plus one) is part of the file.
@@ -239,7 +257,10 @@ fn spawn_stream<T: Send + 'static>(
             let _ = tx.send(Err(e)).await;
         }
     });
-    futures::stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|item| (item, rx)) }).boxed()
+    futures::stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|item| (item, rx))
+    })
+    .boxed()
 }
 
 #[async_trait]
@@ -250,9 +271,15 @@ impl Video for BikFile {
 
     /// Decodes with NihAV on the blocking pool; `Err(Cancelled)` ends the stream if the token
     /// fires; a truncated file yields its frames, then `Corrupt`.
-    async fn frames(&self, format: FrameFormat, cx: &Cx) -> Result<BoxStream<'static, Result<VideoFrame>>> {
+    async fn frames(
+        &self,
+        format: FrameFormat,
+        cx: &Cx,
+    ) -> Result<BoxStream<'static, Result<VideoFrame>>> {
         let bytes = self.bytes.clone();
-        Ok(spawn_stream(cx, move |sink| bik_decode::decode_video(&bytes, format, sink)))
+        Ok(spawn_stream(cx, move |sink| {
+            bik_decode::decode_video(&bytes, format, sink)
+        }))
     }
 }
 
@@ -270,7 +297,9 @@ impl Audio for BikFile {
             }));
         }
         let bytes = self.bytes.clone();
-        Ok(spawn_stream(cx, move |sink| bik_decode::decode_audio(&bytes, track, sink)))
+        Ok(spawn_stream(cx, move |sink| {
+            bik_decode::decode_audio(&bytes, track, sink)
+        }))
     }
 }
 
@@ -336,7 +365,11 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let stopped_at = produced.load(Ordering::SeqCst);
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        assert_eq!(produced.load(Ordering::SeqCst), stopped_at, "still decoding after the drop");
+        assert_eq!(
+            produced.load(Ordering::SeqCst),
+            stopped_at,
+            "still decoding after the drop"
+        );
         assert!(stopped_at < 50, "{stopped_at}");
     }
 
@@ -377,15 +410,26 @@ mod tests {
     #[test]
     fn the_header_fields_are_read_from_their_offsets() {
         let mut h = b"KB2i".to_vec();
-        for v in [1000u32, 210, 100, 210, 1920, 1080, 10_000_000, 333_333, 0x20, 2] {
+        for v in [
+            1000u32, 210, 100, 210, 1920, 1080, 10_000_000, 333_333, 0x20, 2,
+        ] {
             h.extend(v.to_le_bytes());
         }
         let parsed = BikHeader::parse(&h).unwrap();
         assert_eq!(
-            (parsed.major, parsed.revision, parsed.size, parsed.frame_count, parsed.largest_frame),
+            (
+                parsed.major,
+                parsed.revision,
+                parsed.size,
+                parsed.frame_count,
+                parsed.largest_frame
+            ),
             (2, b'i', 1000, 210, 100)
         );
-        assert_eq!((parsed.width, parsed.height, parsed.fps_num, parsed.fps_den), (1920, 1080, 10_000_000, 333_333));
+        assert_eq!(
+            (parsed.width, parsed.height, parsed.fps_num, parsed.fps_den),
+            (1920, 1080, 10_000_000, 333_333)
+        );
         assert_eq!((parsed.flags, parsed.audio_tracks), (0x20, 2));
         assert_eq!(parsed.version(), Version::with_minor(2, 8));
     }

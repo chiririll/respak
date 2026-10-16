@@ -9,8 +9,9 @@ use opendal::{services::Memory, Operator};
 use respak_core::capability::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 use respak_core::value::BlobData;
 use respak_core::{
-    magic, ConvertHandler, ConvertRequest, Cx, Data, Detect, Detected, Engine, ErrorKind, FormatId, Mediator,
-    OutputResult, Plugin, Probe, ReadHandler, Registry, Result, Target, Value, ValueKey, Version,
+    magic, ConvertHandler, ConvertRequest, Cx, Data, Detect, Detected, Engine, ErrorKind, FormatId,
+    Mediator, OutputResult, Plugin, Probe, ReadHandler, Registry, Result, Target, Value, ValueKey,
+    Version,
 };
 
 // ---- fixtures -------------------------------------------------------------------------------
@@ -63,7 +64,14 @@ pub struct MagicRead {
 
 impl MagicRead {
     pub fn new(name: &'static str, magic: &'static [u8], score: u32) -> Self {
-        Self { name, magic, score, version: None, header_len: magic.len(), seen: Default::default() }
+        Self {
+            name,
+            magic,
+            score,
+            version: None,
+            header_len: magic.len(),
+            seen: Default::default(),
+        }
     }
 }
 
@@ -71,7 +79,10 @@ impl MagicRead {
 impl Detect for MagicRead {
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
         self.seen.lock().unwrap().push(input.header.len());
-        Ok(magic(input.header, 0, self.magic).then_some(Detected { score: self.score, version: self.version }))
+        Ok(magic(input.header, 0, self.magic).then_some(Detected {
+            score: self.score,
+            version: self.version,
+        }))
     }
     fn header_len(&self) -> usize {
         self.header_len
@@ -98,8 +109,16 @@ pub struct Enc {
 #[async_trait]
 impl ConvertHandler for Enc {
     async fn convert(&self, source: Value, _target: &Target, _cx: &Cx) -> Result<Value> {
-        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new(self.name), &serde_json::Value::Null);
-        Ok(Arc::new(BlobData::with_format(FormatId::new(self.name), Bytes::from(self.tag), key)))
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            FormatId::new(self.name),
+            &serde_json::Value::Null,
+        );
+        Ok(Arc::new(BlobData::with_format(
+            FormatId::new(self.name),
+            Bytes::from(self.tag),
+            key,
+        )))
     }
 }
 
@@ -118,12 +137,18 @@ impl Plugin for TestPlugin {
 }
 
 pub fn register_ab(r: &mut Registry) {
-    r.format("alpha").from("file", MagicRead::new("alpha", b"AAAA", 10)).extensions(["aa"]).provides::<dyn Bitmap>();
+    r.format("alpha")
+        .from("file", MagicRead::new("alpha", b"AAAA", 10))
+        .extensions(["aa"])
+        .provides::<dyn Bitmap>();
     r.format("beta")
         .from("file", MagicRead::new("beta", b"BBBB", 10))
         .extensions(["bb"])
         .provides::<dyn Bitmap>()
-        .from_cap::<dyn Bitmap>(Enc { name: "beta", tag: "beta-bitmap" });
+        .from_cap::<dyn Bitmap>(Enc {
+            name: "beta",
+            tag: "beta-bitmap",
+        });
     r.format("gamma").extensions(["gg"]);
 }
 
@@ -142,10 +167,17 @@ pub fn env_with(register: fn(&mut Registry)) -> Env {
     let engine = Engine::builder()
         .input(input.clone())
         .output(output.clone())
-        .plugin(TestPlugin { id: "test", register })
+        .plugin(TestPlugin {
+            id: "test",
+            register,
+        })
         .build()
         .unwrap();
-    Env { engine, input, output }
+    Env {
+        engine,
+        input,
+        output,
+    }
 }
 
 pub fn request(json: &str) -> ConvertRequest {
@@ -153,7 +185,9 @@ pub fn request(json: &str) -> ConvertRequest {
 }
 
 pub fn one(from: &str, to: &str) -> ConvertRequest {
-    request(&format!(r#"{{"version":1,"outputs":[{{"from":"{from}","to":{{"type":"{to}"}}}}]}}"#))
+    request(&format!(
+        r#"{{"version":1,"outputs":[{{"from":"{from}","to":{{"type":"{to}"}}}}]}}"#
+    ))
 }
 
 pub fn error_kind(result: &OutputResult) -> &ErrorKind {
@@ -168,4 +202,3 @@ pub fn cx_for(registry: Registry) -> (Mediator, Cx) {
     let cx = Cx::new(mediator.clone(), mem(), mem());
     (mediator, cx)
 }
-

@@ -10,7 +10,10 @@ use bytes::Bytes;
 use futures::StreamExt;
 use respak_core::capability::FrameFormat;
 use respak_core::value::{BlobData, BundleData};
-use respak_core::{ConvertHandler, Cx, Error, ErrorKind, Event, FormatId, Result, Target, TypedTarget, Value, ValueKey};
+use respak_core::{
+    ConvertHandler, Cx, Error, ErrorKind, Event, FormatId, Result, Target, TypedTarget, Value,
+    ValueKey,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::png::encode_rgba8;
@@ -35,7 +38,11 @@ pub struct FramesOptions {
 
 impl Default for FramesOptions {
     fn default() -> Self {
-        Self { from: 1, step: 1, count: None }
+        Self {
+            from: 1,
+            step: 1,
+            count: None,
+        }
     }
 }
 
@@ -50,11 +57,19 @@ impl ConvertHandler for FramesEncode {
         let video = video_of(&source)?;
         let select = options.options();
         let info = video.info();
-        let key = ValueKey::converted(Arc::new(source.key().clone()), target.format.unversioned(), options.normalized());
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            target.format.unversioned(),
+            options.normalized(),
+        );
         let png = FormatId::new("png");
         let expected = info.width as usize * info.height as usize * 4;
 
-        let invalid = |message: &str| Error::new(ErrorKind::InvalidOptions { message: message.into() });
+        let invalid = |message: &str| {
+            Error::new(ErrorKind::InvalidOptions {
+                message: message.into(),
+            })
+        };
         if select.from == 0 {
             return Err(invalid("`from` counts frames from 1"));
         }
@@ -91,7 +106,9 @@ impl ConvertHandler for FramesEncode {
                 }
             };
             let (width, height) = (info.width, info.height);
-            let bytes = cx.blocking(move || encode_rgba8(&pixels, width, height)).await??;
+            let bytes = cx
+                .blocking(move || encode_rgba8(&pixels, width, height))
+                .await??;
             let item_key = ValueKey::converted(
                 Arc::new(key.clone()),
                 png.clone(),
@@ -99,9 +116,16 @@ impl ConvertHandler for FramesEncode {
             );
             items.push((
                 format!("frame_{:05}.png", frame.index + 1),
-                Arc::new(BlobData::with_format(png.clone(), Bytes::from(bytes), item_key)),
+                Arc::new(BlobData::with_format(
+                    png.clone(),
+                    Bytes::from(bytes),
+                    item_key,
+                )),
             ));
-            if select.count.is_some_and(|count| items.len() >= count as usize) {
+            if select
+                .count
+                .is_some_and(|count| items.len() >= count as usize)
+            {
                 break;
             }
         }
@@ -109,7 +133,9 @@ impl ConvertHandler for FramesEncode {
             return Err(corrupt("the video has no frames"));
         }
         if items.is_empty() {
-            return Err(invalid(&format!("no frame selected: the video has {seen} frames")));
+            return Err(invalid(&format!(
+                "no frame selected: the video has {seen} frames"
+            )));
         }
         Ok(Arc::new(BundleData::named(items, key)))
     }

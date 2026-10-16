@@ -17,7 +17,8 @@ use async_trait::async_trait;
 use opendal::Operator;
 use respak_core::capability::{Bone, Dependency, Metadata, Skeleton};
 use respak_core::{
-    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version,
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
 };
 use serde::{Deserialize, Serialize};
 
@@ -27,11 +28,16 @@ use crate::rmdl::{self, parse_bones, read_guids, StudioLayout, B};
 use crate::rpak::{RpakAsset, MEM};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: "arig".into(), version: version.into() })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: "arig".into(),
+        version: version.into(),
+    })
 }
 
 const HEADER_LEN: usize = 0x28;
@@ -90,7 +96,10 @@ impl ArigHeader {
             return Err(unsupported(asset_version.to_string()));
         }
         if header.len() != HEADER_LEN {
-            return Err(corrupt(format!("arig header is {} bytes, expected {HEADER_LEN}", header.len())));
+            return Err(corrupt(format!(
+                "arig header is {} bytes, expected {HEADER_LEN}",
+                header.len()
+            )));
         }
         let h = B(header);
         let ptr = |at: usize| -> Result<Option<u64>> {
@@ -114,13 +123,19 @@ impl ArigHeader {
 /// The studiohdr variant of a rig: `(major, layout)` for `rmdl::parse_bones`. `sibling` is the
 /// version of a `mdl_` found in the same pak; `studio` is the studiohdr block (for the heuristic).
 /// No variant found is `UnsupportedVersion`.
-pub fn studio_variant(select: &StudioSelect, sibling: Option<Version>, studio: &[u8]) -> Result<(u32, StudioLayout)> {
+pub fn studio_variant(
+    select: &StudioSelect,
+    sibling: Option<Version>,
+    studio: &[u8],
+) -> Result<(u32, StudioLayout)> {
     match select {
         StudioSelect::Layout(name) => match name.as_str() {
             "v16" => Ok((16, StudioLayout::V16)),
             "v17" => Ok((18, StudioLayout::V17)),
             "v19_2" => Ok((20, StudioLayout::V19_2)),
-            other => Err(unsupported(format!("studio layout `{other}` (v16, v17 or v19_2)"))),
+            other => Err(unsupported(format!(
+                "studio layout `{other}` (v16, v17 or v19_2)"
+            ))),
         },
         StudioSelect::Auto => {
             if let Some(v) = sibling {
@@ -131,7 +146,8 @@ pub fn studio_variant(select: &StudioSelect, sibling: Option<Version>, studio: &
                 unsupported("studio layout (no model beside the rig and the block does not say; set `studio`)")
             };
             let word = |at: usize| b.u16(at).map_err(|_| unknown());
-            let (marker, linear, bones, bone_hdr) = (word(0xD8)?, word(0xCA)?, word(0x74)?, word(0x76)?);
+            let (marker, linear, bones, bone_hdr) =
+                (word(0xD8)?, word(0xCA)?, word(0x74)?, word(0x76)?);
             if marker == 244 {
                 Ok((20, StudioLayout::V19_2))
             } else if linear != 0 {
@@ -192,7 +208,10 @@ impl Metadata for ArigAsset {
         Some(self.guid)
     }
     fn dependencies(&self) -> Vec<Dependency> {
-        self.anim_seqs.iter().map(|&guid| Dependency { guid, name: None }).collect()
+        self.anim_seqs
+            .iter()
+            .map(|&guid| Dependency { guid, name: None })
+            .collect()
     }
 }
 
@@ -230,7 +249,10 @@ impl Detect for ArigRead {
         let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
             return Ok(None);
         };
-        Ok((asset.entry.kind == *b"arig").then(|| Detected { score: 10, version: Some(Version::new(asset.entry.version)) }))
+        Ok((asset.entry.kind == *b"arig").then(|| Detected {
+            score: 10,
+            version: Some(Version::new(asset.entry.version)),
+        }))
     }
 }
 
@@ -239,18 +261,31 @@ impl ReadHandler for ArigRead {
     /// Reads the header, the studiohdr (bones only; `numlocalseq != 0` is `Corrupt`) and the
     /// `aseq` guid list.
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "arig must be read from an rpak.asset".into() }))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "arig must be read from an rpak.asset".into(),
+            })
+        })?;
         if asset.entry.kind != *b"arig" {
-            return Err(Error::new(ErrorKind::Custom { source: None, message: "the asset is not an arig".into() }));
+            return Err(Error::new(ErrorKind::Custom {
+                source: None,
+                message: "the asset is not an arig".into(),
+            }));
         }
         let header = ArigHeader::parse(asset.entry.version, &asset.read_header().await?)?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
         if header.studio_offset >= mem_len {
-            return Err(corrupt("arig: the studio data pointer is outside the pak's data"));
+            return Err(corrupt(
+                "arig: the studio data pointer is outside the pak's data",
+            ));
         }
-        let studio = asset.read_mem(header.studio_offset, STUDIO_WINDOW.min(mem_len - header.studio_offset)).await?;
+        let studio = asset
+            .read_mem(
+                header.studio_offset,
+                STUDIO_WINDOW.min(mem_len - header.studio_offset),
+            )
+            .await?;
         let sibling = match self.studio {
             StudioSelect::Auto => sibling_model(asset, &pak_of(source.key()), cx).await,
             StudioSelect::Layout(_) => None,
@@ -259,7 +294,9 @@ impl ReadHandler for ArigRead {
         let b = B(&studio);
         let local = b.u16(0x7A)?;
         if local != 0 {
-            return Err(corrupt(format!("arig has {local} local sequences (a rig has none)")));
+            return Err(corrupt(format!(
+                "arig has {local} local sequences (a rig has none)"
+            )));
         }
         let bones = parse_bones(&b, major, layout)?;
         let name = match header.name_offset {
@@ -299,7 +336,9 @@ pub(crate) async fn owner_of(aseq_guid: u64, origin: &str, cx: &Cx) -> Result<Va
             cache.remove(&cache_key).await;
         }
     }
-    let dir = origin.rsplit_once('/').map_or(String::new(), |(d, _)| format!("{d}/"));
+    let dir = origin
+        .rsplit_once('/')
+        .map_or(String::new(), |(d, _)| format!("{d}/"));
     let mut paks = vec![origin.to_owned()];
     let common = format!("{dir}common.rpak");
     if common != origin {
@@ -312,7 +351,9 @@ pub(crate) async fn owner_of(aseq_guid: u64, origin: &str, cx: &Cx) -> Result<Va
             Err(e) => return Err(e),
         };
         let container = cx.mediator.mount(file, cx).await?;
-        let Some(c) = container.as_container() else { continue };
+        let Some(c) = container.as_container() else {
+            continue;
+        };
         for (suffix, kind) in [(".arig", "arig"), (".mdl_", "rmdl")] {
             for name in list_assets(&c.volume(), suffix).await? {
                 cx.check_cancelled()?;
@@ -328,15 +369,24 @@ pub(crate) async fn owner_of(aseq_guid: u64, origin: &str, cx: &Cx) -> Result<Va
     }
     Err(Error::new(ErrorKind::MissingDependency {
         item: format!("the rig of aseq {}", hex(aseq_guid)),
-        file: format!("no arig or mdl_ in {} lists it (set `rig` to name one)", paks.join(" or ")),
+        file: format!(
+            "no arig or mdl_ in {} lists it (set `rig` to name one)",
+            paks.join(" or ")
+        ),
     }))
 }
 
 /// Reads an `arig` / `mdl_` asset (`kind` `arig` or `rmdl`) as a value with a skeleton.
 async fn as_rig(asset: Value, kind: &'static str, cx: &Cx) -> Result<Value> {
-    let rig = cx.mediator.identify_as(asset, &FormatId::new(kind), cx).await?;
+    let rig = cx
+        .mediator
+        .identify_as(asset, &FormatId::new(kind), cx)
+        .await?;
     if rig.as_skeleton().is_none() {
-        return Err(Error::new(ErrorKind::Custom { source: None, message: format!("`{}` has no skeleton", rig.format()) }));
+        return Err(Error::new(ErrorKind::Custom {
+            source: None,
+            message: format!("`{}` has no skeleton", rig.format()),
+        }));
     }
     Ok(rig)
 }
@@ -352,7 +402,11 @@ pub(crate) async fn explicit_rig(name: &str, origin: &str, cx: &Cx) -> Result<Va
     for (kind, format) in [("arig", "arig"), ("mdl_", "rmdl")] {
         match locate(guid, kind, origin, cx).await {
             Ok(asset) => return as_rig(asset, format, cx).await,
-            Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. } | ErrorKind::MissingDependency { .. }) => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    ErrorKind::NotFound { .. } | ErrorKind::MissingDependency { .. }
+                ) => {}
             Err(e) => return Err(e),
         }
     }
@@ -379,11 +433,22 @@ async fn lists_sequence(asset: &Value, guid: u64) -> Option<&'static str> {
     let asset = asset.downcast_ref::<RpakAsset>()?;
     let header = asset.read_header().await.ok()?;
     let (kind, list) = match &asset.entry.kind {
-        b"arig" => ("arig", ArigHeader::parse(asset.entry.version, &header).ok()?.anim_seqs),
+        b"arig" => (
+            "arig",
+            ArigHeader::parse(asset.entry.version, &header)
+                .ok()?
+                .anim_seqs,
+        ),
         b"mdl_" if (16..=20).contains(&asset.entry.version) && header.len() == 96 => {
             let b = B(&header);
             let at = b.u64(0x50).ok()?;
-            ("rmdl", ((at != 0 && at != u64::MAX).then_some(at), u32::from(b.u16(0x4A).ok()?)))
+            (
+                "rmdl",
+                (
+                    (at != 0 && at != u64::MAX).then_some(at),
+                    u32::from(b.u16(0x4A).ok()?),
+                ),
+            )
         }
         _ => return None,
     };
@@ -394,11 +459,23 @@ async fn lists_sequence(asset: &Value, guid: u64) -> Option<&'static str> {
 /// The version of the first model in the same pak as `rig`, if there is one of a supported kind:
 /// the studiohdr layout the rig is expected to share (rsx behaviour).
 async fn sibling_model(rig: &RpakAsset, origin: &str, cx: &Cx) -> Option<Version> {
-    let name = list_assets(&rig.volume, ".mdl_").await.ok()?.into_iter().next()?;
-    let model = cx.mediator.open(&format!("{origin}/{name}"), cx).await.ok()?;
+    let name = list_assets(&rig.volume, ".mdl_")
+        .await
+        .ok()?
+        .into_iter()
+        .next()?;
+    let model = cx
+        .mediator
+        .open(&format!("{origin}/{name}"), cx)
+        .await
+        .ok()?;
     let m = model.downcast_ref::<RpakAsset>()?;
     let header = m.read_header().await.ok()?;
     let studio_at = B(&header).u64(0).ok()?;
-    let source_filename_offset = m.read_mem(studio_at, 0xDA).await.ok().and_then(|b| B(&b).u16(0xD8).ok());
+    let source_filename_offset = m
+        .read_mem(studio_at, 0xDA)
+        .await
+        .ok()
+        .and_then(|b| B(&b).u16(0xD8).ok());
     rmdl::variant(m.entry.version, m.pak_created_time, source_filename_offset).ok()
 }

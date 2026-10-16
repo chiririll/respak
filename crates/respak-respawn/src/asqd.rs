@@ -12,7 +12,8 @@ use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::{Dependency, Metadata};
 use respak_core::{
-    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version,
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
 };
 
 use crate::matl_json::hex;
@@ -20,7 +21,9 @@ use crate::rmdl::B;
 use crate::rpak::{RpakAsset, MEM};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// The 8-byte asset header: the page pointer to the blob.
@@ -34,10 +37,15 @@ impl AsqdHeader {
     /// Parses a relocated header; any other length than 8 is `Corrupt`.
     pub fn parse(header: &[u8]) -> Result<Self> {
         if header.len() != 8 {
-            return Err(corrupt(format!("asqd header is {} bytes, expected 8", header.len())));
+            return Err(corrupt(format!(
+                "asqd header is {} bytes, expected 8",
+                header.len()
+            )));
         }
         let at = B(header).u64(0)?;
-        Ok(Self { data_offset: (at != 0 && at != u64::MAX).then_some(at) })
+        Ok(Self {
+            data_offset: (at != 0 && at != u64::MAX).then_some(at),
+        })
     }
 }
 
@@ -62,8 +70,16 @@ impl AsqdAsset {
     pub async fn read(&self, offset: u64, len: u64) -> Result<Bytes> {
         let (start, mem_len) = self.start(offset).await?;
         match start.checked_add(len) {
-            Some(end) if end <= mem_len => Ok(self.volume.read_with(MEM).range(start..end).await?.to_bytes()),
-            _ => Err(corrupt(format!("asqd {}: {len} bytes at {offset:#x} are outside the pak's data", hex(self.guid)))),
+            Some(end) if end <= mem_len => Ok(self
+                .volume
+                .read_with(MEM)
+                .range(start..end)
+                .await?
+                .to_bytes()),
+            _ => Err(corrupt(format!(
+                "asqd {}: {len} bytes at {offset:#x} are outside the pak's data",
+                hex(self.guid)
+            ))),
         }
     }
 
@@ -75,7 +91,12 @@ impl AsqdAsset {
         if start >= end {
             return Ok(Bytes::new());
         }
-        Ok(self.volume.read_with(MEM).range(start..end).await?.to_bytes())
+        Ok(self
+            .volume
+            .read_with(MEM)
+            .range(start..end)
+            .await?
+            .to_bytes())
     }
 
     /// The absolute `.mem` offset of `offset` in the blob and the length of `.mem`.
@@ -87,7 +108,12 @@ impl AsqdAsset {
             })
         })?;
         let mem_len = self.volume.stat(MEM).await?.content_length();
-        let start = base.checked_add(offset).ok_or_else(|| corrupt(format!("asqd {}: offset {offset:#x} overflows", hex(self.guid))))?;
+        let start = base.checked_add(offset).ok_or_else(|| {
+            corrupt(format!(
+                "asqd {}: offset {offset:#x} overflows",
+                hex(self.guid)
+            ))
+        })?;
         Ok((start, mem_len))
     }
 }
@@ -130,7 +156,10 @@ impl Detect for AsqdRead {
         let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
             return Ok(None);
         };
-        Ok((asset.entry.kind == *b"asqd").then(|| Detected { score: 10, version: Some(Version::new(asset.entry.version)) }))
+        Ok((asset.entry.kind == *b"asqd").then(|| Detected {
+            score: 10,
+            version: Some(Version::new(asset.entry.version)),
+        }))
     }
 }
 
@@ -138,11 +167,17 @@ impl Detect for AsqdRead {
 impl ReadHandler for AsqdRead {
     /// Parses the header; the blob itself is read later, by [`AsqdAsset::read`].
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "asqd must be read from an rpak.asset".into() }))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "asqd must be read from an rpak.asset".into(),
+            })
+        })?;
         if asset.entry.kind != *b"asqd" {
-            return Err(Error::new(ErrorKind::Custom { source: None, message: "the asset is not an asqd".into() }));
+            return Err(Error::new(ErrorKind::Custom {
+                source: None,
+                message: "the asset is not an asqd".into(),
+            }));
         }
         if asset.entry.version != 1 {
             return Err(Error::new(ErrorKind::UnsupportedVersion {

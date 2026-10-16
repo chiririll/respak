@@ -52,40 +52,93 @@ fn model_vg() -> Vec<u8> {
     }
     let mut plain = Vec::new();
     for i in 0..3 {
-        plain.extend_from_slice(&[(i as f32).to_le_bytes(), 1.0f32.to_le_bytes(), 2.0f32.to_le_bytes()].concat());
+        plain.extend_from_slice(
+            &[
+                (i as f32).to_le_bytes(),
+                1.0f32.to_le_bytes(),
+                2.0f32.to_le_bytes(),
+            ]
+            .concat(),
+        );
         plain.extend_from_slice(&normal_z().to_le_bytes());
     }
     vg(&[
         vec![
-            VgMeshSpec { flags: flags(1, true, false, 1), stride: 32, vert_count: 3, verts: skinned, indices: vec![0, 1, 2], extra: vec![] },
-            VgMeshSpec { flags: flags(2, false, false, 1), stride: 20, vert_count: 4, verts: packed, indices: vec![0, 1, 2, 2, 1, 3], extra: vec![] },
+            VgMeshSpec {
+                flags: flags(1, true, false, 1),
+                stride: 32,
+                vert_count: 3,
+                verts: skinned,
+                indices: vec![0, 1, 2],
+                extra: vec![],
+            },
+            VgMeshSpec {
+                flags: flags(2, false, false, 1),
+                stride: 20,
+                vert_count: 4,
+                verts: packed,
+                indices: vec![0, 1, 2, 2, 1, 3],
+                extra: vec![],
+            },
         ],
         vec![
-            VgMeshSpec { flags: flags(1, false, false, 0), stride: 16, vert_count: 3, verts: plain, indices: vec![0, 1, 2], extra: vec![] },
-            VgMeshSpec { flags: 0, stride: 0, vert_count: 0, verts: vec![], indices: vec![], extra: vec![] },
+            VgMeshSpec {
+                flags: flags(1, false, false, 0),
+                stride: 16,
+                vert_count: 3,
+                verts: plain,
+                indices: vec![0, 1, 2],
+                extra: vec![],
+            },
+            VgMeshSpec {
+                flags: 0,
+                stride: 0,
+                vert_count: 0,
+                verts: vec![],
+                indices: vec![],
+                extra: vec![],
+            },
         ],
     ])
 }
 
 /// `paks/lvl.rpak`: two materials (no textures) and the model, of asset version `major`.
 async fn env_with(major: u32) -> Env {
-    let env = Env { input: mem(), output: mem() };
+    let env = Env {
+        input: mem(),
+        output: mem(),
+    };
     let group = model_vg();
     let mut pak = PakBuilder::new();
     pak.matl(WALL, "material/wall", 0, &[]);
     pak.matl(FLOOR, "material/floor", 0, &[]);
-    pak.rmdl(0x100, "mdl/props/crate.rmdl", major, &studio(major, major >= 20, group.len() as u32), &group);
-    env.input.write("paks/lvl.rpak", pak.build(8)).await.unwrap();
+    pak.rmdl(
+        0x100,
+        "mdl/props/crate.rmdl",
+        major,
+        &studio(major, major >= 20, group.len() as u32),
+        &group,
+    );
+    env.input
+        .write("paks/lvl.rpak", pak.build(8))
+        .await
+        .unwrap();
     env
 }
 
 fn request(to: Value, path: &str) -> ConvertRequest {
-    serde_json::from_value(json!({ "version": 1, "outputs": [{ "from": MODEL, "to": to, "path": path }] })).unwrap()
+    serde_json::from_value(
+        json!({ "version": 1, "outputs": [{ "from": MODEL, "to": to, "path": path }] }),
+    )
+    .unwrap()
 }
 
 async fn convert(engine: &Engine, to: Value, path: &str) -> (OutputResult, Vec<Event>) {
     let mut events = engine.events();
-    let report = engine.convert(&request(to, path), &CancellationToken::new()).await.unwrap();
+    let report = engine
+        .convert(&request(to, path), &CancellationToken::new())
+        .await
+        .unwrap();
     let mut seen = Vec::new();
     while let Ok(e) = events.try_recv() {
         seen.push(e);
@@ -96,7 +149,13 @@ async fn convert(engine: &Engine, to: Value, path: &str) -> (OutputResult, Vec<E
 fn warnings(events: &[Event]) -> Vec<&str> {
     events
         .iter()
-        .filter_map(|e| if let Event::Warning { message } = e { Some(message.as_str()) } else { None })
+        .filter_map(|e| {
+            if let Event::Warning { message } = e {
+                Some(message.as_str())
+            } else {
+                None
+            }
+        })
         .filter(|m| !m.starts_with("path "))
         .collect()
 }
@@ -112,7 +171,12 @@ struct Node {
 
 impl Node {
     fn prop(&self, name: &str) -> &[u8] {
-        &self.props.iter().find(|p| p.0 == name).unwrap_or_else(|| panic!("no property {name} in {}", self.id)).1
+        &self
+            .props
+            .iter()
+            .find(|p| p.0 == name)
+            .unwrap_or_else(|| panic!("no property {name} in {}", self.id))
+            .1
     }
     fn kids(&self, id: &str) -> Vec<&Node> {
         self.children.iter().filter(|c| c.id == id).collect()
@@ -155,7 +219,14 @@ fn parse_node(b: &[u8], at: usize) -> (Node, usize) {
         p = next;
     }
     assert_eq!(p - at, size, "{id}: nodeSize");
-    (Node { id, props, children }, p)
+    (
+        Node {
+            id,
+            props,
+            children,
+        },
+        p,
+    )
 }
 
 async fn cast_of(env: &Env, path: &str) -> Node {
@@ -167,11 +238,15 @@ async fn cast_of(env: &Env, path: &str) -> Node {
 }
 
 fn floats(b: &[u8]) -> Vec<f32> {
-    b.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect()
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect()
 }
 
 fn u16s(b: &[u8]) -> Vec<u16> {
-    b.chunks_exact(2).map(|c| u16::from_le_bytes(c.try_into().unwrap())).collect()
+    b.chunks_exact(2)
+        .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
+        .collect()
 }
 
 // ---- tests --------------------------------------------------------------------------------------
@@ -181,7 +256,9 @@ async fn a_model_converts_to_cast_lod_0_by_default() {
     for major in [16, 20] {
         let env = env_with(major).await;
         let (result, events) = convert(&engine(&env), json!({ "type": "cast" }), "out/crate").await;
-        let OutputResult::Ok { files, .. } = result else { panic!("{result:?}") };
+        let OutputResult::Ok { files, .. } = result else {
+            panic!("{result:?}")
+        };
         assert_eq!(files, ["out/crate/weapon_0_LOD0.cast"], "v{major}");
         assert!(warnings(&events).is_empty(), "{:?}", warnings(&events));
 
@@ -204,14 +281,23 @@ async fn a_model_converts_to_cast_lod_0_by_default() {
         assert_eq!(meshes.len(), 2);
         // mesh 0: skinned, 3 vertices, bone map [1, 0] sends vertex bones 0, 1, 1 to 1, 0, 0
         assert_eq!(meshes[0].prop("n"), b"weapon_0_LOD0_wall\0");
-        assert_eq!(floats(meshes[0].prop("vp")), [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
+        assert_eq!(
+            floats(meshes[0].prop("vp")),
+            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0]
+        );
         assert_eq!(meshes[0].prop("wb"), [1, 0, 0]);
         assert_eq!(floats(meshes[0].prop("wv")), [1.0, 1.0, 1.0]);
         assert_eq!(u16s(meshes[0].prop("f")), [2, 1, 0], "winding is reversed");
-        assert_eq!(floats(meshes[0].prop("u0")), [0.0, 0.5, 0.25, 0.5, 0.5, 0.5]);
+        assert_eq!(
+            floats(meshes[0].prop("u0")),
+            [0.0, 0.5, 0.25, 0.5, 0.5, 0.5]
+        );
         assert_eq!(meshes[0].prop("m"), WALL.to_le_bytes());
         // mesh 1: Vector64 positions
-        assert_eq!(floats(meshes[1].prop("vp"))[..3], [-1023.0, -1022.0, -2044.0]);
+        assert_eq!(
+            floats(meshes[1].prop("vp"))[..3],
+            [-1023.0, -1022.0, -2044.0]
+        );
         assert_eq!(u16s(meshes[1].prop("f")), [2, 1, 0, 3, 1, 2]);
         assert_eq!(meshes[1].prop("m"), FLOOR.to_le_bytes());
         assert!(meshes[1].props.iter().all(|p| p.0 != "wb"));
@@ -221,26 +307,56 @@ async fn a_model_converts_to_cast_lod_0_by_default() {
 #[tokio::test]
 async fn lods_all_skips_the_empty_mesh_of_a_lower_lod() {
     let env = env_with(16).await;
-    let (result, _) = convert(&engine(&env), json!({ "type": "cast", "lods": "all" }), "out/crate").await;
-    let OutputResult::Ok { files, .. } = result else { panic!("{result:?}") };
-    assert_eq!(files, ["out/crate/weapon_0_LOD0.cast", "out/crate/weapon_0_LOD1.cast"]);
+    let (result, _) = convert(
+        &engine(&env),
+        json!({ "type": "cast", "lods": "all" }),
+        "out/crate",
+    )
+    .await;
+    let OutputResult::Ok { files, .. } = result else {
+        panic!("{result:?}")
+    };
+    assert_eq!(
+        files,
+        [
+            "out/crate/weapon_0_LOD0.cast",
+            "out/crate/weapon_0_LOD1.cast"
+        ]
+    );
     let lod1 = cast_of(&env, &files[1]).await;
     let meshes = lod1.children[0].kids("mesh");
     assert_eq!(meshes.len(), 1);
-    assert_eq!(floats(meshes[0].prop("vp")), [0.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 1.0, 2.0]);
+    assert_eq!(
+        floats(meshes[0].prop("vp")),
+        [0.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 1.0, 2.0]
+    );
     // only the material LOD 1 uses is written
     assert_eq!(lod1.children[0].kids("matl").len(), 1);
 
-    let (result, _) = convert(&engine(&env), json!({ "type": "cast", "lods": [1] }), "out/one").await;
-    let OutputResult::Ok { files, .. } = result else { panic!("{result:?}") };
+    let (result, _) = convert(
+        &engine(&env),
+        json!({ "type": "cast", "lods": [1] }),
+        "out/one",
+    )
+    .await;
+    let OutputResult::Ok { files, .. } = result else {
+        panic!("{result:?}")
+    };
     assert_eq!(files, ["out/one/weapon_0_LOD1.cast"]);
 }
 
 #[tokio::test]
 async fn a_skin_swaps_the_materials() {
     let env = env_with(16).await;
-    let (result, _) = convert(&engine(&env), json!({ "type": "cast", "skin": 1 }), "out/crate").await;
-    let OutputResult::Ok { files, .. } = result else { panic!("{result:?}") };
+    let (result, _) = convert(
+        &engine(&env),
+        json!({ "type": "cast", "skin": 1 }),
+        "out/crate",
+    )
+    .await;
+    let OutputResult::Ok { files, .. } = result else {
+        panic!("{result:?}")
+    };
     let root = cast_of(&env, &files[0]).await;
     let meshes = root.children[0].kids("mesh");
     assert_eq!(meshes[0].prop("m"), FLOOR.to_le_bytes());
@@ -250,10 +366,19 @@ async fn a_skin_swaps_the_materials() {
 #[tokio::test]
 async fn options_that_the_model_cannot_satisfy_are_invalid() {
     let env = env_with(16).await;
-    for to in [json!({ "type": "cast", "skin": 2 }), json!({ "type": "cast", "lods": 2 }), json!({ "type": "cast", "lods": [0, 5] })] {
+    for to in [
+        json!({ "type": "cast", "skin": 2 }),
+        json!({ "type": "cast", "lods": 2 }),
+        json!({ "type": "cast", "lods": [0, 5] }),
+    ] {
         let (result, _) = convert(&engine(&env), to.clone(), "out/crate").await;
-        let OutputResult::Err { error } = result else { panic!("{to}: {result:?}") };
-        assert!(matches!(error.kind(), ErrorKind::InvalidOptions { .. }), "{to}: {error}");
+        let OutputResult::Err { error } = result else {
+            panic!("{to}: {result:?}")
+        };
+        assert!(
+            matches!(error.kind(), ErrorKind::InvalidOptions { .. }),
+            "{to}: {error}"
+        );
     }
 }
 
@@ -262,9 +387,12 @@ async fn the_metadata_target_describes_the_whole_model() {
     for major in [16, 20] {
         let env = env_with(major).await;
         let (result, _) = convert(&engine(&env), json!({ "type": "rmdl.json" }), "out/crate").await;
-        let OutputResult::Ok { files, .. } = result else { panic!("{result:?}") };
+        let OutputResult::Ok { files, .. } = result else {
+            panic!("{result:?}")
+        };
         assert_eq!(files, ["out/crate"], "v{major}");
-        let doc: Value = serde_json::from_slice(&env.output.read(&files[0]).await.unwrap().to_vec()).unwrap();
+        let doc: Value =
+            serde_json::from_slice(&env.output.read(&files[0]).await.unwrap().to_vec()).unwrap();
         assert_eq!(doc["name"], "mdl/props/crate.rmdl");
         assert_eq!(doc["guid"], "0x0000000000000100");
         assert_eq!(doc["version"], major.to_string());
@@ -272,10 +400,25 @@ async fn the_metadata_target_describes_the_whole_model() {
         assert_eq!(doc["bones"][1]["name"], "arm");
         assert_eq!(doc["bones"][1]["parent"], 0);
         assert_eq!(doc["bodyparts"][0]["name"], "weapon");
-        assert_eq!(doc["bodyparts"][0]["models"][0]["meshes"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            doc["bodyparts"][0]["models"][0]["meshes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
         assert_eq!(doc["lods"], json!([10.0, 50.0]));
-        assert_eq!(doc["materials"], json!(["0x000000000000AAAA", "0x000000000000BBBB"]));
-        assert_eq!(doc["skins"], json!([["0x000000000000AAAA", "0x000000000000BBBB"], ["0x000000000000BBBB", "0x000000000000AAAA"]]));
+        assert_eq!(
+            doc["materials"],
+            json!(["0x000000000000AAAA", "0x000000000000BBBB"])
+        );
+        assert_eq!(
+            doc["skins"],
+            json!([
+                ["0x000000000000AAAA", "0x000000000000BBBB"],
+                ["0x000000000000BBBB", "0x000000000000AAAA"]
+            ])
+        );
         assert_eq!(doc["vertexGroups"].as_array().unwrap().len(), 1);
         assert_eq!(doc["animRigs"], json!([]));
     }
@@ -283,29 +426,62 @@ async fn the_metadata_target_describes_the_whole_model() {
 
 #[tokio::test]
 async fn unsupported_versions_are_reported_as_such() {
-    let env = Env { input: mem(), output: mem() };
+    let env = Env {
+        input: mem(),
+        output: mem(),
+    };
     let group = model_vg();
     let mut pak = PakBuilder::new();
-    pak.rmdl(0x100, "mdl/old.rmdl", 12, &studio(16, false, group.len() as u32), &group);
-    env.input.write("paks/lvl.rpak", pak.build(8)).await.unwrap();
+    pak.rmdl(
+        0x100,
+        "mdl/old.rmdl",
+        12,
+        &studio(16, false, group.len() as u32),
+        &group,
+    );
+    env.input
+        .write("paks/lvl.rpak", pak.build(8))
+        .await
+        .unwrap();
     let (result, _) = convert(&engine(&env), json!({ "type": "cast" }), "out/old").await;
-    let OutputResult::Err { error } = result else { panic!("{result:?}") };
-    assert!(matches!(error.kind(), ErrorKind::UnsupportedVersion { .. }), "{error}");
+    let OutputResult::Err { error } = result else {
+        panic!("{result:?}")
+    };
+    assert!(
+        matches!(error.kind(), ErrorKind::UnsupportedVersion { .. }),
+        "{error}"
+    );
 }
 
 #[tokio::test]
 async fn a_model_without_vertex_data_is_a_missing_dependency_for_meshes_only() {
-    let env = Env { input: mem(), output: mem() };
+    let env = Env {
+        input: mem(),
+        output: mem(),
+    };
     let group = model_vg();
     let mut pak = PakBuilder::new();
     pak.matl(WALL, "material/wall", 0, &[]);
     pak.matl(FLOOR, "material/floor", 0, &[]);
     // The studio block has a group, but the header's inline VG pointer is null and there is no starpak.
-    pak.rmdl_without_vertex_data(0x100, "mdl/props/crate.rmdl", 16, &studio(16, false, group.len() as u32));
-    env.input.write("paks/lvl.rpak", pak.build(8)).await.unwrap();
+    pak.rmdl_without_vertex_data(
+        0x100,
+        "mdl/props/crate.rmdl",
+        16,
+        &studio(16, false, group.len() as u32),
+    );
+    env.input
+        .write("paks/lvl.rpak", pak.build(8))
+        .await
+        .unwrap();
     let (result, _) = convert(&engine(&env), json!({ "type": "cast" }), "out/crate").await;
-    let OutputResult::Err { error } = result else { panic!("{result:?}") };
-    assert!(matches!(error.kind(), ErrorKind::MissingDependency { .. }), "{error}");
+    let OutputResult::Err { error } = result else {
+        panic!("{result:?}")
+    };
+    assert!(
+        matches!(error.kind(), ErrorKind::MissingDependency { .. }),
+        "{error}"
+    );
     // the metadata does not need the vertex data
     let (result, _) = convert(&engine(&env), json!({ "type": "rmdl.json" }), "out/meta").await;
     assert!(matches!(result, OutputResult::Ok { .. }), "{result:?}");

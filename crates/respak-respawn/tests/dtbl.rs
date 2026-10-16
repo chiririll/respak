@@ -33,13 +33,31 @@ async fn table(env: &Env) -> respak_core::Result<Value> {
 async fn convert(env: &Env, format: &'static str) -> String {
     let cx = cx(env);
     let value = table(env).await.unwrap();
-    let target = Target { format: FormatId::new(format), options: serde_json::Value::Null, via: Vec::new() };
+    let target = Target {
+        format: FormatId::new(format),
+        options: serde_json::Value::Null,
+        via: Vec::new(),
+    };
     let out = cx.mediator.convert(value, target, &cx).await.unwrap();
-    String::from_utf8(read_all(out.as_blob().unwrap(), &cx).await.unwrap().to_vec()).unwrap()
+    String::from_utf8(
+        read_all(out.as_blob().unwrap(), &cx)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap()
 }
 
 fn all_types() -> Vec<(&'static str, i32)> {
-    vec![("b", 0), ("i", 1), ("f", 2), ("v", 3), ("s", 4), ("a", 5), ("n", 6)]
+    vec![
+        ("b", 0),
+        ("i", 1),
+        ("f", 2),
+        ("v", 3),
+        ("s", 4),
+        ("a", 5),
+        ("n", 6),
+    ]
 }
 
 fn sample_rows() -> Vec<Vec<DtblCell<'static>>> {
@@ -67,7 +85,11 @@ fn sample_rows() -> Vec<Vec<DtblCell<'static>>> {
 
 #[tokio::test]
 async fn every_layout_reads_the_same_table() {
-    for (version, wide, created, want) in [(0, false, 0, "dtbl@0"), (1, false, 0, "dtbl@1"), (1, true, V1_1_TIME, "dtbl@1.1")] {
+    for (version, wide, created, want) in [
+        (0, false, 0, "dtbl@0"),
+        (1, false, 0, "dtbl@1"),
+        (1, true, V1_1_TIME, "dtbl@1.1"),
+    ] {
         let env = common::env();
         let mut pak = PakBuilder::new();
         pak.dtbl(GUID, version, wide, &all_types(), &sample_rows());
@@ -115,7 +137,13 @@ async fn csv_is_rsx_text() {
 async fn json_lists_columns_and_rows() {
     let env = common::env();
     let mut pak = PakBuilder::new();
-    pak.dtbl(GUID, 0, false, &[("name", 4), ("speed", 2)], &[vec![DtblCell::Str("r99"), DtblCell::Float(0.1)]]);
+    pak.dtbl(
+        GUID,
+        0,
+        false,
+        &[("name", 4), ("speed", 2)],
+        &[vec![DtblCell::Str("r99"), DtblCell::Float(0.1)]],
+    );
     write(&env, pak, 0).await;
     let json: serde_json::Value = serde_json::from_str(&convert(&env, "dtbl.json").await).unwrap();
     assert_eq!(
@@ -143,7 +171,10 @@ async fn unknown_versions_are_unsupported() {
     pak.asset(GUID, b"dtbl", 2, vec![0; 0x28], &[], None);
     write(&env, pak, 0).await;
     let e = table(&env).await.unwrap_err();
-    assert!(matches!(e.kind(), ErrorKind::UnsupportedVersion { .. }), "{e}");
+    assert!(
+        matches!(e.kind(), ErrorKind::UnsupportedVersion { .. }),
+        "{e}"
+    );
 }
 
 #[tokio::test]
@@ -153,7 +184,10 @@ async fn bad_headers_and_pointers_are_corrupt() {
     let mut pak = PakBuilder::new();
     pak.asset(GUID, b"dtbl", 1, vec![0; 0x20], &[], None);
     write(&env, pak, 0).await;
-    assert!(matches!(table(&env).await.unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+    assert!(matches!(
+        table(&env).await.unwrap_err().kind(),
+        ErrorKind::Corrupt { .. }
+    ));
 
     // More rows than the pak holds.
     let env = common::env();
@@ -166,7 +200,10 @@ async fn bad_headers_and_pointers_are_corrupt() {
     h[0x18..0x1C].copy_from_slice(&64i32.to_le_bytes());
     pak.asset(GUID, b"dtbl", 0, h, &[(0x08, cols), (0x10, rows)], None);
     write(&env, pak, 0).await;
-    assert!(matches!(table(&env).await.unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+    assert!(matches!(
+        table(&env).await.unwrap_err().kind(),
+        ErrorKind::Corrupt { .. }
+    ));
 
     // A column past the row stride, and one of an unknown type.
     for (ty, offset) in [(1i32, 2i32), (9, 0)] {
@@ -183,6 +220,12 @@ async fn bad_headers_and_pointers_are_corrupt() {
         h[0x18..0x1C].copy_from_slice(&4i32.to_le_bytes());
         pak.asset(GUID, b"dtbl", 0, h, &[(0x08, cols), (0x10, rows)], None);
         write(&env, pak, 0).await;
-        assert!(matches!(table(&env).await.unwrap_err().kind(), ErrorKind::Corrupt { .. }), "type {ty}");
+        assert!(
+            matches!(
+                table(&env).await.unwrap_err().kind(),
+                ErrorKind::Corrupt { .. }
+            ),
+            "type {ty}"
+        );
     }
 }

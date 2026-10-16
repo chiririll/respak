@@ -50,7 +50,10 @@ pub async fn run(
             client_id = id;
         }
         if let Some(token) = reply.refresh_token.filter(|t| !t.is_empty()) {
-            return Ok(QrTokens { refresh_token: token, account_name: reply.account_name.unwrap_or_default() });
+            return Ok(QrTokens {
+                refresh_token: token,
+                account_name: reply.account_name.unwrap_or_default(),
+            });
         }
         if let Some(new_url) = reply.new_challenge_url {
             show(&new_url);
@@ -85,15 +88,33 @@ mod tests {
         let mut fake = Fake {
             replies: vec![
                 PollReply::default(),
-                PollReply { new_client_id: Some(2), new_challenge_url: Some("url-2".into()), ..Default::default() },
+                PollReply {
+                    new_client_id: Some(2),
+                    new_challenge_url: Some("url-2".into()),
+                    ..Default::default()
+                },
                 PollReply::default(),
-                PollReply { refresh_token: Some("tok".into()), account_name: Some("gordon".into()), ..Default::default() },
+                PollReply {
+                    refresh_token: Some("tok".into()),
+                    account_name: Some("gordon".into()),
+                    ..Default::default()
+                },
             ],
             seen_ids: vec![],
         };
         let mut shown = vec![];
-        let tokens = run(&mut fake, 1, "url-1", Duration::ZERO, |u| shown.push(u.to_string())).await.unwrap();
-        assert_eq!(tokens, QrTokens { refresh_token: "tok".into(), account_name: "gordon".into() });
+        let tokens = run(&mut fake, 1, "url-1", Duration::ZERO, |u| {
+            shown.push(u.to_string())
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            tokens,
+            QrTokens {
+                refresh_token: "tok".into(),
+                account_name: "gordon".into()
+            }
+        );
         assert_eq!(shown, ["url-1", "url-2"]);
         assert_eq!(fake.seen_ids, [1, 1, 2, 2]);
     }

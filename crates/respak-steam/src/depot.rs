@@ -32,35 +32,59 @@ impl DepotSource {
 }
 
 fn not_found(path: &str) -> Error {
-    Error::new(ErrorKind::NotFound { path: path.to_string() })
+    Error::new(ErrorKind::NotFound {
+        path: path.to_string(),
+    })
 }
 
 #[async_trait]
 impl VolumeSource for DepotSource {
     async fn stat(&self, path: &str) -> respak_core::Result<VolumeStat> {
         if let Some(f) = self.tree.file(path) {
-            return Ok(VolumeStat { is_dir: false, len: f.file.size });
+            return Ok(VolumeStat {
+                is_dir: false,
+                len: f.file.size,
+            });
         }
         if self.tree.is_dir(path) {
-            return Ok(VolumeStat { is_dir: true, len: 0 });
+            return Ok(VolumeStat {
+                is_dir: true,
+                len: 0,
+            });
         }
         Err(not_found(path))
     }
 
     async fn read(&self, path: &str, range: Range<u64>) -> respak_core::Result<Bytes> {
         let f = self.tree.file(path).ok_or_else(|| not_found(path))?;
-        self.store.read(f.depot, &f.file.chunks, range).await.map_err(|e| {
-            if matches!(e, crate::Error::Cancelled) {
-                return Error::new(ErrorKind::Cancelled);
-            }
-            let message = format!("steam depot {} manifest {} file {}: {e}", f.depot, f.manifest, f.file.path);
-            Error::new(ErrorKind::Storage(opendal::Error::new(opendal::ErrorKind::Unexpected, message)))
-        })
+        self.store
+            .read(f.depot, &f.file.chunks, range)
+            .await
+            .map_err(|e| {
+                if matches!(e, crate::Error::Cancelled) {
+                    return Error::new(ErrorKind::Cancelled);
+                }
+                let message = format!(
+                    "steam depot {} manifest {} file {}: {e}",
+                    f.depot, f.manifest, f.file.path
+                );
+                Error::new(ErrorKind::Storage(opendal::Error::new(
+                    opendal::ErrorKind::Unexpected,
+                    message,
+                )))
+            })
     }
 
     async fn list(&self, dir: &str) -> respak_core::Result<Vec<VolumeEntry>> {
         let entries = self.tree.list(dir).ok_or_else(|| not_found(dir))?;
-        Ok(entries.into_iter().map(|e| VolumeEntry { name: e.name, is_dir: e.is_dir, len: e.size }).collect())
+        Ok(entries
+            .into_iter()
+            .map(|e| VolumeEntry {
+                name: e.name,
+                is_dir: e.is_dir,
+                len: e.size,
+            })
+            .collect())
     }
 }
 
@@ -81,8 +105,16 @@ mod tests {
             1,
             99,
             vec![
-                DepotFile { path: "Paks\\Win64\\Common.rpak".into(), size: 1000, chunks },
-                DepotFile { path: "readme.txt".into(), size: 0, chunks: Arc::from(vec![]) },
+                DepotFile {
+                    path: "Paks\\Win64\\Common.rpak".into(),
+                    size: 1000,
+                    chunks,
+                },
+                DepotFile {
+                    path: "readme.txt".into(),
+                    size: 0,
+                    chunks: Arc::from(vec![]),
+                },
             ],
         );
         let store = ChunkStore::new(ChunkCache::open(dir, 1 << 30).unwrap(), fake.clone(), 8);
@@ -94,13 +126,39 @@ mod tests {
         let fake = Fake::new(&[100; 10]);
         let dir = tempfile::tempdir().unwrap();
         let op = operator(&fake, dir.path());
-        assert_eq!(op.stat("paks/win64/common.rpak").await.unwrap().content_length(), 1000);
+        assert_eq!(
+            op.stat("paks/win64/common.rpak")
+                .await
+                .unwrap()
+                .content_length(),
+            1000
+        );
         assert!(op.stat("Paks/").await.unwrap().is_dir());
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "stat and list never fetch");
-        let names: Vec<_> = op.list("Paks/Win64/").await.unwrap().into_iter().map(|e| e.name().to_string()).collect();
-        assert!(names.iter().any(|n| n.trim_end_matches('/') == "Common.rpak"), "{names:?}");
+        assert_eq!(
+            fake.calls.load(Ordering::SeqCst),
+            0,
+            "stat and list never fetch"
+        );
+        let names: Vec<_> = op
+            .list("Paks/Win64/")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name().to_string())
+            .collect();
+        assert!(
+            names
+                .iter()
+                .any(|n| n.trim_end_matches('/') == "Common.rpak"),
+            "{names:?}"
+        );
 
-        let got = op.read_with("PAKS/WIN64/COMMON.RPAK").range(150..260).await.unwrap().to_vec();
+        let got = op
+            .read_with("PAKS/WIN64/COMMON.RPAK")
+            .range(150..260)
+            .await
+            .unwrap()
+            .to_vec();
         let all: Vec<u8> = fake.data.iter().flat_map(|d| d.to_vec()).collect();
         assert_eq!(got, &all[150..260]);
         assert_eq!(fake.calls.load(Ordering::SeqCst), 2, "only chunks 1 and 2");
@@ -113,9 +171,22 @@ mod tests {
         Arc::get_mut(&mut fake).unwrap().fail = true;
         let dir = tempfile::tempdir().unwrap();
         let op = operator(&fake, dir.path());
-        assert_eq!(op.stat("nope.bin").await.unwrap_err().kind(), opendal::ErrorKind::NotFound);
-        let message = op.read_with("Paks/Win64/Common.rpak").range(0..10).await.unwrap_err().to_string();
-        for needle in ["depot 1", "manifest 99", "Paks/Win64/Common.rpak", "CDN said no"] {
+        assert_eq!(
+            op.stat("nope.bin").await.unwrap_err().kind(),
+            opendal::ErrorKind::NotFound
+        );
+        let message = op
+            .read_with("Paks/Win64/Common.rpak")
+            .range(0..10)
+            .await
+            .unwrap_err()
+            .to_string();
+        for needle in [
+            "depot 1",
+            "manifest 99",
+            "Paks/Win64/Common.rpak",
+            "CDN said no",
+        ] {
             assert!(message.contains(needle), "{needle} not in {message}");
         }
     }

@@ -77,7 +77,12 @@ const CURSOR: usize = 149184;
 const OUTPOS: usize = 149208;
 
 const LUT_SNOWFLAKE_0: [u8; 16] = [0, 3, 7, 15, 35, 63, 82, 71, 66, 69, 0, 0, 0, 0, 0, 0];
-const LUT_SNOWFLAKE_1: [u64; 4] = [4611756117654110208, 4611756116592754688, 4611686559597395968, 53199311768322048];
+const LUT_SNOWFLAKE_1: [u64; 4] = [
+    4611756117654110208,
+    4611756116592754688,
+    4611686559597395968,
+    53199311768322048,
+];
 
 /// Eight 16-bit lanes (an `__m128i`).
 type V = [i16; 8];
@@ -85,7 +90,16 @@ type V = [i16; 8];
 /// `_mm_set_epi32(e3, e2, e1, e0)`.
 fn set32(e3: u32, e2: u32, e1: u32, e0: u32) -> V {
     let w = |x: u32, i: u32| ((x >> (16 * i)) & 0xFFFF) as u16 as i16;
-    [w(e0, 0), w(e0, 1), w(e1, 0), w(e1, 1), w(e2, 0), w(e2, 1), w(e3, 0), w(e3, 1)]
+    [
+        w(e0, 0),
+        w(e0, 1),
+        w(e1, 0),
+        w(e1, 1),
+        w(e2, 0),
+        w(e2, 1),
+        w(e3, 0),
+        w(e3, 1),
+    ]
 }
 
 /// The low 16 bits of `x` in every lane (shuffle / unpack broadcast).
@@ -127,7 +141,9 @@ fn adapt(old: V, cmp: V, mask: V, k: V, shift: u32) -> V {
 /// rANS step: `(x & mask) + (x >> bits) * (c1 - c0) - c0`.
 fn rans(x: u64, bits: u32, c0: u16, c1: u16) -> u64 {
     let freq = u64::from(u32::from(c1).wrapping_sub(u32::from(c0)));
-    (x & ((1u64 << bits) - 1)).wrapping_add((x >> bits).wrapping_mul(freq)).wrapping_sub(u64::from(c0))
+    (x & ((1u64 << bits) - 1))
+        .wrapping_add((x >> bits).wrapping_mul(freq))
+        .wrapping_sub(u64::from(c0))
 }
 
 fn highest_bit(x: u64) -> Option<u32> {
@@ -237,7 +253,9 @@ impl<'a> Snow<'a> {
     fn c680(&self, pos: u64, shift: u8, a4: u32) -> R<(i64, [u8; 256])> {
         let mut v29 = [0u8; 528];
         let g = |v: &[u8; 528], i: usize| u16::from_le_bytes([v[2 * i], v[2 * i + 1]]);
-        let s = |v: &mut [u8; 528], i: usize, x: u16| v[2 * i..2 * i + 2].copy_from_slice(&x.to_le_bytes());
+        let s = |v: &mut [u8; 528], i: usize, x: u16| {
+            v[2 * i..2 * i + 2].copy_from_slice(&x.to_le_bytes())
+        };
         // v29[0] = -65536, v29[1] = -1
         for i in 1..8 {
             s(&mut v29, i, 0xFFFF);
@@ -253,7 +271,9 @@ impl<'a> Snow<'a> {
                 if v15 == 0xFFFF {
                     let mut i = v14 - 1;
                     while g(&v29, i) == 0xFFFF {
-                        i = i.checked_sub(1).ok_or(SnowflakeError::Corrupt("code table"))?;
+                        i = i
+                            .checked_sub(1)
+                            .ok_or(SnowflakeError::Corrupt("code table"))?;
                     }
                     v15 = g(&v29, i);
                     s(&mut v29, i, 0xFFFF);
@@ -308,7 +328,10 @@ impl<'a> Snow<'a> {
         } else {
             out = [8u8; 256];
         }
-        Ok((i64::from(v22) + 8 * (v21 - pos) as i64 - i64::from(shift), out))
+        Ok((
+            i64::from(v22) + 8 * (v21 - pos) as i64 - i64::from(shift),
+            out,
+        ))
     }
 
     /// `sub_7FF7FC23BA70`: the literal models for a stored length table, based at `b`.
@@ -546,7 +569,11 @@ impl<'a> Snow<'a> {
         let v12 = self.r32(BITCNT);
         let v13 = v12.wrapping_neg() & 0x1F;
         let v14 = self.r64(CURSOR) - if v12 != 0 { 4 } else { 0 };
-        let (v15, lens) = self.c680(v14 + u64::from(v13 >> 3), ((v12 as u8).wrapping_neg()) & 7, v10)?;
+        let (v15, lens) = self.c680(
+            v14 + u64::from(v13 >> 3),
+            ((v12 as u8).wrapping_neg()) & 7,
+            v10,
+        )?;
         self.c880(48, v9, Some(&lens))?;
         let v16 = v14 + 4 * (((v15 + i64::from(v13) + 31) as u64) >> 5);
         self.w64(CURSOR, v16);
@@ -562,7 +589,10 @@ impl<'a> Snow<'a> {
     }
 
     fn put(&mut self, at: u64, b: u8) -> R<()> {
-        *self.out.get_mut(at as usize).ok_or(SnowflakeError::TooBig)? = b;
+        *self
+            .out
+            .get_mut(at as usize)
+            .ok_or(SnowflakeError::TooBig)? = b;
         Ok(())
     }
 
@@ -593,7 +623,9 @@ impl<'a> Snow<'a> {
             let v10 = 4096 - v7;
             if (x0 as u32 & 0xFFF) >= v7 {
                 // Raw mode: the literals are the low bytes of the state.
-                let mut v11 = v9.wrapping_add(v8 * u64::from(v10)).wrapping_sub(u64::from(v7));
+                let mut v11 = v9
+                    .wrapping_add(v8 * u64::from(v10))
+                    .wrapping_sub(u64::from(v7));
                 self.w16(1136, (v7 - (v7 >> 4)) as u16);
                 v11 = self.renorm(v11);
                 let x1 = self.r64(X1);
@@ -681,7 +713,12 @@ impl<'a> Snow<'a> {
                 let v78 = cmpgt(v68, v77);
                 let v79 = cmpgt(v69, v77);
                 // _BitScanForward of the compare mask with bit 16 set: the first lane that is set.
-                let first = |a: V, b: V| a.iter().chain(b.iter()).position(|&x| x != 0).map_or(16, |i| i as u32);
+                let first = |a: V, b: V| {
+                    a.iter()
+                        .chain(b.iter())
+                        .position(|&x| x != 0)
+                        .map_or(16, |i| i as u32)
+                };
                 v65 = first(v74, v75);
                 let v81 = first(v78, v79);
                 if v65 == 0 || v81 == 0 {
@@ -772,7 +809,10 @@ impl<'a> Snow<'a> {
         if total < 0x40 {
             let at = self.r64(CURSOR);
             for i in 0..total {
-                let b = *self.input.get((at + i) as usize).ok_or(SnowflakeError::Corrupt("truncated"))?;
+                let b = *self
+                    .input
+                    .get((at + i) as usize)
+                    .ok_or(SnowflakeError::Corrupt("truncated"))?;
                 self.put(i, b)?;
             }
             return Ok(true);
@@ -801,7 +841,10 @@ impl<'a> Snow<'a> {
                         let mut i = v15;
                         while i < end {
                             let at = self.r64(CURSOR);
-                            let b = *self.input.get(at as usize).ok_or(SnowflakeError::Corrupt("truncated"))?;
+                            let b = *self
+                                .input
+                                .get(at as usize)
+                                .ok_or(SnowflakeError::Corrupt("truncated"))?;
                             self.put(i, b)?;
                             self.w64(CURSOR, at + 1);
                             i += 1;
@@ -822,13 +865,19 @@ impl<'a> Snow<'a> {
                     pc = if v8 != 0 { Pc::Commands } else { Pc::Tail };
                 }
                 Pc::Tail => {
-                    let left = (self.r64(BLOCK_END) as u32).wrapping_sub(self.r64(OUTPOS) as u32) as i32;
+                    let left =
+                        (self.r64(BLOCK_END) as u32).wrapping_sub(self.r64(OUTPOS) as u32) as i32;
                     if left != 8 {
                         self.literals(left.wrapping_sub(8) as u32)?;
                     }
                     let op = self.r64(OUTPOS);
                     let (x0, x1) = (self.r64(X0) as u32, self.r64(X1) as u32);
-                    for (i, b) in x1.to_le_bytes().into_iter().chain(x0.to_le_bytes()).enumerate() {
+                    for (i, b) in x1
+                        .to_le_bytes()
+                        .into_iter()
+                        .chain(x0.to_le_bytes())
+                        .enumerate()
+                    {
                         self.put(op + i as u64, b)?;
                     }
                     let end = self.r64(BLOCK_END);
@@ -864,7 +913,12 @@ impl<'a> Snow<'a> {
                         let v25 = cmpgt(v22, v23);
                         let v26 = lanes(v24) + lanes(v25);
                         let mut v27 = 16 - v26;
-                        let v29 = rans(x0, 15, self.t(48 + 2 * v27 as usize), self.t(48 + 2 * (17 - v26) as usize));
+                        let v29 = rans(
+                            x0,
+                            15,
+                            self.t(48 + 2 * v27 as usize),
+                            self.t(48 + 2 * (17 - v26) as usize),
+                        );
                         self.step(v29);
                         self.stv(50, adapt(v21, v24, c3, c4, 6));
                         self.stv(66, adapt(v22, v25, c3, c2, 6));
@@ -889,7 +943,12 @@ impl<'a> Snow<'a> {
                         let v64 = cmpgt(v61, v62);
                         let v65 = lanes(v63) + lanes(v64);
                         let v66 = 16 - v65;
-                        let v68 = rans(x0, 15, self.t(122 + 2 * (16 - v65) as usize), self.t(122 + 2 * (17 - v65) as usize));
+                        let v68 = rans(
+                            x0,
+                            15,
+                            self.t(122 + 2 * (16 - v65) as usize),
+                            self.t(122 + 2 * (17 - v65) as usize),
+                        );
                         self.step(v68);
                         self.stv(124, adapt(v60, v63, c3, c4, 6));
                         self.stv(140, adapt(v61, v64, c3, c2, 6));
@@ -903,12 +962,35 @@ impl<'a> Snow<'a> {
                                 let v78 = cmpgt(v75, v77);
                                 let v79 = cmpgt(v76, v77);
                                 let v80 = lanes(v78) + lanes(v79);
-                                let v82 = rans(x0, 14, self.t(158 + 2 * (16 - v80) as usize), self.t(158 + 2 * (17 - v80) as usize));
+                                let v82 = rans(
+                                    x0,
+                                    14,
+                                    self.t(158 + 2 * (16 - v80) as usize),
+                                    self.t(158 + 2 * (17 - v80) as usize),
+                                );
                                 len = u64::from(16 - v80 + 18);
                                 self.step(v82);
                                 let s = set32(0x3e103e10, 0x3e103e10, 0x3e103e10, 0x3e103e10);
-                                self.stv(160, adapt(v75, v78, s, set32(0xf800d9, 0xba009b, 0x7c005d, 0x3e001f), 5));
-                                self.stv(176, adapt(v76, v79, s, set32(0x1f001d1, 0x1b20193, 0x1740155, 0x1360117), 5));
+                                self.stv(
+                                    160,
+                                    adapt(
+                                        v75,
+                                        v78,
+                                        s,
+                                        set32(0xf800d9, 0xba009b, 0x7c005d, 0x3e001f),
+                                        5,
+                                    ),
+                                );
+                                self.stv(
+                                    176,
+                                    adapt(
+                                        v76,
+                                        v79,
+                                        s,
+                                        set32(0x1f001d1, 0x1b20193, 0x1740155, 0x1360117),
+                                        5,
+                                    ),
+                                );
                             } else {
                                 let x1 = self.r64(X1);
                                 let v86 = self.ldv(196);
@@ -925,8 +1007,18 @@ impl<'a> Snow<'a> {
                                 let v99 = lanes(v96) + lanes(v97);
                                 let v100 = 16 - v98;
                                 let v102 = 15 - v99;
-                                let v104 = rans(x0, 15, self.t(194 + 2 * (16 - v98) as usize), self.t(194 + 2 * (17 - v98) as usize));
-                                let v105 = rans(x1, 14, self.t(230 + 2 * v102 as usize), self.t(230 + 2 * (16 - v99) as usize));
+                                let v104 = rans(
+                                    x0,
+                                    15,
+                                    self.t(194 + 2 * (16 - v98) as usize),
+                                    self.t(194 + 2 * (17 - v98) as usize),
+                                );
+                                let v105 = rans(
+                                    x1,
+                                    14,
+                                    self.t(230 + 2 * v102 as usize),
+                                    self.t(230 + 2 * (16 - v99) as usize),
+                                );
                                 let v104 = self.renorm(v104);
                                 let v105 = self.renorm(v105);
                                 let s = set32(0x3c4f3c4f, 0x3c4f3c4f, 0x3c4f3c4f, 0x3c4f3c4f);
@@ -937,7 +1029,16 @@ impl<'a> Snow<'a> {
                                 self.stv(212, adapt(v87, v93, c3, c2, 6));
                                 let v113 = v104 >> (17 - v98);
                                 self.stv(230, adapt(v88, v96, s, unk_m, 6));
-                                self.stv(246, adapt(v89, v97, s, set32(0x3b10372, 0x33302f4, 0x2b50276, 0x23701f8), 6));
+                                self.stv(
+                                    246,
+                                    adapt(
+                                        v89,
+                                        v97,
+                                        s,
+                                        set32(0x3b10372, 0x33302f4, 0x2b50276, 0x23701f8),
+                                        6,
+                                    ),
+                                );
                                 let v113 = self.renorm(v113);
                                 let nx = self.r64(X1);
                                 self.w64(X0, nx);
@@ -947,7 +1048,11 @@ impl<'a> Snow<'a> {
                         }
 
                         // Offset.
-                        let ctx = if len >= 3 && len - 3 < 3 { (len - 3) as usize } else { 3 };
+                        let ctx = if len >= 3 && len - 3 < 3 {
+                            (len - 3) as usize
+                        } else {
+                            3
+                        };
                         let v117 = 218 * ctx;
                         let x0 = self.r64(X0);
                         let v119 = self.ldv(v117 + 264);
@@ -956,7 +1061,12 @@ impl<'a> Snow<'a> {
                         if v121 > 7 {
                             return Err(SnowflakeError::Corrupt("offset class"));
                         }
-                        let v123 = rans(x0, 12, self.t(v117 + 2 * (7 - v121) + 264), self.t(v117 + 2 * (8 - v121) + 264));
+                        let v123 = rans(
+                            x0,
+                            12,
+                            self.t(v117 + 2 * (7 - v121) + 264),
+                            self.t(v117 + 2 * (8 - v121) + 264),
+                        );
                         self.step(v123);
                         let k = set32(0xf270f27, 0xf270f27, 0xf270f27, 0xf270000);
                         self.stv(v117 + 264, adapt(v119, v120, k, c5, 5));
@@ -972,24 +1082,45 @@ impl<'a> Snow<'a> {
                             let v163 = lanes(v161) as usize;
                             let v164 = 7 - v163;
                             let v166 = lanes(v162) as usize;
-                            let v168 = rans(x0, 13, self.t(v156 + 2 * v164 + 386), self.t(v156 + 2 * (8 - v163) + 386));
-                            let v169 = rans(x1, 15, self.t(v117 + 2 * (7 - v166) + 368), self.t(v117 + 2 * (8 - v166) + 368));
+                            let v168 = rans(
+                                x0,
+                                13,
+                                self.t(v156 + 2 * v164 + 386),
+                                self.t(v156 + 2 * (8 - v163) + 386),
+                            );
+                            let v169 = rans(
+                                x1,
+                                15,
+                                self.t(v117 + 2 * (7 - v166) + 368),
+                                self.t(v117 + 2 * (8 - v166) + 368),
+                            );
                             let v168 = self.renorm(v168);
                             let v169 = self.renorm(v169);
                             let v173 = set32(0x20001e86, 0x1e861e86, 0x1e861e86, 0x1e861e86);
                             let v174 = set32(0x7e477e47, 0x7e477e47, 0x7e477e47, 0x7e477e47);
                             self.w64(X0, v168);
                             self.w64(X1, v169);
-                            self.stv(v156 + 386, adapt(v157, v161, v173, set32(0x17a, 0x13b00fc, 0xbd007e, 0x3f0000), 6));
+                            self.stv(
+                                v156 + 386,
+                                adapt(
+                                    v157,
+                                    v161,
+                                    v173,
+                                    set32(0x17a, 0x13b00fc, 0xbd007e, 0x3f0000),
+                                    6,
+                                ),
+                            );
                             self.stv(v117 + 368, adapt(v155, v162, v174, unk_m, 6));
                             let v175 = v168 >> (v158 - 3);
                             let v176 = (v168 as u32) & ((1u32 << (v158 - 3)) - 1);
                             let v175 = self.renorm(v175);
                             self.w64(X0, v169);
                             self.w64(X1, v175);
-                            offset = ((7 - v166 as u32) | (8 * v176) | ((v164 as u32 + 1) << v158)).wrapping_add(1);
+                            offset = ((7 - v166 as u32) | (8 * v176) | ((v164 as u32 + 1) << v158))
+                                .wrapping_add(1);
                             let idx = self.r8(HIST_IDX);
-                            let hist: [u8; 16] = self.m[HIST..HIST + 16].try_into().expect("16 bytes");
+                            let hist: [u8; 16] =
+                                self.m[HIST..HIST + 16].try_into().expect("16 bytes");
                             let mut shifted = [0u8; 16];
                             shifted[4..].copy_from_slice(&hist[..12]);
                             shifted[..4].copy_from_slice(&offset.to_le_bytes());
@@ -1003,8 +1134,18 @@ impl<'a> Snow<'a> {
                             let v132 = cmpgt(v128, splat(x1 & 0x7FFF));
                             let v133 = lanes(v131) as usize;
                             let v136 = lanes(v132) as usize;
-                            let v138 = rans(x0, 15, self.t(v117 + 2 * (7 - v133) + 332), self.t(v117 + 2 * (8 - v133) + 332));
-                            let v139 = rans(x1, 15, self.t(v117 + 2 * (7 - v136) + 350), self.t(v117 + 2 * (8 - v136) + 350));
+                            let v138 = rans(
+                                x0,
+                                15,
+                                self.t(v117 + 2 * (7 - v133) + 332),
+                                self.t(v117 + 2 * (8 - v133) + 332),
+                            );
+                            let v139 = rans(
+                                x1,
+                                15,
+                                self.t(v117 + 2 * (7 - v136) + 350),
+                                self.t(v117 + 2 * (8 - v136) + 350),
+                            );
                             let v138 = self.renorm(v138);
                             let v139 = self.renorm(v139);
                             self.w64(X0, v138);
@@ -1012,7 +1153,16 @@ impl<'a> Snow<'a> {
                             offset = (((7 - v136) | (8 * (7 - v133))) + 1) as u32;
                             let k1 = set32(0x7c877c87, 0x7c877c87, 0x7c877c87, 0x7c877c87);
                             let k2 = set32(0x7f277f27, 0x7f277f27, 0x7f277f27, 0x7f277f27);
-                            self.stv(v117 + 332, adapt(v127, v131, k1, set32(0x37902fa, 0x27b01fc, 0x17d00fe, 0x7f0000), 7));
+                            self.stv(
+                                v117 + 332,
+                                adapt(
+                                    v127,
+                                    v131,
+                                    k1,
+                                    set32(0x37902fa, 0x27b01fc, 0x17d00fe, 0x7f0000),
+                                    7,
+                                ),
+                            );
                             self.stv(v117 + 350, adapt(v128, v132, k2, c5, 5));
                         } else {
                             // A recent offset.
@@ -1024,22 +1174,35 @@ impl<'a> Snow<'a> {
                             }
                             let x0 = self.r64(X0);
                             let probe = (x0 & 0x3FFF) as u16 as i16;
-                            let v148 = lanes(cmpgt(v147, [probe, probe, probe, probe, 0, 0, 0, 0])) as usize;
+                            let v148 = lanes(cmpgt(v147, [probe, probe, probe, probe, 0, 0, 0, 0]))
+                                as usize;
                             if v148 > 3 {
                                 return Err(SnowflakeError::Corrupt("recent offset"));
                             }
                             let v149 = 3 - v148;
-                            let v151 = rans(x0, 14, self.t(v146 + 2 * v149 + 282), self.t(v146 + 2 * (4 - v148) + 282));
+                            let v151 = rans(
+                                x0,
+                                14,
+                                self.t(v146 + 2 * v149 + 282),
+                                self.t(v146 + 2 * (4 - v148) + 282),
+                            );
                             self.step(v151);
                             let lut = LUT_SNOWFLAKE_1[v149];
-                            let target: V = std::array::from_fn(|i| if i < 4 { (lut >> (16 * i)) as u16 as i16 } else { 0 });
+                            let target: V = std::array::from_fn(|i| {
+                                if i < 4 {
+                                    (lut >> (16 * i)) as u16 as i16
+                                } else {
+                                    0
+                                }
+                            });
                             let updated = add(srai(sub(target, v147), 6), v147);
                             for (i, x) in updated.iter().take(4).enumerate() {
                                 self.w16(v146 + 282 + 2 * i, *x as u16);
                             }
                             offset = self.r32(HIST + 4 * v149);
                             self.w8(HIST_IDX, 0);
-                            let hist: [u8; 16] = self.m[HIST..HIST + 16].try_into().expect("16 bytes");
+                            let hist: [u8; 16] =
+                                self.m[HIST..HIST + 16].try_into().expect("16 bytes");
                             let sh = shuffles[v149];
                             let moved: [u8; 16] = std::array::from_fn(|i| hist[usize::from(sh[i])]);
                             self.m[HIST..HIST + 16].copy_from_slice(&moved);
@@ -1048,7 +1211,8 @@ impl<'a> Snow<'a> {
                         // Copy the match.
                         let at = self.r64(OUTPOS);
                         self.w64(OUTPOS, at + len);
-                        if offset == 0 || u64::from(offset) > at || at + len > self.out.len() as u64 {
+                        if offset == 0 || u64::from(offset) > at || at + len > self.out.len() as u64
+                        {
                             return Err(SnowflakeError::Corrupt("match leaves the output"));
                         }
                         for i in 0..len {
@@ -1073,7 +1237,12 @@ impl<'a> Snow<'a> {
         let v33 = cmpgt(v32, splat(x0 & 0x7FFF));
         let v34 = lanes(v33) as usize;
         let v35 = 7 - v34;
-        let v37 = rans(x0, 15, self.t(104 + 2 * (7 - v34)), self.t(104 + 2 * (8 - v34)));
+        let v37 = rans(
+            x0,
+            15,
+            self.t(104 + 2 * (7 - v34)),
+            self.t(104 + 2 * (8 - v34)),
+        );
         self.step(v37);
         let k = set32(0x7f277f27, 0x7f277f27, 0x7f277f27, 0x7f270000);
         self.stv(104, adapt(v32, v33, k, c5, 5));
@@ -1113,7 +1282,11 @@ impl<'a> Snow<'a> {
 /// the stream says it has.
 pub fn decompress(input: &[u8]) -> Result<Vec<u8>, SnowflakeError> {
     let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut s = Snow { m: vec![0u8; STATE_LEN], input, out: Vec::new() };
+        let mut s = Snow {
+            m: vec![0u8; STATE_LEN],
+            input,
+            out: Vec::new(),
+        };
         s.init()?;
         let total = s.r64(TOTAL);
         s.out = vec![0u8; total as usize];
@@ -1144,13 +1317,18 @@ mod tests {
     #[test]
     fn garbage_is_an_error_not_a_panic() {
         for seed in 0..64u8 {
-            let junk: Vec<u8> = (0..4096u32).map(|i| (i as u8).wrapping_mul(seed | 1).wrapping_add(seed)).collect();
+            let junk: Vec<u8> = (0..4096u32)
+                .map(|i| (i as u8).wrapping_mul(seed | 1).wrapping_add(seed))
+                .collect();
             let _ = decompress(&junk);
         }
     }
 
     #[test]
     fn set32_orders_lanes_like_sse() {
-        assert_eq!(set32(0x00070006, 0x00050004, 0x00030002, 0x00010000), [0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(
+            set32(0x00070006, 0x00050004, 0x00030002, 0x00010000),
+            [0, 1, 2, 3, 4, 5, 6, 7]
+        );
     }
 }

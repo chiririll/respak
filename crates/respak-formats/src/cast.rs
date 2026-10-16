@@ -23,9 +23,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use respak_core::capability::{Animation, Bone, MaterialTexture, Mesh, MeshMaterial, MeshPart, Skeleton, Track};
+use respak_core::capability::{
+    Animation, Bone, MaterialTexture, Mesh, MeshMaterial, MeshPart, Skeleton, Track,
+};
 use respak_core::value::{BlobData, BundleData};
-use respak_core::{ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey};
+use respak_core::{
+    ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
@@ -159,7 +163,9 @@ impl Default for CastOptions {
 
 /// FNV-1a, 64 bit.
 fn hash64(s: &str) -> u64 {
-    s.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3))
+    s.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 /// The Cast material key for a shader slot name, if Cast has one.
@@ -189,13 +195,24 @@ struct Node {
 
 impl Node {
     fn new(id: &[u8; 4], hash: u64) -> Self {
-        Self { id: *id, hash, props: Vec::new(), prop_count: 0, children: Vec::new() }
+        Self {
+            id: *id,
+            hash,
+            props: Vec::new(),
+            prop_count: 0,
+            children: Vec::new(),
+        }
     }
 
     fn prop(&mut self, ty: &[u8], name: &str, len: usize, data: &[u8]) {
-        let id = if ty.len() == 1 { [ty[0], 0] } else { [ty[0], ty[1]] };
+        let id = if ty.len() == 1 {
+            [ty[0], 0]
+        } else {
+            [ty[0], ty[1]]
+        };
         self.props.extend_from_slice(&id);
-        self.props.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        self.props
+            .extend_from_slice(&(name.len() as u16).to_le_bytes());
         self.props.extend_from_slice(&(len as u32).to_le_bytes());
         self.props.extend_from_slice(name.as_bytes());
         self.props.extend_from_slice(data);
@@ -276,7 +293,14 @@ impl Default for CastWriter {
 impl CastWriter {
     /// An empty file with a `root` and a `modl` node.
     pub fn new() -> Self {
-        Self { modl: Node::new(b"modl", 0), skel: None, materials: Vec::new(), material_guids: HashSet::new(), meshes: Vec::new(), curves: Vec::new() }
+        Self {
+            modl: Node::new(b"modl", 0),
+            skel: None,
+            materials: Vec::new(),
+            material_guids: HashSet::new(),
+            meshes: Vec::new(),
+            curves: Vec::new(),
+        }
     }
 
     /// Names the model and adds its `skel` with `bones`.
@@ -296,7 +320,9 @@ impl CastWriter {
         node.string("n", &material.name);
         node.string("t", "pbr");
         for MaterialTexture { slot, guid, .. } in &material.textures {
-            let (Some(role), Some((_, path))) = (cast_role(slot), files.iter().find(|(g, _)| g == guid)) else {
+            let (Some(role), Some((_, path))) =
+                (cast_role(slot), files.iter().find(|(g, _)| g == guid))
+            else {
                 continue;
             };
             node.u64(role, *guid);
@@ -310,26 +336,40 @@ impl CastWriter {
     /// Adds a `mesh` node for `part`, named `name`: positions, normals, colours, UV layers, bone
     /// indices and weights, triangles with the winding reversed. More than 65535 vertices is an error.
     pub fn mesh(&mut self, name: &str, part: &MeshPart, bone_count: usize) -> Result<()> {
-        let custom = |message: String| Error::new(ErrorKind::Custom { source: None, message });
+        let custom = |message: String| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message,
+            })
+        };
         let n = part.positions.len();
         if n > usize::from(u16::MAX) + 1 {
-            return Err(custom(format!("mesh {name}: {n} vertices do not fit Cast's 16-bit face indices")));
+            return Err(custom(format!(
+                "mesh {name}: {n} vertices do not fit Cast's 16-bit face indices"
+            )));
         }
         let same = |len: usize| len == n;
         if !same(part.normals.len())
             || !(part.colors.is_empty() || same(part.colors.len()))
             || !part.uvs.iter().all(|l| same(l.len()))
         {
-            return Err(custom(format!("mesh {name}: vertex streams have different lengths")));
+            return Err(custom(format!(
+                "mesh {name}: vertex streams have different lengths"
+            )));
         }
         let influences = part.influences as usize;
         if influences > 0
-            && (part.bone_indices.len() != n * influences || part.bone_weights.len() != n * influences)
+            && (part.bone_indices.len() != n * influences
+                || part.bone_weights.len() != n * influences)
         {
-            return Err(custom(format!("mesh {name}: bone streams do not match {influences} influence(s) per vertex")));
+            return Err(custom(format!(
+                "mesh {name}: bone streams do not match {influences} influence(s) per vertex"
+            )));
         }
         if part.triangles.iter().flatten().any(|&i| i as usize >= n) {
-            return Err(custom(format!("mesh {name}: a triangle refers to a vertex that does not exist")));
+            return Err(custom(format!(
+                "mesh {name}: a triangle refers to a vertex that does not exist"
+            )));
         }
 
         let mut node = Node::new(b"mesh", hash64(name));
@@ -345,15 +385,29 @@ impl CastWriter {
         }
         if influences > 0 {
             if bone_count > 256 {
-                let data: Vec<u8> = part.bone_indices.iter().flat_map(|i| i.to_le_bytes()).collect();
+                let data: Vec<u8> = part
+                    .bone_indices
+                    .iter()
+                    .flat_map(|i| i.to_le_bytes())
+                    .collect();
                 node.prop(b"h", "wb", part.bone_indices.len(), &data);
             } else {
                 let data: Vec<u8> = part.bone_indices.iter().map(|&i| i as u8).collect();
                 node.prop(b"b", "wb", part.bone_indices.len(), &data);
             }
-            node.floats(b"f", "wv", part.bone_weights.len(), part.bone_weights.iter().copied());
+            node.floats(
+                b"f",
+                "wv",
+                part.bone_weights.len(),
+                part.bone_weights.iter().copied(),
+            );
         }
-        let faces: Vec<u8> = part.triangles.iter().flat_map(|&[a, b, c]| [c, b, a]).flat_map(|i| (i as u16).to_le_bytes()).collect();
+        let faces: Vec<u8> = part
+            .triangles
+            .iter()
+            .flat_map(|&[a, b, c]| [c, b, a])
+            .flat_map(|i| (i as u16).to_le_bytes())
+            .collect();
         node.prop(b"h", "f", part.triangles.len() * 3, &faces);
         node.u16("ul", part.uvs.len() as u16);
         if influences > 0 {
@@ -380,28 +434,67 @@ impl CastWriter {
     /// `values` holds `frames` entries of 1 (`t*`, `s*`) or 4 (`rq`) floats, one per frame; every
     /// frame is keyed (`kb` is `u8`, `u16` or `u32` by `frames`). A length that does not match is
     /// an error.
-    pub fn curve(&mut self, bone: &str, key: &str, mode: &str, weight: Option<f32>, frames: u32, values: &[f32]) -> Result<()> {
+    pub fn curve(
+        &mut self,
+        bone: &str,
+        key: &str,
+        mode: &str,
+        weight: Option<f32>,
+        frames: u32,
+        values: &[f32],
+    ) -> Result<()> {
         let width = match key {
             "tx" | "ty" | "tz" | "sx" | "sy" | "sz" => 1,
             "rq" => 4,
-            other => return Err(custom(format!("curve {bone}: `{other}` is not a Cast key property"))),
+            other => {
+                return Err(custom(format!(
+                    "curve {bone}: `{other}` is not a Cast key property"
+                )))
+            }
         };
         if mode != "absolute" && mode != "additive" {
-            return Err(custom(format!("curve {bone}.{key}: mode `{mode}` is not `absolute` or `additive`")));
+            return Err(custom(format!(
+                "curve {bone}.{key}: mode `{mode}` is not `absolute` or `additive`"
+            )));
         }
         if values.len() as u64 != u64::from(frames) * width {
-            return Err(custom(format!("curve {bone}.{key}: {} values for {frames} frames", values.len())));
+            return Err(custom(format!(
+                "curve {bone}.{key}: {} values for {frames} frames",
+                values.len()
+            )));
         }
         let mut node = Node::new(b"curv", hash64(&format!("{bone}:{key}")));
         node.string("nn", bone);
         node.string("kp", key);
         let count = frames as usize;
         match frames {
-            0..=255 => node.prop(b"b", "kb", count, &(0..frames).map(|f| f as u8).collect::<Vec<_>>()),
-            256..=65535 => node.prop(b"h", "kb", count, &(0..frames).flat_map(|f| (f as u16).to_le_bytes()).collect::<Vec<_>>()),
-            _ => node.prop(b"i", "kb", count, &(0..frames).flat_map(u32::to_le_bytes).collect::<Vec<_>>()),
+            0..=255 => node.prop(
+                b"b",
+                "kb",
+                count,
+                &(0..frames).map(|f| f as u8).collect::<Vec<_>>(),
+            ),
+            256..=65535 => node.prop(
+                b"h",
+                "kb",
+                count,
+                &(0..frames)
+                    .flat_map(|f| (f as u16).to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
+            _ => node.prop(
+                b"i",
+                "kb",
+                count,
+                &(0..frames).flat_map(u32::to_le_bytes).collect::<Vec<_>>(),
+            ),
         }
-        node.floats(if width == 1 { b"f" } else { b"v4" }, "kv", count, values.iter().copied());
+        node.floats(
+            if width == 1 { b"f" } else { b"v4" },
+            "kv",
+            count,
+            values.iter().copied(),
+        );
         node.string("m", mode);
         if mode == "additive" {
             node.floats(b"f", "ab", 1, std::iter::once(weight.unwrap_or(1.0)));
@@ -430,11 +523,22 @@ impl CastWriter {
 }
 
 fn file_safe(name: &str) -> String {
-    name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect()
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn custom(message: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Custom { source: None, message: message.into() })
+    Error::new(ErrorKind::Custom {
+        source: None,
+        message: message.into(),
+    })
 }
 
 fn is_cancelled(e: &Error) -> bool {
@@ -470,15 +574,33 @@ impl ConvertHandler for CastEncode {
         let info = mesh.info();
         if opts.skin >= info.skin_count {
             return Err(Error::new(ErrorKind::InvalidOptions {
-                message: format!("skin {}: the model has {} skin(s)", opts.skin, info.skin_count),
+                message: format!(
+                    "skin {}: the model has {} skin(s)",
+                    opts.skin, info.skin_count
+                ),
             }));
         }
-        let lods = if info.lod_count == 0 { Vec::new() } else { opts.lods.resolve(info.lod_count)? };
-        let stem = source.as_metadata().and_then(|m| m.name()).map_or_else(|| "model".to_owned(), stem_of);
+        let lods = if info.lod_count == 0 {
+            Vec::new()
+        } else {
+            opts.lods.resolve(info.lod_count)?
+        };
+        let stem = source
+            .as_metadata()
+            .and_then(|m| m.name())
+            .map_or_else(|| "model".to_owned(), stem_of);
 
-        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new("cast"), options.normalized());
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            FormatId::new("cast"),
+            options.normalized(),
+        );
         let cast_value = |bytes: Vec<u8>| -> Value {
-            Arc::new(BlobData::with_format(FormatId::new("cast"), Bytes::from(bytes), key.clone()))
+            Arc::new(BlobData::with_format(
+                FormatId::new("cast"),
+                Bytes::from(bytes),
+                key.clone(),
+            ))
         };
         let mut items: Vec<(String, Value)> = Vec::new();
 
@@ -491,7 +613,11 @@ impl ConvertHandler for CastEncode {
 
         // Materials and their textures: each texture is converted once and shared by name.
         let materials = mesh.materials(opts.skin, cx).await?;
-        let image = Target { format: FormatId::new(opts.image.clone()), options: Json::Null, via: Vec::new() };
+        let image = Target {
+            format: FormatId::new(opts.image.clone()),
+            options: Json::Null,
+            via: Vec::new(),
+        };
         let mut texture_paths: BTreeMap<u64, String> = BTreeMap::new();
         if opts.textures {
             for material in &materials {
@@ -500,20 +626,36 @@ impl ConvertHandler for CastEncode {
                     if texture_paths.contains_key(&texture.guid) {
                         continue;
                     }
-                    let Some(value) = &texture.texture else { continue };
+                    let Some(value) = &texture.texture else {
+                        continue;
+                    };
                     match cx.mediator.convert(value.clone(), image.clone(), cx).await {
                         Ok(converted) => {
-                            let ext = cx.mediator.extension_of(converted.format().name()).unwrap_or(converted.format().name()).to_owned();
+                            let ext = cx
+                                .mediator
+                                .extension_of(converted.format().name())
+                                .unwrap_or(converted.format().name())
+                                .to_owned();
                             if converted.as_blob().is_some() {
-                                let path = format!("textures/{}/{}.{ext}", file_safe(&material.name), file_safe(&texture.slot));
+                                let path = format!(
+                                    "textures/{}/{}.{ext}",
+                                    file_safe(&material.name),
+                                    file_safe(&texture.slot)
+                                );
                                 items.push((path.clone(), converted));
                                 texture_paths.insert(texture.guid, path);
                             } else {
-                                cx.warn(format!("material {}: texture {:#018x} did not produce a file", material.name, texture.guid));
+                                cx.warn(format!(
+                                    "material {}: texture {:#018x} did not produce a file",
+                                    material.name, texture.guid
+                                ));
                             }
                         }
                         Err(e) if is_cancelled(&e) => return Err(e),
-                        Err(e) => cx.warn(format!("material {}: texture {:#018x} ({}) is skipped: {e}", material.name, texture.guid, texture.slot)),
+                        Err(e) => cx.warn(format!(
+                            "material {}: texture {:#018x} ({}) is skipped: {e}",
+                            material.name, texture.guid, texture.slot
+                        )),
                     }
                 }
             }
@@ -527,10 +669,17 @@ impl ConvertHandler for CastEncode {
                 if data.parts.is_empty() {
                     continue;
                 }
-                let name = format!("{}_{}_LOD{lod}", file_safe(&model_info.bodypart), model_info.index);
+                let name = format!(
+                    "{}_{}_LOD{lod}",
+                    file_safe(&model_info.bodypart),
+                    model_info.index
+                );
                 let mut writer = CastWriter::new();
                 writer.model(&name, bones);
-                for material in materials.iter().filter(|m| data.parts.iter().any(|p| p.material == m.guid)) {
+                for material in materials
+                    .iter()
+                    .filter(|m| data.parts.iter().any(|p| p.material == m.guid))
+                {
                     writer.material(material, &files);
                 }
                 for part in &data.parts {
@@ -552,7 +701,10 @@ impl ConvertHandler for CastEncode {
 fn root_fixup(position: [f32; 3], rotation: [f32; 4]) -> ([f32; 3], [f32; 4]) {
     // Lowering the Source yaw by 90 degrees is a turn about Z applied after the rest of the rotation.
     let (s, c) = (-std::f32::consts::FRAC_PI_4).sin_cos();
-    ([position[1], -position[0], position[2]], quat_mul([0.0, 0.0, s, c], rotation))
+    (
+        [position[1], -position[0], position[2]],
+        quat_mul([0.0, 0.0, s, c], rotation),
+    )
 }
 
 /// The Hamilton product `a * b` of two quaternions `[x, y, z, w]`.
@@ -570,7 +722,10 @@ fn per_frame<T: Copy>(track: &Track<T>, frames: u32, what: &str) -> Result<Vec<T
     match track {
         Track::Constant(v) => Ok(vec![*v; frames as usize]),
         Track::Dense(v) if v.len() == frames as usize => Ok(v.clone()),
-        Track::Dense(v) => Err(custom(format!("{what}: {} values for {frames} frames", v.len()))),
+        Track::Dense(v) => Err(custom(format!(
+            "{what}: {} values for {frames} frames",
+            v.len()
+        ))),
     }
 }
 
@@ -594,15 +749,26 @@ impl ConvertHandler for CastAnimationEncode {
         let blends = opts.blend.resolve(animation.blend_count())?;
         let bones = animation.bones();
         let weights = animation.bone_weights();
-        let stem = source.as_metadata().and_then(|m| m.name()).map_or_else(|| "animation".to_owned(), stem_of);
+        let stem = source
+            .as_metadata()
+            .and_then(|m| m.name())
+            .map_or_else(|| "animation".to_owned(), stem_of);
 
-        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new("cast"), options.normalized());
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            FormatId::new("cast"),
+            options.normalized(),
+        );
         let mut items: Vec<(String, Value)> = Vec::new();
         for blend in blends {
             cx.check_cancelled()?;
             let info = animation.info(blend)?;
             let frames = info.frame_count;
-            let mode = if info.additive { "additive" } else { "absolute" };
+            let mode = if info.additive {
+                "additive"
+            } else {
+                "absolute"
+            };
             let mut writer = CastWriter::new();
             writer.animation(&info.name, info.fps, info.looping, bones);
             for (index, bone) in bones.iter().enumerate() {
@@ -619,7 +785,9 @@ impl ConvertHandler for CastAnimationEncode {
                         (*t, *r) = root_fixup(*t, *r);
                     }
                 }
-                let weight = info.additive.then(|| weights.get(index).copied().unwrap_or(1.0));
+                let weight = info
+                    .additive
+                    .then(|| weights.get(index).copied().unwrap_or(1.0));
                 for (axis, name) in ["tx", "ty", "tz"].into_iter().enumerate() {
                     let values: Vec<f32> = translation.iter().map(|v| v[axis]).collect();
                     writer.curve(&bone.name, name, mode, weight, frames, &values)?;
@@ -633,8 +801,11 @@ impl ConvertHandler for CastAnimationEncode {
                     }
                 }
             }
-            let value: Value =
-                Arc::new(BlobData::with_format(FormatId::new("cast"), Bytes::from(writer.finish()), key.clone()));
+            let value: Value = Arc::new(BlobData::with_format(
+                FormatId::new("cast"),
+                Bytes::from(writer.finish()),
+                key.clone(),
+            ));
             items.push((format!("{stem}_{blend}.cast"), value));
         }
         Ok(Arc::new(BundleData::named(items, key)))
@@ -699,8 +870,21 @@ mod tests {
             children.push(c);
             p = next;
         }
-        assert_eq!(p - at, size as usize, "node {id}: nodeSize covers header, properties and children");
-        (Parsed { id, size, hash, props, children }, p)
+        assert_eq!(
+            p - at,
+            size as usize,
+            "node {id}: nodeSize covers header, properties and children"
+        );
+        (
+            Parsed {
+                id,
+                size,
+                hash,
+                props,
+                children,
+            },
+            p,
+        )
     }
 
     fn parse(bytes: &[u8]) -> Parsed {
@@ -714,11 +898,20 @@ mod tests {
     }
 
     fn prop<'a>(n: &'a Parsed, name: &str) -> &'a (Vec<u8>, String, u32, Vec<u8>) {
-        n.props.iter().find(|p| p.1 == name).unwrap_or_else(|| panic!("no property {name} in {}", n.id))
+        n.props
+            .iter()
+            .find(|p| p.1 == name)
+            .unwrap_or_else(|| panic!("no property {name} in {}", n.id))
     }
 
     fn bone(name: &str, parent: Option<u32>) -> Bone {
-        Bone { name: name.into(), parent, position: [1.0, 2.0, 3.0], rotation: [0.0, 0.0, 0.0, 1.0], scale: [1.0; 3] }
+        Bone {
+            name: name.into(),
+            parent,
+            position: [1.0, 2.0, 3.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0; 3],
+        }
     }
 
     fn part(vertices: usize) -> MeshPart {
@@ -764,7 +957,11 @@ mod tests {
         p.colors = vec![[1, 2, 3, 4]; 3];
         w.mesh("m_mat", &p, 1).unwrap();
         let root = parse(&w.finish());
-        let mesh = root.children[0].children.iter().find(|c| c.id == "mesh").unwrap();
+        let mesh = root.children[0]
+            .children
+            .iter()
+            .find(|c| c.id == "mesh")
+            .unwrap();
         assert_eq!(prop(mesh, "vp").2, 3);
         assert_eq!(prop(mesh, "vp").3.len(), 36);
         assert_eq!(prop(mesh, "u0").0, b"v2");
@@ -788,7 +985,11 @@ mod tests {
         p.bone_weights = vec![1.0; 3];
         w.mesh("x", &p, 400).unwrap();
         let root = parse(&w.finish());
-        let mesh = root.children[0].children.iter().find(|c| c.id == "mesh").unwrap();
+        let mesh = root.children[0]
+            .children
+            .iter()
+            .find(|c| c.id == "mesh")
+            .unwrap();
         assert_eq!(prop(mesh, "wb").0, b"h\0");
         assert_eq!(&prop(mesh, "wb").3[..2], &300u16.to_le_bytes());
     }
@@ -799,14 +1000,25 @@ mod tests {
         w.model("m", &[]);
         w.mesh("x", &part(3), 0).unwrap();
         let root = parse(&w.finish());
-        let mesh = root.children[0].children.iter().find(|c| c.id == "mesh").unwrap();
-        assert!(mesh.props.iter().all(|p| p.1 != "wb" && p.1 != "wv" && p.1 != "mi" && p.1 != "vc"));
+        let mesh = root.children[0]
+            .children
+            .iter()
+            .find(|c| c.id == "mesh")
+            .unwrap();
+        assert!(mesh
+            .props
+            .iter()
+            .all(|p| p.1 != "wb" && p.1 != "wv" && p.1 != "mi" && p.1 != "vc"));
     }
 
     #[test]
     fn too_many_vertices_and_bad_streams_are_errors() {
         let mut w = CastWriter::new();
-        let big = MeshPart { positions: vec![[0.0; 3]; 65537], normals: vec![[0.0; 3]; 65537], ..MeshPart::default() };
+        let big = MeshPart {
+            positions: vec![[0.0; 3]; 65537],
+            normals: vec![[0.0; 3]; 65537],
+            ..MeshPart::default()
+        };
         assert!(w.mesh("big", &big, 0).is_err());
         let mut short = part(3);
         short.normals.pop();
@@ -826,18 +1038,37 @@ mod tests {
             guid: 7,
             name: "wall".into(),
             textures: vec![
-                MaterialTexture { slot: "albedoTexture".into(), guid: 100, texture: None },
-                MaterialTexture { slot: "weirdTexture".into(), guid: 101, texture: None },
-                MaterialTexture { slot: "normalTexture".into(), guid: 102, texture: None },
+                MaterialTexture {
+                    slot: "albedoTexture".into(),
+                    guid: 100,
+                    texture: None,
+                },
+                MaterialTexture {
+                    slot: "weirdTexture".into(),
+                    guid: 101,
+                    texture: None,
+                },
+                MaterialTexture {
+                    slot: "normalTexture".into(),
+                    guid: 102,
+                    texture: None,
+                },
             ],
         };
-        let files = vec![(100, "textures/wall/albedoTexture.png".to_owned()), (101, "x.png".to_owned())];
+        let files = vec![
+            (100, "textures/wall/albedoTexture.png".to_owned()),
+            (101, "x.png".to_owned()),
+        ];
         let mut w = CastWriter::new();
         w.model("m", &[]);
         w.material(&mat, &files);
         w.material(&mat, &files);
         let root = parse(&w.finish());
-        let matls: Vec<_> = root.children[0].children.iter().filter(|c| c.id == "matl").collect();
+        let matls: Vec<_> = root.children[0]
+            .children
+            .iter()
+            .filter(|c| c.id == "matl")
+            .collect();
         assert_eq!(matls.len(), 1);
         let m = matls[0];
         assert_eq!(m.hash, 7);
@@ -848,7 +1079,10 @@ mod tests {
         assert_eq!(m.children.len(), 1);
         assert_eq!(m.children[0].id, "file");
         assert_eq!(m.children[0].hash, 100);
-        assert_eq!(prop(&m.children[0], "p").3, b"textures/wall/albedoTexture.png\0");
+        assert_eq!(
+            prop(&m.children[0], "p").3,
+            b"textures/wall/albedoTexture.png\0"
+        );
     }
 
     #[test]
@@ -856,9 +1090,20 @@ mod tests {
         let mut w = CastWriter::new();
         w.model("m", &[bone("r", None)]);
         w.mesh("a", &part(3), 1).unwrap();
-        w.material(&MeshMaterial { guid: 1, name: "x".into(), textures: vec![] }, &[]);
+        w.material(
+            &MeshMaterial {
+                guid: 1,
+                name: "x".into(),
+                textures: vec![],
+            },
+            &[],
+        );
         let root = parse(&w.finish());
-        let ids: Vec<_> = root.children[0].children.iter().map(|c| c.id.as_str()).collect();
+        let ids: Vec<_> = root.children[0]
+            .children
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
         assert_eq!(ids, ["skel", "matl", "mesh"]);
         assert!(root.size > 0);
         assert_ne!(root.children[0].hash, 0);
@@ -867,9 +1112,18 @@ mod tests {
     #[test]
     fn lod_select() {
         assert_eq!(LodSelect::default().resolve(3).unwrap(), vec![0]);
-        assert_eq!(LodSelect::All(AllLods::All).resolve(3).unwrap(), vec![0, 1, 2]);
-        assert_eq!(LodSelect::List(vec![2, 0, 2]).resolve(3).unwrap(), vec![0, 2]);
-        assert!(matches!(LodSelect::One(3).resolve(3).unwrap_err().kind(), ErrorKind::InvalidOptions { .. }));
+        assert_eq!(
+            LodSelect::All(AllLods::All).resolve(3).unwrap(),
+            vec![0, 1, 2]
+        );
+        assert_eq!(
+            LodSelect::List(vec![2, 0, 2]).resolve(3).unwrap(),
+            vec![0, 2]
+        );
+        assert!(matches!(
+            LodSelect::One(3).resolve(3).unwrap_err().kind(),
+            ErrorKind::InvalidOptions { .. }
+        ));
         let parsed: CastOptions = serde_json::from_str(r#"{"lods":"all","skin":2}"#).unwrap();
         assert_eq!(parsed.lods, LodSelect::All(AllLods::All));
         let parsed: CastOptions = serde_json::from_str(r#"{"lods":[0,1]}"#).unwrap();
@@ -885,15 +1139,33 @@ mod tests {
     }
 
     fn curves(root: &Parsed) -> Vec<&Parsed> {
-        root.children[0].children.iter().filter(|c| c.id == "curv").collect()
+        root.children[0]
+            .children
+            .iter()
+            .filter(|c| c.id == "curv")
+            .collect()
     }
 
     #[test]
     fn animation_file_has_anim_node_skeleton_and_curves() {
         let mut w = CastWriter::new();
-        w.animation("walk", 24.0, true, &[bone("root", None), bone("child", Some(0))]);
-        w.curve("root", "tx", "absolute", None, 3, &[1.0, 2.0, 3.0]).unwrap();
-        w.curve("child", "rq", "absolute", None, 2, &[0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0]).unwrap();
+        w.animation(
+            "walk",
+            24.0,
+            true,
+            &[bone("root", None), bone("child", Some(0))],
+        );
+        w.curve("root", "tx", "absolute", None, 3, &[1.0, 2.0, 3.0])
+            .unwrap();
+        w.curve(
+            "child",
+            "rq",
+            "absolute",
+            None,
+            2,
+            &[0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+        )
+        .unwrap();
         let root = parse(&w.finish());
         let anim = &root.children[0];
         assert_eq!(anim.id, "anim");
@@ -911,15 +1183,41 @@ mod tests {
         let tx = c[0];
         assert_eq!(prop(tx, "nn").3, b"root\0");
         assert_eq!(prop(tx, "kp").3, b"tx\0");
-        assert_eq!((prop(tx, "kb").0.as_slice(), prop(tx, "kb").2, prop(tx, "kb").3.as_slice()), (&b"b\0"[..], 3, &[0u8, 1, 2][..]));
-        assert_eq!((prop(tx, "kv").0.as_slice(), prop(tx, "kv").2), (&b"f\0"[..], 3));
-        assert_eq!(prop(tx, "kv").3, [1.0f32, 2.0, 3.0].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
+        assert_eq!(
+            (
+                prop(tx, "kb").0.as_slice(),
+                prop(tx, "kb").2,
+                prop(tx, "kb").3.as_slice()
+            ),
+            (&b"b\0"[..], 3, &[0u8, 1, 2][..])
+        );
+        assert_eq!(
+            (prop(tx, "kv").0.as_slice(), prop(tx, "kv").2),
+            (&b"f\0"[..], 3)
+        );
+        assert_eq!(
+            prop(tx, "kv").3,
+            [1.0f32, 2.0, 3.0]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<u8>>()
+        );
         assert_eq!(prop(tx, "m").3, b"absolute\0");
-        assert!(tx.props.iter().all(|p| p.1 != "ab"), "no weight in absolute mode");
+        assert!(
+            tx.props.iter().all(|p| p.1 != "ab"),
+            "no weight in absolute mode"
+        );
 
         let rq = c[1];
         assert_eq!(prop(rq, "nn").3, b"child\0");
-        assert_eq!((prop(rq, "kv").0.as_slice(), prop(rq, "kv").2, prop(rq, "kv").3.len()), (&b"v4"[..], 2, 32));
+        assert_eq!(
+            (
+                prop(rq, "kv").0.as_slice(),
+                prop(rq, "kv").2,
+                prop(rq, "kv").3.len()
+            ),
+            (&b"v4"[..], 2, 32)
+        );
 
         let mut looped = CastWriter::new();
         looped.animation("x", 30.0, false, &[]);
@@ -930,23 +1228,46 @@ mod tests {
     fn additive_curves_carry_their_weight() {
         let mut w = CastWriter::new();
         w.animation("delta", 30.0, false, &[bone("root", None)]);
-        w.curve("root", "ty", "additive", Some(0.25), 1, &[5.0]).unwrap();
+        w.curve("root", "ty", "additive", Some(0.25), 1, &[5.0])
+            .unwrap();
         w.curve("root", "tz", "additive", None, 1, &[5.0]).unwrap();
-        w.curve("root", "sx", "absolute", Some(0.5), 1, &[5.0]).unwrap();
+        w.curve("root", "sx", "absolute", Some(0.5), 1, &[5.0])
+            .unwrap();
         let root = parse(&w.finish());
         let c = curves(&root);
         assert_eq!(prop(c[0], "m").3, b"additive\0");
-        assert_eq!((prop(c[0], "ab").0.as_slice(), prop(c[0], "ab").3.as_slice()), (&b"f\0"[..], &0.25f32.to_le_bytes()[..]));
-        assert_eq!(prop(c[1], "ab").3, 1.0f32.to_le_bytes(), "no weight means 1");
+        assert_eq!(
+            (prop(c[0], "ab").0.as_slice(), prop(c[0], "ab").3.as_slice()),
+            (&b"f\0"[..], &0.25f32.to_le_bytes()[..])
+        );
+        assert_eq!(
+            prop(c[1], "ab").3,
+            1.0f32.to_le_bytes(),
+            "no weight means 1"
+        );
         assert!(c[2].props.iter().all(|p| p.1 != "ab"));
     }
 
     #[test]
     fn key_buffer_width_follows_the_frame_count() {
-        for (frames, ty) in [(1u32, b"b\0"), (255, b"b\0"), (256, b"h\0"), (65535, b"h\0"), (65536, b"i\0")] {
+        for (frames, ty) in [
+            (1u32, b"b\0"),
+            (255, b"b\0"),
+            (256, b"h\0"),
+            (65535, b"h\0"),
+            (65536, b"i\0"),
+        ] {
             let mut w = CastWriter::new();
             w.animation("a", 30.0, false, &[]);
-            w.curve("b", "tx", "absolute", None, frames, &vec![0.5; frames as usize]).unwrap();
+            w.curve(
+                "b",
+                "tx",
+                "absolute",
+                None,
+                frames,
+                &vec![0.5; frames as usize],
+            )
+            .unwrap();
             let root = parse(&w.finish());
             let kb = prop(curves(&root)[0], "kb");
             assert_eq!(kb.0, ty, "{frames} frames");
@@ -969,10 +1290,23 @@ mod tests {
     fn bad_curves_are_errors_and_add_nothing() {
         let mut w = CastWriter::new();
         w.animation("a", 30.0, false, &[]);
-        assert!(w.curve("b", "tx", "absolute", None, 3, &[1.0, 2.0]).is_err(), "too few values");
-        assert!(w.curve("b", "rq", "absolute", None, 2, &[0.0; 4]).is_err(), "a quaternion has four floats");
-        assert!(w.curve("b", "tw", "absolute", None, 1, &[0.0]).is_err(), "unknown key");
-        assert!(w.curve("b", "tx", "relative", None, 1, &[0.0]).is_err(), "unknown mode");
+        assert!(
+            w.curve("b", "tx", "absolute", None, 3, &[1.0, 2.0])
+                .is_err(),
+            "too few values"
+        );
+        assert!(
+            w.curve("b", "rq", "absolute", None, 2, &[0.0; 4]).is_err(),
+            "a quaternion has four floats"
+        );
+        assert!(
+            w.curve("b", "tw", "absolute", None, 1, &[0.0]).is_err(),
+            "unknown key"
+        );
+        assert!(
+            w.curve("b", "tx", "relative", None, 1, &[0.0]).is_err(),
+            "unknown mode"
+        );
         assert!(curves(&parse(&w.finish())).is_empty());
     }
 
@@ -989,7 +1323,12 @@ mod tests {
         let (sr, cr) = (roll * 0.5).sin_cos();
         let (sp, cp) = (pitch * 0.5).sin_cos();
         let (sy, cy) = (yaw * 0.5).sin_cos();
-        [sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy, cr * cp * cy + sr * sp * sy]
+        [
+            sr * cp * cy - cr * sp * sy,
+            cr * sp * cy + sr * cp * sy,
+            cr * cp * sy - sr * sp * cy,
+            cr * cp * cy + sr * sp * sy,
+        ]
     }
 
     fn near(a: &[f32], b: &[f32]) {
@@ -1015,13 +1354,26 @@ mod tests {
     #[test]
     fn blend_select() {
         assert_eq!(BlendSelect::default().resolve(3).unwrap(), vec![0, 1, 2]);
-        assert_eq!(BlendSelect::default().resolve(0).unwrap(), Vec::<u32>::new());
+        assert_eq!(
+            BlendSelect::default().resolve(0).unwrap(),
+            Vec::<u32>::new()
+        );
         assert_eq!(BlendSelect::One(1).resolve(3).unwrap(), vec![1]);
-        assert!(matches!(BlendSelect::One(3).resolve(3).unwrap_err().kind(), ErrorKind::InvalidOptions { .. }));
-        let parsed: CastOptions = serde_json::from_str(r#"{"blend":2,"root_fixup":"none"}"#).unwrap();
-        assert_eq!((parsed.blend, parsed.root_fixup), (BlendSelect::One(2), RootFixup::None));
+        assert!(matches!(
+            BlendSelect::One(3).resolve(3).unwrap_err().kind(),
+            ErrorKind::InvalidOptions { .. }
+        ));
+        let parsed: CastOptions =
+            serde_json::from_str(r#"{"blend":2,"root_fixup":"none"}"#).unwrap();
+        assert_eq!(
+            (parsed.blend, parsed.root_fixup),
+            (BlendSelect::One(2), RootFixup::None)
+        );
         let parsed: CastOptions = serde_json::from_str(r#"{"blend":"all"}"#).unwrap();
-        assert_eq!((parsed.blend, parsed.root_fixup), (BlendSelect::default(), RootFixup::Rsx));
+        assert_eq!(
+            (parsed.blend, parsed.root_fixup),
+            (BlendSelect::default(), RootFixup::Rsx)
+        );
         assert!(serde_json::from_str::<CastOptions>(r#"{"root_fixup":"flip"}"#).is_err());
         assert!(serde_json::from_str::<CastOptions>(r#"{"blend":"some"}"#).is_err());
     }

@@ -30,13 +30,23 @@ pub struct Next<'a> {
 
 impl<'a> Next<'a> {
     pub(crate) fn new(chain: &'a Arc<[Arc<dyn Middleware>]>, mediator: &'a Mediator) -> Self {
-        Self { chain: chain.clone(), index: 0, mediator: mediator.clone(), _borrow: PhantomData }
+        Self {
+            chain: chain.clone(),
+            index: 0,
+            mediator: mediator.clone(),
+            _borrow: PhantomData,
+        }
     }
 
     /// The same continuation without a borrow, for middleware that runs it on a future that
     /// outlives the call (dedup shares one run between requests).
     pub fn into_owned(self) -> Next<'static> {
-        Next { chain: self.chain, index: self.index, mediator: self.mediator, _borrow: PhantomData }
+        Next {
+            chain: self.chain,
+            index: self.index,
+            mediator: self.mediator,
+            _borrow: PhantomData,
+        }
     }
 }
 
@@ -45,10 +55,19 @@ impl Next<'_> {
     pub async fn run(self, req: &Convert, cx: &Cx) -> Result<Value> {
         match self.chain.get(self.index).cloned() {
             Some(middleware) => {
-                let next = Next { chain: self.chain, index: self.index + 1, mediator: self.mediator, _borrow: PhantomData };
+                let next = Next {
+                    chain: self.chain,
+                    index: self.index + 1,
+                    mediator: self.mediator,
+                    _borrow: PhantomData,
+                };
                 middleware.around(req, cx, next).await
             }
-            None => self.mediator.convert_unwrapped(req.source.clone(), req.to.clone(), cx).await,
+            None => {
+                self.mediator
+                    .convert_unwrapped(req.source.clone(), req.to.clone(), cx)
+                    .await
+            }
         }
     }
 }
@@ -130,7 +149,11 @@ impl Drop for WaitEdge {
 
 /// The identity of a request: source key, target format, options and `via`.
 fn request_key(req: &Convert) -> String {
-    let key = crate::value::ValueKey::converted(Arc::new(req.source.key().clone()), req.to.format.clone(), &req.to.options);
+    let key = crate::value::ValueKey::converted(
+        Arc::new(req.source.key().clone()),
+        req.to.format.clone(),
+        &req.to.options,
+    );
     if req.to.via.is_empty() {
         key.to_string()
     } else {
@@ -179,7 +202,13 @@ impl Middleware for DedupMiddleware {
     async fn around(&self, req: &Convert, cx: &Cx, next: Next<'_>) -> Result<Value> {
         let key = request_key(req);
         // The guard pushed `key`; the request that asked for it is the entry before.
-        let parent = cx.chain().iter().rev().nth(1).filter(|_| cx.chain().last() == Some(&key)).cloned();
+        let parent = cx
+            .chain()
+            .iter()
+            .rev()
+            .nth(1)
+            .filter(|_| cx.chain().last() == Some(&key))
+            .cloned();
 
         let (run, _edge) = {
             let mut state = self.state.lock().unwrap();
@@ -189,16 +218,36 @@ impl Middleware for DedupMiddleware {
                 }
             }
             let edge = parent.map(|from| {
-                state.waits.entry(from.clone()).or_default().push(key.clone());
-                WaitEdge { state: self.state.clone(), from, to: key.clone() }
+                state
+                    .waits
+                    .entry(from.clone())
+                    .or_default()
+                    .push(key.clone());
+                WaitEdge {
+                    state: self.state.clone(),
+                    from,
+                    to: key.clone(),
+                }
             });
             // An entry only the map still holds lost every waiter (e.g. cancelled): start over.
-            let live = state.in_flight.get(&key).filter(|r| r.strong_count() != Some(1)).cloned();
+            let live = state
+                .in_flight
+                .get(&key)
+                .filter(|r| r.strong_count() != Some(1))
+                .cloned();
             let run = match live {
                 Some(run) => run,
                 None => {
-                    let owned = Convert { source: req.source.clone(), to: req.to.clone() };
-                    let (cx, next, id, shared) = (cx.clone(), next.into_owned(), key.clone(), self.state.clone());
+                    let owned = Convert {
+                        source: req.source.clone(),
+                        to: req.to.clone(),
+                    };
+                    let (cx, next, id, shared) = (
+                        cx.clone(),
+                        next.into_owned(),
+                        key.clone(),
+                        self.state.clone(),
+                    );
                     let run = async move {
                         let result = next.run(&owned, &cx).await;
                         shared.lock().unwrap().in_flight.remove(&id);
@@ -229,11 +278,15 @@ impl Middleware for TracingMiddleware {
 impl Middleware for EventsMiddleware {
     async fn around(&self, req: &Convert, cx: &Cx, next: Next<'_>) -> Result<Value> {
         let what = format!("{} -> {}", req.source.key(), req.to.format);
-        cx.mediator.publish(Event::RequestStarted { what: what.clone() });
+        cx.mediator
+            .publish(Event::RequestStarted { what: what.clone() });
         let result = next.run(req, cx).await;
         cx.mediator.publish(match &result {
             Ok(_) => Event::RequestFinished { what },
-            Err(error) => Event::RequestFailed { what, error: error.to_string() },
+            Err(error) => Event::RequestFailed {
+                what,
+                error: error.to_string(),
+            },
         });
         result
     }

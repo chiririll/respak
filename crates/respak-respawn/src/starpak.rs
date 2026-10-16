@@ -29,10 +29,15 @@ use opendal::Operator;
 use respak_core::capability::Container;
 use respak_core::value::FileData;
 use respak_core::volume::{volume_operator, VolumeEntry, VolumeSource, VolumeStat};
-use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey};
+use respak_core::{
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey,
+};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// Bytes of one table-of-contents entry.
@@ -82,17 +87,32 @@ impl Starpak {
             None => (0, op.stat(&path).await?.content_length()),
         };
         if len < TRAILER_LEN {
-            return Err(corrupt(format!("starpak {path}: {len} bytes is too short for a table of contents")));
+            return Err(corrupt(format!(
+                "starpak {path}: {len} bytes is too short for a table of contents"
+            )));
         }
         let end = start + len;
-        let tail = op.read_with(&path).range(end - TRAILER_LEN..end).await?.to_vec();
+        let tail = op
+            .read_with(&path)
+            .range(end - TRAILER_LEN..end)
+            .await?
+            .to_vec();
         let count = u64::from_le_bytes(tail[..8].try_into().expect("8 bytes"));
-        let toc_len = count.checked_mul(ENTRY_LEN).filter(|t| t + TRAILER_LEN <= len);
-        let toc_len = toc_len.ok_or_else(|| corrupt(format!("starpak {path}: table of contents ({count} entries) does not fit")))?;
+        let toc_len = count
+            .checked_mul(ENTRY_LEN)
+            .filter(|t| t + TRAILER_LEN <= len);
+        let toc_len = toc_len.ok_or_else(|| {
+            corrupt(format!(
+                "starpak {path}: table of contents ({count} entries) does not fit"
+            ))
+        })?;
         let raw = if toc_len == 0 {
             Bytes::new()
         } else {
-            op.read_with(&path).range(end - TRAILER_LEN - toc_len..end - TRAILER_LEN).await?.to_bytes()
+            op.read_with(&path)
+                .range(end - TRAILER_LEN - toc_len..end - TRAILER_LEN)
+                .await?
+                .to_bytes()
         };
         let entries = raw
             .chunks_exact(ENTRY_LEN as usize)
@@ -102,7 +122,13 @@ impl Starpak {
             })
             .filter(|e| e.size != 0)
             .collect();
-        Ok(Self { op, path, start, len, entries })
+        Ok(Self {
+            op,
+            path,
+            start,
+            len,
+            entries,
+        })
     }
 
     /// The entries, in table order.
@@ -128,12 +154,20 @@ impl Starpak {
     /// The bytes `range` of the file (ranged read; `Corrupt` past the end).
     pub async fn read(&self, range: Range<u64>) -> Result<Bytes> {
         if range.start > range.end || range.end > self.len {
-            return Err(corrupt(format!("starpak {}: read {}..{} past the end ({} bytes)", self.path, range.start, range.end, self.len)));
+            return Err(corrupt(format!(
+                "starpak {}: read {}..{} past the end ({} bytes)",
+                self.path, range.start, range.end, self.len
+            )));
         }
         if range.is_empty() {
             return Ok(Bytes::new());
         }
-        Ok(self.op.read_with(&self.path).range(self.start + range.start..self.start + range.end).await?.to_bytes())
+        Ok(self
+            .op
+            .read_with(&self.path)
+            .range(self.start + range.start..self.start + range.end)
+            .await?
+            .to_bytes())
     }
 }
 
@@ -146,7 +180,9 @@ struct StarpakSource(Arc<Starpak>);
 
 impl StarpakSource {
     fn locate(&self, path: &str) -> Option<StarpakEntry> {
-        let hex = path.strip_prefix("0x").or_else(|| path.strip_prefix("0X"))?;
+        let hex = path
+            .strip_prefix("0x")
+            .or_else(|| path.strip_prefix("0X"))?;
         let offset = u64::from_str_radix(hex, 16).ok()?;
         self.0.entry(offset)
     }
@@ -156,22 +192,47 @@ impl StarpakSource {
 impl VolumeSource for StarpakSource {
     async fn stat(&self, path: &str) -> Result<VolumeStat> {
         if path.is_empty() {
-            return Ok(VolumeStat { is_dir: true, len: 0 });
+            return Ok(VolumeStat {
+                is_dir: true,
+                len: 0,
+            });
         }
-        let e = self.locate(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
-        Ok(VolumeStat { is_dir: false, len: e.size })
+        let e = self.locate(path).ok_or_else(|| {
+            Error::new(ErrorKind::NotFound {
+                path: path.to_owned(),
+            })
+        })?;
+        Ok(VolumeStat {
+            is_dir: false,
+            len: e.size,
+        })
     }
 
     async fn read(&self, path: &str, range: Range<u64>) -> Result<Bytes> {
-        let e = self.locate(path).ok_or_else(|| Error::new(ErrorKind::NotFound { path: path.to_owned() }))?;
-        self.0.read(e.offset + range.start..e.offset + range.end).await
+        let e = self.locate(path).ok_or_else(|| {
+            Error::new(ErrorKind::NotFound {
+                path: path.to_owned(),
+            })
+        })?;
+        self.0
+            .read(e.offset + range.start..e.offset + range.end)
+            .await
     }
 
     async fn list(&self, dir: &str) -> Result<Vec<VolumeEntry>> {
         if !dir.is_empty() {
             return Ok(Vec::new());
         }
-        Ok(self.0.entries.iter().map(|e| VolumeEntry { name: entry_name(e.offset), is_dir: false, len: e.size }).collect())
+        Ok(self
+            .0
+            .entries
+            .iter()
+            .map(|e| VolumeEntry {
+                name: entry_name(e.offset),
+                is_dir: false,
+                len: e.size,
+            })
+            .collect())
     }
 }
 
@@ -186,7 +247,9 @@ pub struct StarpakData {
 
 impl std::fmt::Debug for StarpakData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StarpakData").field("mount", &self.mount).finish_non_exhaustive()
+        f.debug_struct("StarpakData")
+            .field("mount", &self.mount)
+            .finish_non_exhaustive()
     }
 }
 
@@ -235,28 +298,48 @@ impl Detect for StarpakRead {
         if let (Some(file), Some(len)) = (input.source.downcast_ref::<FileData>(), input.len) {
             if let Some(tail_at) = len.checked_sub(TRAILER_LEN) {
                 let start = file.range.as_ref().map_or(0, |r| r.start);
-                let tail = file.op.read_with(&file.path).range(start + tail_at..start + len).await;
+                let tail = file
+                    .op
+                    .read_with(&file.path)
+                    .range(start + tail_at..start + len)
+                    .await;
                 if let Ok(tail) = tail {
                     let count = u64::from_le_bytes(tail.to_vec()[..8].try_into().expect("8 bytes"));
-                    if count.checked_mul(ENTRY_LEN).is_some_and(|t| t + TRAILER_LEN <= len) {
+                    if count
+                        .checked_mul(ENTRY_LEN)
+                        .is_some_and(|t| t + TRAILER_LEN <= len)
+                    {
                         score += 5;
                     }
                 }
             }
         }
-        Ok(Some(Detected { score, version: None }))
+        Ok(Some(Detected {
+            score,
+            version: None,
+        }))
     }
 }
 
 #[async_trait]
 impl ReadHandler for StarpakRead {
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let file = source
-            .downcast_ref::<FileData>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "starpak must be read from a file".into() }))?;
-        let starpak = Arc::new(Starpak::open(file.op.clone(), file.path.clone(), file.range.clone()).await?);
+        let file = source.downcast_ref::<FileData>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "starpak must be read from a file".into(),
+            })
+        })?;
+        let starpak =
+            Arc::new(Starpak::open(file.op.clone(), file.path.clone(), file.range.clone()).await?);
         let mount = source.key().to_string();
         let volume = volume_operator(StarpakSource(starpak.clone()), &mount);
-        Ok(Arc::new(StarpakData { format: FormatId::new("starpak"), key: source.key().clone(), mount, volume, starpak }))
+        Ok(Arc::new(StarpakData {
+            format: FormatId::new("starpak"),
+            key: source.key().clone(),
+            mount,
+            volume,
+            starpak,
+        }))
     }
 }

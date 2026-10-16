@@ -9,13 +9,21 @@ use async_trait::async_trait;
 use common::*;
 use respak_core::broadcast::error::{RecvError, TryRecvError};
 use respak_core::middleware::{Convert, Middleware, Next};
-use respak_core::{Cx, ErrorKind, Event, Events, FormatId, Mediator, Registry, Result, Target, Value};
+use respak_core::{
+    Cx, ErrorKind, Event, Events, FormatId, Mediator, Registry, Result, Target, Value,
+};
 
 fn register(r: &mut Registry) {
     r.format("src")
         .from("file", MagicRead::new("src", b"SSSS", 10))
         .extensions(["ss"])
-        .to("dst", Enc { name: "dst", tag: "d" });
+        .to(
+            "dst",
+            Enc {
+                name: "dst",
+                tag: "d",
+            },
+        );
     r.format("dst");
 }
 
@@ -33,7 +41,11 @@ async fn cx_with(mediator: Mediator) -> Cx {
 }
 
 fn to(format: &'static str) -> Target {
-    Target { format: FormatId::new(format), options: serde_json::Value::Null, via: Vec::new() }
+    Target {
+        format: FormatId::new(format),
+        options: serde_json::Value::Null,
+        via: Vec::new(),
+    }
 }
 
 fn drain(rx: &mut respak_core::broadcast::Receiver<Event>) -> Vec<Event> {
@@ -45,7 +57,9 @@ fn drain(rx: &mut respak_core::broadcast::Receiver<Event>) -> Vec<Event> {
 }
 
 fn warning(message: &str) -> Event {
-    Event::Warning { message: message.into() }
+    Event::Warning {
+        message: message.into(),
+    }
 }
 
 #[tokio::test]
@@ -56,7 +70,10 @@ async fn subscribers_get_events_in_order_and_publishing_alone_is_fine() {
     for m in ["a", "b", "c"] {
         events.publish(warning(m));
     }
-    assert_eq!(drain(&mut rx), vec![warning("a"), warning("b"), warning("c")]);
+    assert_eq!(
+        drain(&mut rx),
+        vec![warning("a"), warning("b"), warning("c")]
+    );
     assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
 }
 
@@ -81,8 +98,15 @@ struct Spy {
 #[async_trait]
 impl Middleware for Spy {
     async fn around(&self, req: &Convert, cx: &Cx, next: Next<'_>) -> Result<Value> {
-        let started = matches!(self.rx.lock().unwrap().try_recv(), Ok(Event::RequestStarted { .. }));
-        self.log.lock().unwrap().push(format!("{} -> {} started_already={started}", req.source.format(), req.to.format));
+        let started = matches!(
+            self.rx.lock().unwrap().try_recv(),
+            Ok(Event::RequestStarted { .. })
+        );
+        self.log.lock().unwrap().push(format!(
+            "{} -> {} started_already={started}",
+            req.source.format(),
+            req.to.format
+        ));
         if self.short_circuit {
             return Ok(req.source.clone());
         }
@@ -95,12 +119,21 @@ async fn host_middleware_runs_after_the_built_ins_and_can_short_circuit() {
     for short in [false, true] {
         let events = Events::new(64);
         let log = Arc::new(Mutex::new(Vec::new()));
-        let spy = Arc::new(Spy { log: log.clone(), rx: Mutex::new(events.subscribe()), short_circuit: short });
-        let mediator = Mediator::new(registry(register)).with_events(events).with_middleware(vec![spy]);
+        let spy = Arc::new(Spy {
+            log: log.clone(),
+            rx: Mutex::new(events.subscribe()),
+            short_circuit: short,
+        });
+        let mediator = Mediator::new(registry(register))
+            .with_events(events)
+            .with_middleware(vec![spy]);
         let cx = cx_with(mediator.clone()).await;
         let source = mediator.open("x.ss", &cx).await.unwrap();
         let result = mediator.convert(source, to("dst"), &cx).await.unwrap();
-        assert_eq!(log.lock().unwrap().as_slice(), ["file -> dst started_already=true"]);
+        assert_eq!(
+            log.lock().unwrap().as_slice(),
+            ["file -> dst started_already=true"]
+        );
         assert_eq!(result.format().name(), if short { "file" } else { "dst" });
     }
 }
@@ -114,7 +147,10 @@ async fn a_triggered_token_cancels_before_any_handler_runs() {
     cx.cancel.cancel();
     let err = mediator.convert(source, to("dst"), &cx).await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Cancelled), "{err}");
-    assert!(drain(&mut rx).is_empty(), "cancelled requests publish no events");
+    assert!(
+        drain(&mut rx).is_empty(),
+        "cancelled requests publish no events"
+    );
 }
 
 #[tokio::test]
@@ -136,7 +172,10 @@ async fn requests_publish_started_then_finished_or_failed() {
             .collect::<Vec<_>>()
     };
 
-    mediator.convert(source.clone(), to("dst"), &cx).await.unwrap();
+    mediator
+        .convert(source.clone(), to("dst"), &cx)
+        .await
+        .unwrap();
     assert_eq!(kinds(drain(&mut rx)), ["started", "finished"]);
 
     assert!(mediator.convert(source, to("nowhere"), &cx).await.is_err());
@@ -190,8 +229,20 @@ fn register_tie(r: &mut Registry) {
     r.format("src")
         .from("file", MagicRead::new("src", b"SSSS", 10))
         .extensions(["ss"])
-        .to("dst", Enc { name: "dst", tag: "first" })
-        .to("dst", Enc { name: "dst", tag: "second" });
+        .to(
+            "dst",
+            Enc {
+                name: "dst",
+                tag: "first",
+            },
+        )
+        .to(
+            "dst",
+            Enc {
+                name: "dst",
+                tag: "second",
+            },
+        );
     r.format("dst");
 }
 
@@ -213,7 +264,12 @@ async fn the_tie_break_is_a_warning_event() {
         })
         .collect();
     assert_eq!(warnings.len(), 2, "{warnings:?}");
-    assert!(warnings.iter().all(|m| m.contains("src") && m.contains("dst")), "{warnings:?}");
+    assert!(
+        warnings
+            .iter()
+            .all(|m| m.contains("src") && m.contains("dst")),
+        "{warnings:?}"
+    );
 }
 
 // ---- Engine --------------------------------------------------------------------------------
@@ -241,16 +297,30 @@ async fn cancelling_mid_run_keeps_finished_outputs_and_cancels_the_rest() {
     let engine = respak_core::Engine::builder()
         .input(input)
         .output(output.clone())
-        .plugin(TestPlugin { id: "t", register: register_ab })
+        .plugin(TestPlugin {
+            id: "t",
+            register: register_ab,
+        })
         .middleware(CancelAfterFirst(AtomicUsize::new(0)))
         .max_concurrency(1)
         .build()
         .unwrap();
-    let report = engine.convert(&one("*.aa", "beta"), &respak_core::CancellationToken::new()).await.unwrap();
+    let report = engine
+        .convert(&one("*.aa", "beta"), &respak_core::CancellationToken::new())
+        .await
+        .unwrap();
 
-    assert!(matches!(report.outputs[0].result, respak_core::OutputResult::Ok { .. }));
+    assert!(matches!(
+        report.outputs[0].result,
+        respak_core::OutputResult::Ok { .. }
+    ));
     for o in &report.outputs[1..] {
-        assert!(matches!(error_kind(&o.result), ErrorKind::Cancelled), "{} {:?}", o.from, o.result);
+        assert!(
+            matches!(error_kind(&o.result), ErrorKind::Cancelled),
+            "{} {:?}",
+            o.from,
+            o.result
+        );
     }
     assert!(output.exists("1.bb").await.unwrap());
     assert!(!output.exists("2.bb").await.unwrap());
@@ -265,11 +335,17 @@ async fn the_engine_publishes_output_written_and_progress() {
     let engine = respak_core::Engine::builder()
         .input(input)
         .output(output)
-        .plugin(TestPlugin { id: "t", register: register_ab })
+        .plugin(TestPlugin {
+            id: "t",
+            register: register_ab,
+        })
         .build()
         .unwrap();
     let mut rx = engine.events();
-    engine.convert(&one("*.aa", "beta"), &respak_core::CancellationToken::new()).await.unwrap();
+    engine
+        .convert(&one("*.aa", "beta"), &respak_core::CancellationToken::new())
+        .await
+        .unwrap();
 
     let events = drain(&mut rx);
     let mut written: Vec<_> = events

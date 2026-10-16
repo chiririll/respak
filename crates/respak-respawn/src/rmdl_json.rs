@@ -12,7 +12,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use respak_core::value::BlobData;
-use respak_core::{ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey};
+use respak_core::{
+    ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::rmdl::RmdlAsset;
@@ -28,14 +30,26 @@ pub struct RmdlJsonEncode;
 #[async_trait]
 impl ConvertHandler for RmdlJsonEncode {
     async fn convert(&self, source: Value, target: &Target, cx: &Cx) -> Result<Value> {
-        let model = source
-            .downcast_ref::<RmdlAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "rmdl.json must be made from an rmdl".into() }))?;
+        let model = source.downcast_ref::<RmdlAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "rmdl.json must be made from an rmdl".into(),
+            })
+        })?;
         let options = TypedTarget::<RmdlJsonOptions>::parse(target)?;
         cx.check_cancelled()?;
         let document = model.describe().await?;
-        let bytes = serde_json::to_vec_pretty(&document).map_err(|e| Error::custom("rmdl.json", e))?;
-        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new("rmdl.json"), options.normalized());
-        Ok(Arc::new(BlobData::with_format(FormatId::new("rmdl.json"), Bytes::from(bytes), key)))
+        let bytes =
+            serde_json::to_vec_pretty(&document).map_err(|e| Error::custom("rmdl.json", e))?;
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            FormatId::new("rmdl.json"),
+            options.normalized(),
+        );
+        Ok(Arc::new(BlobData::with_format(
+            FormatId::new("rmdl.json"),
+            Bytes::from(bytes),
+            key,
+        )))
     }
 }

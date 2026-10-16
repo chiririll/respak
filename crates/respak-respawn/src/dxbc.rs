@@ -18,12 +18,18 @@ const SIT_TEXTURE: u32 = 2;
 const ENTRY_SIZE: usize = 32;
 
 fn corrupt(what: &str) -> Error {
-    Error::new(ErrorKind::Corrupt { context: format!("DXBC: {what}") })
+    Error::new(ErrorKind::Corrupt {
+        context: format!("DXBC: {what}"),
+    })
 }
 
 fn u32_at(buf: &[u8], offset: usize) -> Result<u32> {
-    let end = offset.checked_add(4).ok_or_else(|| corrupt("offset overflow"))?;
-    let bytes = buf.get(offset..end).ok_or_else(|| corrupt("read past the end"))?;
+    let end = offset
+        .checked_add(4)
+        .ok_or_else(|| corrupt("offset overflow"))?;
+    let bytes = buf
+        .get(offset..end)
+        .ok_or_else(|| corrupt("read past the end"))?;
     Ok(u32::from_le_bytes(bytes.try_into().expect("4 bytes")))
 }
 
@@ -36,7 +42,10 @@ pub fn texture_slots(blob: &[u8]) -> Result<BTreeMap<u32, String>> {
         return Err(corrupt("missing magic"));
     }
     let chunks = u32_at(blob, 0x1C)? as usize;
-    let table_end = chunks.checked_mul(4).and_then(|n| n.checked_add(0x20)).ok_or_else(|| corrupt("chunk count"))?;
+    let table_end = chunks
+        .checked_mul(4)
+        .and_then(|n| n.checked_add(0x20))
+        .ok_or_else(|| corrupt("chunk count"))?;
     if table_end > blob.len() {
         return Err(corrupt("chunk table past the end"));
     }
@@ -44,17 +53,30 @@ pub fn texture_slots(blob: &[u8]) -> Result<BTreeMap<u32, String>> {
     let mut seen = Vec::new();
     for i in 0..chunks {
         let at = u32_at(blob, 0x20 + i * 4)? as usize;
-        let size = u32_at(blob, at.checked_add(4).ok_or_else(|| corrupt("chunk offset"))?)? as usize;
+        let size = u32_at(
+            blob,
+            at.checked_add(4).ok_or_else(|| corrupt("chunk offset"))?,
+        )? as usize;
         let start = at + 8;
-        let end = start.checked_add(size).ok_or_else(|| corrupt("chunk size"))?;
-        let data = blob.get(start..end).ok_or_else(|| corrupt("chunk past the end"))?;
+        let end = start
+            .checked_add(size)
+            .ok_or_else(|| corrupt("chunk size"))?;
+        let data = blob
+            .get(start..end)
+            .ok_or_else(|| corrupt("chunk past the end"))?;
         if blob.get(at..at + 4) == Some(b"RDEF") {
             rdef = Some(data);
             break;
         }
         seen.push(String::from_utf8_lossy(&blob[at..at + 4]).into_owned());
     }
-    let rdef = rdef.ok_or_else(|| corrupt(&format!("no RDEF chunk ({} bytes, chunks: {})", blob.len(), seen.join(","))))?;
+    let rdef = rdef.ok_or_else(|| {
+        corrupt(&format!(
+            "no RDEF chunk ({} bytes, chunks: {})",
+            blob.len(),
+            seen.join(",")
+        ))
+    })?;
 
     let count = u32_at(rdef, 8)? as usize;
     let table = u32_at(rdef, 0xC)? as usize;
@@ -68,10 +90,17 @@ pub fn texture_slots(blob: &[u8]) -> Result<BTreeMap<u32, String>> {
             continue;
         }
         let name_at = u32_at(rdef, entry)? as usize;
-        let tail = rdef.get(name_at..).ok_or_else(|| corrupt("name past the end"))?;
-        let len = tail.iter().position(|&b| b == 0).ok_or_else(|| corrupt("unterminated name"))?;
+        let tail = rdef
+            .get(name_at..)
+            .ok_or_else(|| corrupt("name past the end"))?;
+        let len = tail
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or_else(|| corrupt("unterminated name"))?;
         let name = std::str::from_utf8(&tail[..len]).map_err(|_| corrupt("name is not UTF-8"))?;
-        slots.entry(u32_at(rdef, entry + 20)?).or_insert_with(|| name.to_owned());
+        slots
+            .entry(u32_at(rdef, entry + 20)?)
+            .or_insert_with(|| name.to_owned());
     }
     Ok(slots)
 }
@@ -84,9 +113,20 @@ mod tests {
 
     #[test]
     fn maps_texture_bind_points_to_names_and_skips_other_resources() {
-        let b = blob(&[("albedoTexture", 2, 0), ("sampler0", 3, 0), ("normalTexture", 2, 1), ("cb", 0, 2)]);
+        let b = blob(&[
+            ("albedoTexture", 2, 0),
+            ("sampler0", 3, 0),
+            ("normalTexture", 2, 1),
+            ("cb", 0, 2),
+        ]);
         let slots = texture_slots(&b).unwrap();
-        assert_eq!(slots.into_iter().collect::<Vec<_>>(), [(0, "albedoTexture".to_owned()), (1, "normalTexture".to_owned())]);
+        assert_eq!(
+            slots.into_iter().collect::<Vec<_>>(),
+            [
+                (0, "albedoTexture".to_owned()),
+                (1, "normalTexture".to_owned())
+            ]
+        );
     }
 
     #[test]

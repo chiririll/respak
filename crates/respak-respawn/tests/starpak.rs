@@ -41,7 +41,11 @@ fn spec(version: u32) -> TexSpec {
     let perm = {
         let mut out = Vec::new();
         for shift in (3..6u32).rev() {
-            let len = PixelFormat::Rgba8.mip_len(64 >> shift, 64 >> shift).div_ceil(16).max(1) * 16;
+            let len = PixelFormat::Rgba8
+                .mip_len(64 >> shift, 64 >> shift)
+                .div_ceil(16)
+                .max(1)
+                * 16;
             out.extend(fill(len as usize, shift as u8 + 1));
         }
         out
@@ -65,13 +69,22 @@ fn streamed_entry(version: u32) -> Vec<u8> {
 }
 
 async fn put(env: &Env, tex: &TexSpec, streamed: bool, opt: bool) {
-    env.input.write(PAK, build_tex_pak(8, std::slice::from_ref(tex))).await.unwrap();
+    env.input
+        .write(PAK, build_tex_pak(8, std::slice::from_ref(tex)))
+        .await
+        .unwrap();
     if streamed {
         let entry = streamed_entry(tex.version);
-        env.input.write(STREAMED, build_starpak(&[(0x1000, entry)])).await.unwrap();
+        env.input
+            .write(STREAMED, build_starpak(&[(0x1000, entry)]))
+            .await
+            .unwrap();
     }
     if opt {
-        env.input.write(OPT, build_starpak(&[(0x1000, fill(64 * 64 * 4, 10))])).await.unwrap();
+        env.input
+            .write(OPT, build_starpak(&[(0x1000, fill(64 * 64 * 4, 10))]))
+            .await
+            .unwrap();
     }
 }
 
@@ -85,10 +98,23 @@ async fn streamed_and_optional_mips_make_a_full_chain() {
         let v = texture_on(&env.input, GUID).await.unwrap();
         let bmp = v.as_bitmap().unwrap();
         let info = bmp.info();
-        assert_eq!((info.width, info.height, info.mip_count), (64, 64, 6), "v{version}");
+        assert_eq!(
+            (info.width, info.height, info.mip_count),
+            (64, 64, 6),
+            "v{version}"
+        );
         // every mip 0..=2 comes from a starpak, 3..=5 from the pak
-        for (level, bytes, fill) in [(0u32, 64 * 64 * 4, 10u8), (1, 32 * 32 * 4, 20), (2, 16 * 16 * 4, 30), (3, 8 * 8 * 4, 4)] {
-            assert_eq!(bmp.read_mip(level, 0).await.unwrap(), Bytes::from(vec![fill; bytes]), "v{version} level {level}");
+        for (level, bytes, fill) in [
+            (0u32, 64 * 64 * 4, 10u8),
+            (1, 32 * 32 * 4, 20),
+            (2, 16 * 16 * 4, 30),
+            (3, 8 * 8 * 4, 4),
+        ] {
+            assert_eq!(
+                bmp.read_mip(level, 0).await.unwrap(),
+                Bytes::from(vec![fill; bytes]),
+                "v{version} level {level}"
+            );
         }
     }
 }
@@ -101,8 +127,14 @@ async fn a_missing_optional_starpak_falls_back_to_lower_mips() {
     let bmp = v.as_bitmap().unwrap();
     let info = bmp.info();
     assert_eq!((info.width, info.height, info.mip_count), (32, 32, 5));
-    assert_eq!(bmp.read_mip(0, 0).await.unwrap(), Bytes::from(fill(32 * 32 * 4, 20)));
-    assert_eq!(bmp.read_mip(4, 0).await.unwrap(), Bytes::from(fill(2 * 2 * 4, 6)));
+    assert_eq!(
+        bmp.read_mip(0, 0).await.unwrap(),
+        Bytes::from(fill(32 * 32 * 4, 20))
+    );
+    assert_eq!(
+        bmp.read_mip(4, 0).await.unwrap(),
+        Bytes::from(fill(2 * 2 * 4, 6))
+    );
 }
 
 #[tokio::test]
@@ -120,7 +152,10 @@ async fn skipped_optional_mips_are_a_warning_event() {
         }
     }
     assert_eq!(warnings.len(), 1, "{warnings:?}");
-    assert!(warnings[0].contains("1 optional mip(s) are skipped"), "{warnings:?}");
+    assert!(
+        warnings[0].contains("1 optional mip(s) are skipped"),
+        "{warnings:?}"
+    );
 }
 
 #[tokio::test]
@@ -141,16 +176,25 @@ async fn a_missing_mandatory_starpak_is_a_missing_dependency() {
 async fn an_entry_missing_from_the_table_of_contents_is_a_missing_dependency() {
     let env = env();
     put(&env, &spec(10), false, true).await;
-    env.input.write(STREAMED, build_starpak(&[(0x5000, fill(5120, 1))])).await.unwrap();
+    env.input
+        .write(STREAMED, build_starpak(&[(0x5000, fill(5120, 1))]))
+        .await
+        .unwrap();
     let err = texture_on(&env.input, GUID).await.unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::MissingDependency { .. }), "{err}");
+    assert!(
+        matches!(err.kind(), ErrorKind::MissingDependency { .. }),
+        "{err}"
+    );
 }
 
 #[tokio::test]
 async fn mips_that_do_not_fit_their_entry_are_corrupt() {
     let env = env();
     put(&env, &spec(10), false, true).await;
-    env.input.write(STREAMED, build_starpak(&[(0x1000, fill(100, 1))])).await.unwrap();
+    env.input
+        .write(STREAMED, build_starpak(&[(0x1000, fill(100, 1))]))
+        .await
+        .unwrap();
     let err = texture_on(&env.input, GUID).await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
 }
@@ -159,7 +203,13 @@ async fn mips_that_do_not_fit_their_entry_are_corrupt() {
 async fn a_broken_table_of_contents_is_corrupt() {
     let env = env();
     put(&env, &spec(10), false, true).await;
-    env.input.write(STREAMED, [fill(40, 0), 1_000_000u64.to_le_bytes().to_vec()].concat()).await.unwrap();
+    env.input
+        .write(
+            STREAMED,
+            [fill(40, 0), 1_000_000u64.to_le_bytes().to_vec()].concat(),
+        )
+        .await
+        .unwrap();
     let err = texture_on(&env.input, GUID).await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
     env.input.write(STREAMED, vec![1, 2, 3]).await.unwrap();
@@ -186,9 +236,18 @@ async fn put_with_block(env: &Env, codec: u16, block: Vec<u8>) {
     let mut block = block;
     block.resize(4096, 0);
     entry.extend(block);
-    env.input.write(PAK, build_tex_pak(8, std::slice::from_ref(&t))).await.unwrap();
-    env.input.write(STREAMED, build_starpak(&[(0x1000, entry)])).await.unwrap();
-    env.input.write(OPT, build_starpak(&[(0x1000, fill(64 * 64 * 4, 10))])).await.unwrap();
+    env.input
+        .write(PAK, build_tex_pak(8, std::slice::from_ref(&t)))
+        .await
+        .unwrap();
+    env.input
+        .write(STREAMED, build_starpak(&[(0x1000, entry)]))
+        .await
+        .unwrap();
+    env.input
+        .write(OPT, build_starpak(&[(0x1000, fill(64 * 64 * 4, 10))]))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -197,9 +256,15 @@ async fn an_oodle_mip_in_a_padded_block_decodes_to_its_length() {
     put_with_block(&env, 3, oodle_stored(&fill(16 * 16 * 4, 30), 0)).await;
     let v = texture_on(&env.input, GUID).await.unwrap();
     let bmp = v.as_bitmap().unwrap();
-    assert_eq!(bmp.read_mip(2, 0).await.unwrap(), Bytes::from(fill(16 * 16 * 4, 30)));
+    assert_eq!(
+        bmp.read_mip(2, 0).await.unwrap(),
+        Bytes::from(fill(16 * 16 * 4, 30))
+    );
     // the plain neighbours are untouched
-    assert_eq!(bmp.read_mip(1, 0).await.unwrap(), Bytes::from(fill(32 * 32 * 4, 20)));
+    assert_eq!(
+        bmp.read_mip(1, 0).await.unwrap(),
+        Bytes::from(fill(32 * 32 * 4, 20))
+    );
 }
 
 #[tokio::test]
@@ -219,14 +284,20 @@ async fn a_broken_oodle_mip_is_corrupt_and_other_codecs_say_so() {
     put_with_block(&env, 2, stream).await;
     let v = texture_on(&env.input, GUID).await.unwrap();
     let err = v.as_bitmap().unwrap().read_mip(2, 0).await.unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::UnsupportedVersion { .. }), "{err}");
+    assert!(
+        matches!(err.kind(), ErrorKind::UnsupportedVersion { .. }),
+        "{err}"
+    );
 }
 
 #[tokio::test]
 async fn a_starpak_is_a_container_of_its_entries() {
     let env = env();
     env.input
-        .write("s.starpak", build_starpak(&[(0x1000, fill(100, 7)), (0x3000, fill(50, 8))]))
+        .write(
+            "s.starpak",
+            build_starpak(&[(0x1000, fill(100, 7)), (0x3000, fill(50, 8))]),
+        )
         .await
         .unwrap();
     let cx = cx_on(&env.input);
@@ -234,12 +305,32 @@ async fn a_starpak_is_a_container_of_its_entries() {
     let pak = cx.mediator.mount(pak, &cx).await.unwrap();
     assert_eq!(pak.format().to_string(), "starpak");
     let volume = pak.as_container().unwrap().volume();
-    let mut names: Vec<_> = volume.list("/").await.unwrap().into_iter().map(|e| e.name().to_owned()).collect();
+    let mut names: Vec<_> = volume
+        .list("/")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| e.name().to_owned())
+        .collect();
     names.sort();
     assert_eq!(names, ["0x0000000000001000", "0x0000000000003000"]);
-    assert_eq!(volume.read("0x0000000000003000").await.unwrap().to_vec(), fill(50, 8));
-    assert_eq!(volume.stat("0x0000000000001000").await.unwrap().content_length(), 100);
-    assert!(volume.read_with("0x0000000000001000").range(90..110).await.is_err());
+    assert_eq!(
+        volume.read("0x0000000000003000").await.unwrap().to_vec(),
+        fill(50, 8)
+    );
+    assert_eq!(
+        volume
+            .stat("0x0000000000001000")
+            .await
+            .unwrap()
+            .content_length(),
+        100
+    );
+    assert!(volume
+        .read_with("0x0000000000001000")
+        .range(90..110)
+        .await
+        .is_err());
 }
 
 // ---- only the table of contents and the requested ranges are read -----------------------------
@@ -260,20 +351,37 @@ struct Host {
 impl VolumeSource for Host {
     async fn stat(&self, path: &str) -> respak_core::Result<VolumeStat> {
         match path {
-            "" => Ok(VolumeStat { is_dir: true, len: 0 }),
-            PAK => Ok(VolumeStat { is_dir: false, len: self.pak.len() as u64 }),
-            STREAMED => Ok(VolumeStat { is_dir: false, len: self.starpak_len }),
-            _ => Err(respak_core::Error::new(ErrorKind::NotFound { path: path.to_owned() })),
+            "" => Ok(VolumeStat {
+                is_dir: true,
+                len: 0,
+            }),
+            PAK => Ok(VolumeStat {
+                is_dir: false,
+                len: self.pak.len() as u64,
+            }),
+            STREAMED => Ok(VolumeStat {
+                is_dir: false,
+                len: self.starpak_len,
+            }),
+            _ => Err(respak_core::Error::new(ErrorKind::NotFound {
+                path: path.to_owned(),
+            })),
         }
     }
 
     async fn read(&self, path: &str, range: Range<u64>) -> respak_core::Result<Bytes> {
         if path == PAK {
-            return Ok(Bytes::copy_from_slice(&self.pak[range.start as usize..range.end as usize]));
+            return Ok(Bytes::copy_from_slice(
+                &self.pak[range.start as usize..range.end as usize],
+            ));
         }
-        self.read.fetch_add(range.end - range.start, Ordering::SeqCst);
+        self.read
+            .fetch_add(range.end - range.start, Ordering::SeqCst);
         let mut out = vec![0u8; (range.end - range.start) as usize];
-        let regions = [(2 * GIB, &self.entry), (self.starpak_len - self.toc.len() as u64, &self.toc)];
+        let regions = [
+            (2 * GIB, &self.entry),
+            (self.starpak_len - self.toc.len() as u64, &self.toc),
+        ];
         for (at, bytes) in regions {
             let (s, e) = (range.start.max(at), range.end.min(at + bytes.len() as u64));
             if s < e {
@@ -301,13 +409,22 @@ async fn a_huge_starpak_costs_its_table_of_contents_and_the_requested_ranges() {
     t.data = {
         let mut out = Vec::new();
         for shift in (2..5u32).rev() {
-            let len = PixelFormat::Rgba8.mip_len(64 >> shift, 64 >> shift).div_ceil(16).max(1) * 16;
+            let len = PixelFormat::Rgba8
+                .mip_len(64 >> shift, 64 >> shift)
+                .div_ceil(16)
+                .max(1)
+                * 16;
             out.extend(fill(len as usize, shift as u8 + 1));
         }
         out
     };
     let entry = [fill(64 * 64 * 4, 11), fill(32 * 32 * 4, 22)].concat();
-    let toc = [(2 * GIB).to_le_bytes().to_vec(), (entry.len() as u64).to_le_bytes().to_vec(), 1u64.to_le_bytes().to_vec()].concat();
+    let toc = [
+        (2 * GIB).to_le_bytes().to_vec(),
+        (entry.len() as u64).to_le_bytes().to_vec(),
+        1u64.to_le_bytes().to_vec(),
+    ]
+    .concat();
     let read = Arc::new(AtomicU64::new(0));
     let host = Host {
         pak: build_tex_pak(8, &[t]),
@@ -322,11 +439,18 @@ async fn a_huge_starpak_costs_its_table_of_contents_and_the_requested_ranges() {
     let bmp = v.as_bitmap().unwrap();
     assert_eq!(bmp.info().mip_count, 5);
     let after_open = read.load(Ordering::SeqCst);
-    assert!(after_open <= 8 + 16, "opening read {after_open} bytes of the starpak");
+    assert!(
+        after_open <= 8 + 16,
+        "opening read {after_open} bytes of the starpak"
+    );
 
     let mip = bmp.read_mip(1, 0).await.unwrap();
     assert_eq!(mip, Bytes::from(fill(32 * 32 * 4, 22)));
     let total = read.load(Ordering::SeqCst);
-    assert_eq!(total - after_open, 32 * 32 * 4, "only the requested mip is read");
+    assert_eq!(
+        total - after_open,
+        32 * 32 * 4,
+        "only the requested mip is read"
+    );
     assert!(total < 16 * 1024, "{total} bytes read of a 2 GiB starpak");
 }

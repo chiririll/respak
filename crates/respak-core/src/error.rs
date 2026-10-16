@@ -29,7 +29,10 @@ impl Error {
         message: impl Into<String>,
         source: impl Into<Box<dyn StdError + Send + Sync>>,
     ) -> Self {
-        Self::new(ErrorKind::Custom { source: Some(source.into()), message: message.into() })
+        Self::new(ErrorKind::Custom {
+            source: Some(source.into()),
+            message: message.into(),
+        })
     }
 }
 
@@ -178,7 +181,9 @@ impl From<opendal::Error> for Error {
         }
         // A missing path is `NotFound`, not a generic storage failure.
         if e.kind() == opendal::ErrorKind::NotFound {
-            return Self::new(ErrorKind::NotFound { path: e.to_string() });
+            return Self::new(ErrorKind::NotFound {
+                path: e.to_string(),
+            });
         }
         Self::new(ErrorKind::Storage(e))
     }
@@ -192,7 +197,9 @@ impl Serialize for Error {
         m.serialize_entry("kind", kind.name())?;
         m.serialize_entry("message", &kind.to_string())?;
         match kind {
-            ErrorKind::AmbiguousFormat { candidates } => m.serialize_entry("candidates", candidates)?,
+            ErrorKind::AmbiguousFormat { candidates } => {
+                m.serialize_entry("candidates", candidates)?
+            }
             ErrorKind::UnsupportedVersion { format, version } => {
                 m.serialize_entry("format", format)?;
                 m.serialize_entry("version", version)?;

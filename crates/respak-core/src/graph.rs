@@ -124,7 +124,12 @@ struct OutEdge {
 /// Edges leaving a value of format `from`: direct edges, and capability edges of any other
 /// format whose capability `from` provides.
 fn edges_from(reg: &Registry, from: &str) -> Vec<OutEdge> {
-    let provides = reg.formats.iter().find(|f| f.name == from).map(|f| f.provides.as_slice()).unwrap_or(&[]);
+    let provides = reg
+        .formats
+        .iter()
+        .find(|f| f.name == from)
+        .map(|f| f.provides.as_slice())
+        .unwrap_or(&[]);
     let mut out: Vec<OutEdge> = reg
         .direct_edges
         .iter()
@@ -182,10 +187,21 @@ fn walk(
 /// path's formats, ends included). See [`crate::Mediator::plan`] for the ordering rules.
 pub(crate) fn plan(reg: &Registry, from: &str, to: &str, via: &[String]) -> Option<Planned> {
     if from == to {
-        return via.is_empty().then(|| Planned { path: Path { steps: Vec::new() }, handlers: Vec::new(), alternatives: 0 });
+        return via.is_empty().then(|| Planned {
+            path: Path { steps: Vec::new() },
+            handlers: Vec::new(),
+            alternatives: 0,
+        });
     }
     let mut found = Vec::new();
-    walk(reg, from, to, &mut vec![from.to_owned()], &mut Vec::new(), &mut found);
+    walk(
+        reg,
+        from,
+        to,
+        &mut vec![from.to_owned()],
+        &mut Vec::new(),
+        &mut found,
+    );
 
     let satisfies_via = |p: &Vec<(String, OutEdge)>| {
         let mut nodes = std::iter::once(from).chain(p.iter().map(|(_, e)| e.to));
@@ -211,7 +227,11 @@ pub(crate) fn plan(reg: &Registry, from: &str, to: &str, via: &[String]) -> Opti
             })
             .collect(),
     };
-    Some(Planned { path, handlers: best.into_iter().map(|(_, e)| e.handler).collect(), alternatives })
+    Some(Planned {
+        path,
+        handlers: best.into_iter().map(|(_, e)| e.handler).collect(),
+        alternatives,
+    })
 }
 
 /// Formats reachable from `from` (not `from` itself), in registration order.
@@ -247,11 +267,17 @@ pub(crate) fn format_graph(reg: &Registry) -> FormatGraph {
                 .direct_edges
                 .iter()
                 .filter(|d| d.to == f.name)
-                .map(|d| EdgeInfo { kind: "format", from: d.from.to_owned(), cost: d.cost })
+                .map(|d| EdgeInfo {
+                    kind: "format",
+                    from: d.from.to_owned(),
+                    cost: d.cost,
+                })
                 .collect();
-            produced_by.extend(
-                f.cap_edges.iter().map(|e| EdgeInfo { kind: "capability", from: e.cap.name.to_owned(), cost: e.cost }),
-            );
+            produced_by.extend(f.cap_edges.iter().map(|e| EdgeInfo {
+                kind: "capability",
+                from: e.cap.name.to_owned(),
+                cost: e.cost,
+            }));
             FormatInfo {
                 name: f.name.to_owned(),
                 label: f.label().to_owned(),

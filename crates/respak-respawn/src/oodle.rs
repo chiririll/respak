@@ -72,17 +72,28 @@ impl Scanner {
     /// `input` is the stream from its start; it may be a prefix. A block counts only once all of
     /// it is in `input`, else the error is [`OodleError::NeedInput`] and the scanner can go on
     /// with a longer input.
-    pub fn advance(&mut self, input: &[u8], decoded_len: usize, upto: usize) -> Result<(), OodleError> {
+    pub fn advance(
+        &mut self,
+        input: &[u8],
+        decoded_len: usize,
+        upto: usize,
+    ) -> Result<(), OodleError> {
         let upto = upto.min(decoded_len);
         while self.output < upto {
             let at = self.input;
             let need = |n: usize| OodleError::NeedInput { at_least: at + n };
             let head = input.get(at..at + 2).ok_or_else(|| need(2))?;
             if head[0] & 0xF != 0xC || (head[0] >> 4) & 3 != 0 {
-                return Err(corrupt(format!("bad block header {:02x}{:02x} at {at}", head[0], head[1])));
+                return Err(corrupt(format!(
+                    "bad block header {:02x}{:02x} at {at}",
+                    head[0], head[1]
+                )));
             }
             if !matches!(head[1] & 0x7F, 6 | 0xA | 0xC) {
-                return Err(OodleError::Unsupported(format!("decoder type {:#x}", head[1] & 0x7F)));
+                return Err(OodleError::Unsupported(format!(
+                    "decoder type {:#x}",
+                    head[1] & 0x7F
+                )));
             }
             if head[1] & 0x80 != 0 {
                 return Err(OodleError::Unsupported("block checksums".into()));
@@ -95,16 +106,23 @@ impl Scanner {
                 let v = usize::from(q[0]) << 16 | usize::from(q[1]) << 8 | usize::from(q[2]);
                 match (v & 0x3FFFF, v >> 18) {
                     (0x3FFFF, 1) => 4,
-                    (0x3FFFF, _) => return Err(OodleError::Unsupported("whole-match block".into())),
+                    (0x3FFFF, _) => {
+                        return Err(OodleError::Unsupported("whole-match block".into()))
+                    }
                     (size, _) => 3 + size + 1,
                 }
             };
-            let end = (at + 2).checked_add(body).ok_or_else(|| corrupt("block size"))?;
+            let end = (at + 2)
+                .checked_add(body)
+                .ok_or_else(|| corrupt("block size"))?;
             if input.len() < end {
                 return Err(need(end - at));
             }
             if head[0] & 0x80 != 0 || self.segments.is_empty() {
-                self.segments.push(Segment { input: at, output: self.output });
+                self.segments.push(Segment {
+                    input: at,
+                    output: self.output,
+                });
             }
             self.input = end;
             self.output += out;
@@ -116,10 +134,15 @@ impl Scanner {
 /// Decodes the segment starting at the start of `input` into `out`, which must be exactly its
 /// decoded length. A panic inside the decoder becomes `Corrupt`.
 pub fn decode_segment(input: &[u8], out: &mut [u8]) -> Result<(), OodleError> {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Extractor::new().read_from_slice(input, out)));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        Extractor::new().read_from_slice(input, out)
+    }));
     match result {
         Ok(Ok(n)) if n == out.len() => Ok(()),
-        Ok(Ok(n)) => Err(corrupt(format!("decoded {n} bytes, expected {}", out.len()))),
+        Ok(Ok(n)) => Err(corrupt(format!(
+            "decoded {n} bytes, expected {}",
+            out.len()
+        ))),
         Ok(Err(e)) => Err(corrupt(e.to_string())),
         Err(_) => Err(corrupt("the decoder panicked")),
     }
@@ -130,7 +153,8 @@ pub fn decode_segment(input: &[u8], out: &mut [u8]) -> Result<(), OodleError> {
 pub fn decompress(input: &[u8], decoded_len: u64) -> Result<Vec<u8>, OodleError> {
     let len = usize::try_from(decoded_len).map_err(|_| corrupt("decoded length"))?;
     let mut out = Vec::new();
-    out.try_reserve_exact(len).map_err(|_| corrupt(format!("decoded length {len} is too large")))?;
+    out.try_reserve_exact(len)
+        .map_err(|_| corrupt(format!("decoded length {len} is too large")))?;
     out.resize(len, 0);
     let mut scan = Scanner::default();
     scan.advance(input, len, len).map_err(|e| match e {
@@ -156,7 +180,9 @@ mod tests {
     }
 
     fn pattern(n: usize, seed: u8) -> Vec<u8> {
-        (0..n).map(|i| (i as u8).wrapping_mul(7).wrapping_add(seed)).collect()
+        (0..n)
+            .map(|i| (i as u8).wrapping_mul(7).wrapping_add(seed))
+            .collect()
     }
 
     #[test]
@@ -207,8 +233,14 @@ mod tests {
     fn truncated_or_wrong_length_is_corrupt() {
         let data = pattern(5000, 5);
         let stream = stored(true, &data);
-        assert!(matches!(decompress(&stream[..3000], 5000), Err(OodleError::Corrupt(_))));
-        assert!(matches!(decompress(&stream, 6000), Err(OodleError::Corrupt(_))));
+        assert!(matches!(
+            decompress(&stream[..3000], 5000),
+            Err(OodleError::Corrupt(_))
+        ));
+        assert!(matches!(
+            decompress(&stream, 6000),
+            Err(OodleError::Corrupt(_))
+        ));
         assert!(matches!(decompress(&[], 10), Err(OodleError::Corrupt(_))));
     }
 
@@ -223,16 +255,25 @@ mod tests {
                 assert_eq!(out.len(), 70_000);
             }
         }
-        assert!(matches!(decompress(b"not oodle at all", 100), Err(OodleError::Corrupt(_))));
+        assert!(matches!(
+            decompress(b"not oodle at all", 100),
+            Err(OodleError::Corrupt(_))
+        ));
     }
 
     #[test]
     fn unsupported_blocks_are_reported() {
         let mut stream = stored(true, &[0; 10]);
         stream[1] |= 0x80; // checksums
-        assert!(matches!(decompress(&stream, 10), Err(OodleError::Unsupported(_))));
+        assert!(matches!(
+            decompress(&stream, 10),
+            Err(OodleError::Unsupported(_))
+        ));
         let mut stream = stored(true, &[0; 10]);
         stream[1] = 0x05; // LZNA
-        assert!(matches!(decompress(&stream, 10), Err(OodleError::Unsupported(_))));
+        assert!(matches!(
+            decompress(&stream, 10),
+            Err(OodleError::Unsupported(_))
+        ));
     }
 }

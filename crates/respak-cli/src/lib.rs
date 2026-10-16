@@ -11,7 +11,7 @@ use respak_core::{CancellationToken, Engine, Event};
 
 #[cfg(feature = "steam")]
 pub use commands::steam::{run_steam, SteamCommand};
-pub use commands::{ConvertArgs, CopyArgs, DiscoverArgs, ListArgs, RunArgs};
+pub use commands::{ConvertArgs, CopyArgs, DiscoverArgs, ListArgs, NamesArgs, RunArgs};
 
 /// `respak --root <dir> --out <dir> <command>`
 #[derive(Debug, Parser)]
@@ -85,6 +85,11 @@ pub enum Command {
     /// Print the entries of containers (rpak, mbnk, ...), one path per line. Nothing is
     /// described or opened, so it is fast; use `discover --depth 1` for formats and targets.
     List(ListArgs),
+    /// Look for the names of asset guids in the strings the input can give: names and possible
+    /// names stored in the assets of paks, and printable text of files of no known format
+    /// (executables, scripts). Each string is hashed; those that match a wanted guid are printed
+    /// as `0x<GUID><TAB><name>`. Works with `--steam`.
+    Names(NamesArgs),
     /// Copy a file, or every file a glob matches, to `--out` unchanged (with `--steam`: download
     /// it). To combine it with conversions, add `{"type":"file"}` as one more output of a `run` request.
     Copy(CopyArgs),
@@ -200,6 +205,7 @@ pub async fn run(
         Command::Formats => commands::formats(engine, out),
         Command::Discover(args) => commands::discover(engine, cancel, args, out, err).await,
         Command::List(args) => commands::list(engine, cancel, args, out, err).await,
+        Command::Names(args) => commands::names(engine, cancel, args, out, err).await,
         Command::Convert(args) => commands::convert(engine, cancel, args, out, err).await,
         Command::Copy(args) => commands::copy(engine, cancel, args, out, err).await,
         Command::Run(args) => commands::request(engine, cancel, args, out, err).await,

@@ -9,6 +9,7 @@ mod blob;
 mod container;
 mod mesh;
 mod metadata;
+mod name_source;
 mod skeleton;
 mod table;
 mod video;
@@ -20,6 +21,7 @@ pub use blob::{read_all, Blob, CHUNK};
 pub use container::Container;
 pub use mesh::{MaterialTexture, Mesh, MeshInfo, MeshMaterial, MeshModel, MeshPart, ModelInfo};
 pub use metadata::{Dependency, Metadata};
+pub use name_source::NameSource;
 pub use skeleton::{Bone, Skeleton};
 pub use table::{Cell, Column, ColumnType, Table};
 pub use video::{FrameFormat, Video, VideoFrame, VideoInfo};
@@ -43,6 +45,7 @@ fn _object_safe(
     _: &dyn Skeleton,
     _: &dyn Animation,
     _: &dyn Table,
+    _: &dyn NameSource,
     _: &dyn Audio,
     _: &dyn Video,
 ) {
@@ -78,6 +81,10 @@ impl Cap for dyn Skeleton {
 
 impl Cap for dyn Table {
     const NAME: &'static str = "Table";
+}
+
+impl Cap for dyn NameSource {
+    const NAME: &'static str = "NameSource";
 }
 
 impl Cap for dyn Audio {

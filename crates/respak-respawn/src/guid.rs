@@ -34,7 +34,10 @@ pub fn string_to_guid(s: &str) -> u64 {
         }
         let v = (u64::from(u32::from_le_bytes(word)).wrapping_mul(MUL_WORD)) >> 24;
         if has_nul {
-            return h.wrapping_mul(MUL_STATE).wrapping_add(v).wrapping_sub(LENGTH_TERM.wrapping_mul(len));
+            return h
+                .wrapping_mul(MUL_STATE)
+                .wrapping_add(v)
+                .wrapping_sub(LENGTH_TERM.wrapping_mul(len));
         }
         h = h.wrapping_mul(MUL_STATE).wrapping_add(v);
         h ^= h >> 61;
@@ -49,7 +52,10 @@ mod tests {
     #[test]
     fn case_and_slashes_do_not_matter() {
         assert_eq!(string_to_guid("Texture/Foo"), string_to_guid("texture/foo"));
-        assert_eq!(string_to_guid("texture\\foo"), string_to_guid("texture/foo"));
+        assert_eq!(
+            string_to_guid("texture\\foo"),
+            string_to_guid("texture/foo")
+        );
         assert_ne!(string_to_guid("texture/foo"), string_to_guid("texture/fop"));
     }
 

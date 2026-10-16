@@ -10,10 +10,16 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use common::*;
 use respak_core::value::BlobData;
-use respak_core::{ConvertHandler, Cx, ErrorKind, FormatId, Registry, Result, Target, Value, ValueKey};
+use respak_core::{
+    ConvertHandler, Cx, ErrorKind, FormatId, Registry, Result, Target, Value, ValueKey,
+};
 
 fn to_dst() -> Target {
-    Target { format: FormatId::new("dst"), options: serde_json::Value::Null, via: Vec::new() }
+    Target {
+        format: FormatId::new("dst"),
+        options: serde_json::Value::Null,
+        via: Vec::new(),
+    }
 }
 
 /// `src -> dst`: counts runs, waits a bit, then converts `link` (a path on the input) if set.
@@ -33,17 +39,36 @@ impl ConvertHandler for Slow {
             let other = cx.mediator.open(link, cx).await?;
             cx.mediator.convert(other, to_dst(), cx).await?;
         }
-        let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new("dst"), &serde_json::Value::Null);
-        Ok(Arc::new(BlobData::with_format(FormatId::new("dst"), Bytes::from("d"), key)))
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            FormatId::new("dst"),
+            &serde_json::Value::Null,
+        );
+        Ok(Arc::new(BlobData::with_format(
+            FormatId::new("dst"),
+            Bytes::from("d"),
+            key,
+        )))
     }
 }
 
-fn setup(links: Vec<(&'static str, &'static str)>) -> (respak_core::Mediator, Cx, Arc<AtomicUsize>) {
+fn setup(
+    links: Vec<(&'static str, &'static str)>,
+) -> (respak_core::Mediator, Cx, Arc<AtomicUsize>) {
     let runs = Arc::new(AtomicUsize::new(0));
     let mut r = Registry::new();
-    r.add(&TestPlugin { id: "t", register: |_| {} });
-    let handler = Slow { runs: runs.clone(), links };
-    r.format("src").from("file", MagicRead::new("src", b"SSSS", 10)).extensions(["ss"]).to("dst", handler);
+    r.add(&TestPlugin {
+        id: "t",
+        register: |_| {},
+    });
+    let handler = Slow {
+        runs: runs.clone(),
+        links,
+    };
+    r.format("src")
+        .from("file", MagicRead::new("src", b"SSSS", 10))
+        .extensions(["ss"])
+        .to("dst", handler);
     r.format("dst");
     r.check().unwrap();
     let (mediator, cx) = cx_for(r);
@@ -61,7 +86,8 @@ async fn concurrent_identical_requests_share_one_run() {
     let (m, cx, runs) = setup(vec![]);
     put(&cx, &["a.ss"]).await;
     let a = m.open("a.ss", &cx).await.unwrap();
-    let results = futures::future::join_all((0..5).map(|_| m.convert(a.clone(), to_dst(), &cx))).await;
+    let results =
+        futures::future::join_all((0..5).map(|_| m.convert(a.clone(), to_dst(), &cx))).await;
     assert!(results.iter().all(|r| r.is_ok()));
     assert_eq!(runs.load(Ordering::SeqCst), 1);
 }
@@ -80,7 +106,10 @@ async fn sequential_requests_run_again() {
 async fn different_sources_are_not_merged() {
     let (m, cx, runs) = setup(vec![]);
     put(&cx, &["a.ss", "b.ss"]).await;
-    let (a, b) = (m.open("a.ss", &cx).await.unwrap(), m.open("b.ss", &cx).await.unwrap());
+    let (a, b) = (
+        m.open("a.ss", &cx).await.unwrap(),
+        m.open("b.ss", &cx).await.unwrap(),
+    );
     let (ra, rb) = tokio::join!(m.convert(a, to_dst(), &cx), m.convert(b, to_dst(), &cx));
     assert!(ra.is_ok() && rb.is_ok());
     assert_eq!(runs.load(Ordering::SeqCst), 2);
@@ -92,7 +121,10 @@ async fn a_request_for_itself_is_a_cycle() {
     put(&cx, &["a.ss"]).await;
     let a = m.open("a.ss", &cx).await.unwrap();
     let err = m.convert(a, to_dst(), &cx).await.unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::DependencyCycle { chain } if chain.len() >= 2), "{err}");
+    assert!(
+        matches!(err.kind(), ErrorKind::DependencyCycle { chain } if chain.len() >= 2),
+        "{err}"
+    );
 }
 
 #[tokio::test]
@@ -101,19 +133,30 @@ async fn a_longer_loop_is_a_cycle() {
     put(&cx, &["a.ss", "b.ss", "c.ss"]).await;
     let a = m.open("a.ss", &cx).await.unwrap();
     let err = m.convert(a, to_dst(), &cx).await.unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::DependencyCycle { .. }), "{err}");
+    assert!(
+        matches!(err.kind(), ErrorKind::DependencyCycle { .. }),
+        "{err}"
+    );
 }
 
 #[tokio::test]
 async fn concurrent_chains_that_wait_on_each_other_fail_instead_of_hanging() {
     let (m, cx, _) = setup(vec![("a.ss", "b.ss"), ("b.ss", "a.ss")]);
     put(&cx, &["a.ss", "b.ss"]).await;
-    let (a, b) = (m.open("a.ss", &cx).await.unwrap(), m.open("b.ss", &cx).await.unwrap());
+    let (a, b) = (
+        m.open("a.ss", &cx).await.unwrap(),
+        m.open("b.ss", &cx).await.unwrap(),
+    );
     let both = async { tokio::join!(m.convert(a, to_dst(), &cx), m.convert(b, to_dst(), &cx)) };
-    let (ra, rb) = tokio::time::timeout(Duration::from_secs(5), both).await.expect("deadlocked");
+    let (ra, rb) = tokio::time::timeout(Duration::from_secs(5), both)
+        .await
+        .expect("deadlocked");
     for r in [ra, rb] {
         let err = r.unwrap_err();
-        assert!(matches!(err.kind(), ErrorKind::DependencyCycle { .. }), "{err}");
+        assert!(
+            matches!(err.kind(), ErrorKind::DependencyCycle { .. }),
+            "{err}"
+        );
     }
 }
 
@@ -126,8 +169,14 @@ impl respak_core::Plugin for SlowPlugin {
         "slow"
     }
     fn register(&self, r: &mut Registry) {
-        let handler = Slow { runs: Arc::default(), links: self.links.clone() };
-        r.format("src").from("file", MagicRead::new("src", b"SSSS", 10)).extensions(["ss"]).to("dst", handler);
+        let handler = Slow {
+            runs: Arc::default(),
+            links: self.links.clone(),
+        };
+        r.format("src")
+            .from("file", MagicRead::new("src", b"SSSS", 10))
+            .extensions(["ss"])
+            .to("dst", handler);
         r.format("dst");
     }
 }
@@ -135,15 +184,28 @@ impl respak_core::Plugin for SlowPlugin {
 #[tokio::test]
 async fn the_report_lists_the_values_a_converter_asked_for() {
     let (input, output) = (mem(), mem());
-    let plugin = SlowPlugin { links: vec![("a.ss", "b.ss")] };
-    let engine = respak_core::Engine::builder().input(input.clone()).output(output).plugin(plugin).build().unwrap();
+    let plugin = SlowPlugin {
+        links: vec![("a.ss", "b.ss")],
+    };
+    let engine = respak_core::Engine::builder()
+        .input(input.clone())
+        .output(output)
+        .plugin(plugin)
+        .build()
+        .unwrap();
     input.write("a.ss", "SSSS").await.unwrap();
     input.write("b.ss", "SSSS").await.unwrap();
 
-    let report = engine.convert(&one("a.ss", "dst"), &respak_core::CancellationToken::new()).await.unwrap();
+    let report = engine
+        .convert(&one("a.ss", "dst"), &respak_core::CancellationToken::new())
+        .await
+        .unwrap();
     match &report.outputs[0].result {
         respak_core::OutputResult::Ok { dependencies, .. } => {
-            let seen: Vec<_> = dependencies.iter().map(|d| (d.key.as_str(), d.format.as_str())).collect();
+            let seen: Vec<_> = dependencies
+                .iter()
+                .map(|d| (d.key.as_str(), d.format.as_str()))
+                .collect();
             assert_eq!(seen, [("b.ss", "dst")]);
         }
         other => panic!("{other:?}"),

@@ -15,7 +15,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use respak_core::capability::{Cell, Table};
 use respak_core::value::BlobData;
-use respak_core::{ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey};
+use respak_core::{
+    ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey,
+};
 use serde::ser::SerializeTuple;
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -25,28 +27,47 @@ use serde::{Deserialize, Serialize, Serializer};
 struct NoOptions {}
 
 fn table_of<'a>(source: &'a Value, target: &str) -> Result<&'a dyn Table> {
-    source
-        .as_table()
-        .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: format!("{target} must be made from a table") }))
+    source.as_table().ok_or_else(|| {
+        Error::new(ErrorKind::Custom {
+            source: None,
+            message: format!("{target} must be made from a table"),
+        })
+    })
 }
 
 fn blob(source: &Value, target: &Target, format: &'static str, bytes: Vec<u8>) -> Result<Value> {
     let options = TypedTarget::<NoOptions>::parse(target)?;
-    let key = ValueKey::converted(Arc::new(source.key().clone()), FormatId::new(format), options.normalized());
-    Ok(Arc::new(BlobData::with_format(FormatId::new(format), Bytes::from(bytes), key)))
+    let key = ValueKey::converted(
+        Arc::new(source.key().clone()),
+        FormatId::new(format),
+        options.normalized(),
+    );
+    Ok(Arc::new(BlobData::with_format(
+        FormatId::new(format),
+        Bytes::from(bytes),
+        key,
+    )))
 }
 
 /// A float as C++ `ostream << float` prints it by default (`%g`, precision 6).
 pub fn format_g(v: f32) -> String {
     let v = f64::from(v);
     if v.is_nan() {
-        return if v.is_sign_negative() { "-nan".into() } else { "nan".into() };
+        return if v.is_sign_negative() {
+            "-nan".into()
+        } else {
+            "nan".into()
+        };
     }
     if v.is_infinite() {
         return if v > 0.0 { "inf".into() } else { "-inf".into() };
     }
     if v == 0.0 {
-        return if v.is_sign_negative() { "-0".into() } else { "0".into() };
+        return if v.is_sign_negative() {
+            "-0".into()
+        } else {
+            "0".into()
+        };
     }
     fn trim(s: &str) -> &str {
         if s.contains('.') {
@@ -60,7 +81,12 @@ pub fn format_g(v: f32) -> String {
     let (mantissa, exp) = sci.split_once('e').expect("exponent");
     let exp: i32 = exp.parse().expect("integer exponent");
     if !(-4..6).contains(&exp) {
-        format!("{}e{}{:02}", trim(mantissa), if exp < 0 { '-' } else { '+' }, exp.abs())
+        format!(
+            "{}e{}{:02}",
+            trim(mantissa),
+            if exp < 0 { '-' } else { '+' },
+            exp.abs()
+        )
     } else {
         trim(&format!("{v:.*}", (5 - exp) as usize)).to_owned()
     }
@@ -69,7 +95,12 @@ pub fn format_g(v: f32) -> String {
 /// The table as rsx's CSV.
 pub fn to_csv(table: &dyn Table) -> String {
     let mut out = String::new();
-    let quoted = |items: &mut dyn Iterator<Item = &str>| items.map(|s| format!("\"{s}\"")).collect::<Vec<_>>().join(",");
+    let quoted = |items: &mut dyn Iterator<Item = &str>| {
+        items
+            .map(|s| format!("\"{s}\""))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
     out += &quoted(&mut table.columns().iter().map(|c| c.name.as_str()));
     out.push('\n');
     for row in table.rows() {
@@ -81,7 +112,14 @@ pub fn to_csv(table: &dyn Table) -> String {
                 Cell::Bool(b) => out += if *b { "true" } else { "false" },
                 Cell::Int(n) => write!(out, "{n}").expect("write to String"),
                 Cell::Float(f) => out += &format_g(*f),
-                Cell::Vector([x, y, z]) => write!(out, "\"<{},{},{}>\"", format_g(*x), format_g(*y), format_g(*z)).expect("write to String"),
+                Cell::Vector([x, y, z]) => write!(
+                    out,
+                    "\"<{},{},{}>\"",
+                    format_g(*x),
+                    format_g(*y),
+                    format_g(*z)
+                )
+                .expect("write to String"),
                 Cell::String(s) => write!(out, "\"{s}\"").expect("write to String"),
             }
         }
@@ -117,9 +155,19 @@ pub fn to_json(table: &dyn Table) -> Result<String> {
     let mut out = String::from("{\n  \"columns\": [");
     for (i, c) in table.columns().iter().enumerate() {
         out += if i > 0 { ",\n    " } else { "\n    " };
-        write!(out, "{{\"name\": {}, \"type\": \"{}\"}}", compact(&c.name)?, c.ty.name()).expect("write to String");
+        write!(
+            out,
+            "{{\"name\": {}, \"type\": \"{}\"}}",
+            compact(&c.name)?,
+            c.ty.name()
+        )
+        .expect("write to String");
     }
-    out += if table.columns().is_empty() { "],\n  \"rows\": [" } else { "\n  ],\n  \"rows\": [" };
+    out += if table.columns().is_empty() {
+        "],\n  \"rows\": ["
+    } else {
+        "\n  ],\n  \"rows\": ["
+    };
     for (i, row) in table.rows().iter().enumerate() {
         out += if i > 0 { ",\n    " } else { "\n    " };
         out.push('[');
@@ -131,7 +179,11 @@ pub fn to_json(table: &dyn Table) -> Result<String> {
         }
         out.push(']');
     }
-    out += if table.rows().is_empty() { "]\n}\n" } else { "\n  ]\n}\n" };
+    out += if table.rows().is_empty() {
+        "]\n}\n"
+    } else {
+        "\n  ]\n}\n"
+    };
     Ok(out)
 }
 
@@ -180,7 +232,10 @@ mod tests {
     }
 
     fn table() -> T {
-        let col = |name: &str, ty| Column { name: name.into(), ty };
+        let col = |name: &str, ty| Column {
+            name: name.into(),
+            ty,
+        };
         T(
             vec![
                 col("b", ColumnType::Bool),
@@ -251,10 +306,16 @@ mod tests {
     fn json_keeps_types_and_exact_floats() {
         let json = to_json(&table()).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["columns"][3], serde_json::json!({"name": "v", "type": "vector"}));
+        assert_eq!(
+            v["columns"][3],
+            serde_json::json!({"name": "v", "type": "vector"})
+        );
         assert_eq!(v["rows"][0][0], true);
         assert_eq!(v["rows"][0][4], "a \"q\"");
-        assert!(json.contains("[true, -7, 0.1, [1.0,-2.5,10000000.0]"), "{json}");
+        assert!(
+            json.contains("[true, -7, 0.1, [1.0,-2.5,10000000.0]"),
+            "{json}"
+        );
         assert_eq!(v["rows"][1][2].as_f64().unwrap() as f32, 123456.7);
     }
 

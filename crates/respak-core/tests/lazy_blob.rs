@@ -47,7 +47,11 @@ async fn nothing_runs_until_the_first_read() {
     let got = blob.read(0..5, &cx).await.unwrap();
     assert_eq!(&got[..], &[0; 5]);
     assert_eq!(started.load(Ordering::SeqCst), 1);
-    assert_eq!(pulled.load(Ordering::SeqCst), 1, "one chunk covers the first 5 bytes");
+    assert_eq!(
+        pulled.load(Ordering::SeqCst),
+        1,
+        "one chunk covers the first 5 bytes"
+    );
 }
 
 #[tokio::test]
@@ -109,7 +113,9 @@ async fn a_failure_is_final() {
             Box::pin(async {
                 let items: Vec<respak_core::Result<Bytes>> = vec![
                     Ok(Bytes::from_static(b"abc")),
-                    Err(Error::new(ErrorKind::Corrupt { context: "cut here".into() })),
+                    Err(Error::new(ErrorKind::Corrupt {
+                        context: "cut here".into(),
+                    })),
                 ];
                 Ok(LazySource::Stream(Box::pin(stream::iter(items))))
             })
@@ -148,8 +154,15 @@ async fn write_blob_streams_to_the_output_and_skips_a_repeat_without_computing()
     assert_eq!(started.load(Ordering::SeqCst), 1);
 
     let (again, started_again, _) = counting(3, 10);
-    assert!(!cx.write_blob("out/v.avi", &key("v"), &again).await.unwrap(), "same key, same path");
-    assert_eq!(started_again.load(Ordering::SeqCst), 0, "a skipped write never computes");
+    assert!(
+        !cx.write_blob("out/v.avi", &key("v"), &again).await.unwrap(),
+        "same key, same path"
+    );
+    assert_eq!(
+        started_again.load(Ordering::SeqCst),
+        0,
+        "a skipped write never computes"
+    );
 }
 
 #[tokio::test]
@@ -162,14 +175,25 @@ async fn a_failed_write_leaves_no_file_and_frees_the_path() {
             Box::pin(async {
                 let items: Vec<respak_core::Result<Bytes>> = vec![
                     Ok(Bytes::from_static(b"abc")),
-                    Err(Error::new(ErrorKind::Corrupt { context: "cut here".into() })),
+                    Err(Error::new(ErrorKind::Corrupt {
+                        context: "cut here".into(),
+                    })),
                 ];
                 Ok(LazySource::Stream(Box::pin(stream::iter(items))))
             })
         }),
     );
-    assert!(cx.write_blob("out/v.avi", &key("v"), &broken).await.is_err());
-    assert!(cx.output.stat("out/v.avi").await.is_err(), "the half-written file is gone");
+    assert!(cx
+        .write_blob("out/v.avi", &key("v"), &broken)
+        .await
+        .is_err());
+    assert!(
+        cx.output.stat("out/v.avi").await.is_err(),
+        "the half-written file is gone"
+    );
     let (good, _, _) = counting(1, 4);
-    assert!(cx.write_blob("out/v.avi", &key("v"), &good).await.unwrap(), "the path is free again");
+    assert!(
+        cx.write_blob("out/v.avi", &key("v"), &good).await.unwrap(),
+        "the path is free again"
+    );
 }

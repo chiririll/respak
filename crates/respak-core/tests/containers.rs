@@ -16,8 +16,8 @@ use respak_core::capability::{Container, Metadata};
 use respak_core::value::FileData;
 use respak_core::volume::{volume_operator, VolumeEntry, VolumeSource, VolumeStat};
 use respak_core::{
-    magic, Cx, Data, Detect, Detected, DiscoverOptions, ErrorKind, FormatId, Probe, ReadHandler, Registry, Result,
-    Value, ValueKey, Version,
+    magic, Cx, Data, Detect, Detected, DiscoverOptions, ErrorKind, FormatId, Probe, ReadHandler,
+    Registry, Result, Value, ValueKey, Version,
 };
 
 struct MapVolume(BTreeMap<String, Bytes>);
@@ -26,24 +26,42 @@ struct MapVolume(BTreeMap<String, Bytes>);
 impl VolumeSource for MapVolume {
     async fn stat(&self, path: &str) -> Result<VolumeStat> {
         if path.is_empty() || self.0.keys().any(|k| k.starts_with(&format!("{path}/"))) {
-            return Ok(VolumeStat { is_dir: true, len: 0 });
+            return Ok(VolumeStat {
+                is_dir: true,
+                len: 0,
+            });
         }
         match self.0.get(path) {
-            Some(b) => Ok(VolumeStat { is_dir: false, len: b.len() as u64 }),
-            None => Err(respak_core::Error::new(ErrorKind::NotFound { path: path.to_owned() })),
+            Some(b) => Ok(VolumeStat {
+                is_dir: false,
+                len: b.len() as u64,
+            }),
+            None => Err(respak_core::Error::new(ErrorKind::NotFound {
+                path: path.to_owned(),
+            })),
         }
     }
     async fn read(&self, path: &str, range: std::ops::Range<u64>) -> Result<Bytes> {
         Ok(self.0[path].slice(range.start as usize..range.end as usize))
     }
     async fn list(&self, dir: &str) -> Result<Vec<VolumeEntry>> {
-        let prefix = if dir.is_empty() { String::new() } else { format!("{dir}/") };
+        let prefix = if dir.is_empty() {
+            String::new()
+        } else {
+            format!("{dir}/")
+        };
         let mut out: Vec<VolumeEntry> = Vec::new();
         for (k, v) in self.0.iter().filter(|(k, _)| k.starts_with(&prefix)) {
             let rest = &k[prefix.len()..];
-            let (name, is_dir) = rest.split_once('/').map_or((rest, false), |(d, _)| (d, true));
+            let (name, is_dir) = rest
+                .split_once('/')
+                .map_or((rest, false), |(d, _)| (d, true));
             if !out.iter().any(|e| e.name == name) {
-                out.push(VolumeEntry { name: name.to_owned(), is_dir, len: if is_dir { 0 } else { v.len() as u64 } });
+                out.push(VolumeEntry {
+                    name: name.to_owned(),
+                    is_dir,
+                    len: if is_dir { 0 } else { v.len() as u64 },
+                });
             }
         }
         Ok(out)
@@ -106,10 +124,19 @@ impl Container for Pak {
         let virtual_path = format!("{}/{path}", self.mount);
         if path.ends_with(".dat") {
             let format = FormatId::new("pak.item").with_version(Version::new(7));
-            return Ok(Arc::new(Item { format, key: ValueKey::file(virtual_path), name: path.to_owned() }));
+            return Ok(Arc::new(Item {
+                format,
+                key: ValueKey::file(virtual_path),
+                name: path.to_owned(),
+            }));
         }
         self.volume.stat(path).await?;
-        Ok(Arc::new(FileData::new(self.volume.clone(), path, virtual_path, None)))
+        Ok(Arc::new(FileData::new(
+            self.volume.clone(),
+            path,
+            virtual_path,
+            None,
+        )))
     }
 }
 
@@ -130,7 +157,10 @@ struct PakRead;
 #[async_trait]
 impl Detect for PakRead {
     async fn score(&self, input: &Probe<'_>, _: &Cx) -> Result<Option<Detected>> {
-        Ok(magic(input.header, 0, b"PAK1").then_some(Detected { score: 10, version: None }))
+        Ok(magic(input.header, 0, b"PAK1").then_some(Detected {
+            score: 10,
+            version: None,
+        }))
     }
     fn header_len(&self) -> usize {
         4
@@ -151,12 +181,20 @@ impl ReadHandler for PakRead {
         }
         let mount = source.key().to_string();
         let volume = volume_operator(MapVolume(entries), &mount);
-        Ok(Arc::new(Pak { format: FormatId::new("pak"), key: source.key().clone(), mount, volume }))
+        Ok(Arc::new(Pak {
+            format: FormatId::new("pak"),
+            key: source.key().clone(),
+            mount,
+            volume,
+        }))
     }
 }
 
 fn register(r: &mut Registry) {
-    r.format("pak").from("file", PakRead).extensions(["pak"]).provides::<dyn Container>();
+    r.format("pak")
+        .from("file", PakRead)
+        .extensions(["pak"])
+        .provides::<dyn Container>();
     r.format("pak.item");
 }
 
@@ -172,14 +210,22 @@ fn cx(env: &Env) -> Cx {
     // A fresh context, as one `Engine` call would have.
     let mut r = Registry::new();
     r.add(&TestPlugin { id: "t", register });
-    Cx::new(respak_core::Mediator::new(r), env.input.clone(), env.output.clone())
+    Cx::new(
+        respak_core::Mediator::new(r),
+        env.input.clone(),
+        env.output.clone(),
+    )
 }
 
 #[tokio::test]
 async fn paths_resolve_into_nested_containers_and_mounts_are_kept() {
     let env = fixture().await;
     let cx = cx(&env);
-    let item = cx.mediator.open("outer.pak/inner.pak/a/x.dat", &cx).await.unwrap();
+    let item = cx
+        .mediator
+        .open("outer.pak/inner.pak/a/x.dat", &cx)
+        .await
+        .unwrap();
     assert_eq!(item.format().to_string(), "pak.item@7");
     assert_eq!(item.as_metadata().unwrap().name(), Some("a/x.dat"));
     assert_eq!(cx.mounts.len(), 2, "outer and inner are mounted");
@@ -218,52 +264,138 @@ async fn a_real_file_wins_over_a_container_entry() {
 async fn missing_paths_and_non_containers_are_not_found() {
     let env = fixture().await;
     let cx = cx(&env);
-    for path in ["nope.pak", "plain.txt/x.dat", "outer.pak/missing.bin/deeper", ""] {
+    for path in [
+        "nope.pak",
+        "plain.txt/x.dat",
+        "outer.pak/missing.bin/deeper",
+        "",
+    ] {
         let err = cx.mediator.open(path, &cx).await.unwrap_err();
-        assert!(matches!(err.kind(), ErrorKind::NotFound { .. }), "{path}: {err}");
+        assert!(
+            matches!(err.kind(), ErrorKind::NotFound { .. }),
+            "{path}: {err}"
+        );
     }
 }
 
 #[tokio::test]
 async fn discover_opens_containers_by_depth() {
     let env = fixture().await;
-    let paths = |d: &respak_core::Discovery| d.entries.iter().map(|e| e.path.clone()).collect::<Vec<_>>();
+    let paths =
+        |d: &respak_core::Discovery| d.entries.iter().map(|e| e.path.clone()).collect::<Vec<_>>();
 
-    let d0 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 0, ..Default::default() }, &respak_core::CancellationToken::new()).await.unwrap();
+    let d0 = env
+        .engine
+        .discover(
+            "outer.pak",
+            &DiscoverOptions {
+                depth: 0,
+                ..Default::default()
+            },
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
     assert_eq!(paths(&d0), ["outer.pak"]);
     assert_eq!(d0.entries[0].format.as_deref(), Some("pak"));
 
-    let d1 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 1, ..Default::default() }, &respak_core::CancellationToken::new()).await.unwrap();
-    assert_eq!(paths(&d1), ["outer.pak/inner.pak", "outer.pak/other.txt", "outer.pak/z.dat"]);
-    assert_eq!(d1.entries[0].format.as_deref(), Some("pak"), "a nested pak is not opened at depth 1");
+    let d1 = env
+        .engine
+        .discover(
+            "outer.pak",
+            &DiscoverOptions {
+                depth: 1,
+                ..Default::default()
+            },
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        paths(&d1),
+        [
+            "outer.pak/inner.pak",
+            "outer.pak/other.txt",
+            "outer.pak/z.dat"
+        ]
+    );
+    assert_eq!(
+        d1.entries[0].format.as_deref(),
+        Some("pak"),
+        "a nested pak is not opened at depth 1"
+    );
     assert_eq!(d1.entries[1].format, None);
     let z = &d1.entries[2];
-    assert_eq!((z.format.as_deref(), z.version.as_deref(), z.kind.as_deref(), z.name.as_deref()), (Some("pak.item"), Some("7"), Some("dat"), Some("z.dat")));
+    assert_eq!(
+        (
+            z.format.as_deref(),
+            z.version.as_deref(),
+            z.kind.as_deref(),
+            z.name.as_deref()
+        ),
+        (Some("pak.item"), Some("7"), Some("dat"), Some("z.dat"))
+    );
 
-    let d2 = env.engine.discover("outer.pak", &DiscoverOptions { depth: 2, ..Default::default() }, &respak_core::CancellationToken::new()).await.unwrap();
+    let d2 = env
+        .engine
+        .discover(
+            "outer.pak",
+            &DiscoverOptions {
+                depth: 2,
+                ..Default::default()
+            },
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
     assert_eq!(
         paths(&d2),
-        ["outer.pak/inner.pak/a/x.dat", "outer.pak/inner.pak/a/y.bin", "outer.pak/other.txt", "outer.pak/z.dat"]
+        [
+            "outer.pak/inner.pak/a/x.dat",
+            "outer.pak/inner.pak/a/y.bin",
+            "outer.pak/other.txt",
+            "outer.pak/z.dat"
+        ]
     );
 }
 
 #[tokio::test]
 async fn discover_accepts_a_path_inside_a_container() {
     let env = fixture().await;
-    let d = env.engine.discover("outer.pak/inner.pak/a/x.dat", &DiscoverOptions::default(), &respak_core::CancellationToken::new()).await.unwrap();
+    let d = env
+        .engine
+        .discover(
+            "outer.pak/inner.pak/a/x.dat",
+            &DiscoverOptions::default(),
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
     assert_eq!(d.entries[0].path, "outer.pak/inner.pak/a/x.dat");
     assert_eq!(d.entries[0].format.as_deref(), Some("pak.item"));
 }
 
 async fn globbed(env: &Env, pattern: &str) -> Result<Vec<String>> {
-    Ok(env.engine.open(pattern, &respak_core::CancellationToken::new()).await?.iter().map(|v| v.key().to_string()).collect())
+    Ok(env
+        .engine
+        .open(pattern, &respak_core::CancellationToken::new())
+        .await?
+        .iter()
+        .map(|v| v.key().to_string())
+        .collect())
 }
 
 #[tokio::test]
 async fn globs_descend_into_a_container_only_where_a_segment_names_it() {
     let env = fixture().await;
-    assert_eq!(globbed(&env, "outer.pak/*.dat").await.unwrap(), ["outer.pak/z.dat"]);
-    assert_eq!(globbed(&env, "*.pak/*.pak/**/*.dat").await.unwrap(), ["outer.pak/inner.pak/a/x.dat"]);
+    assert_eq!(
+        globbed(&env, "outer.pak/*.dat").await.unwrap(),
+        ["outer.pak/z.dat"]
+    );
+    assert_eq!(
+        globbed(&env, "*.pak/*.pak/**/*.dat").await.unwrap(),
+        ["outer.pak/inner.pak/a/x.dat"]
+    );
     assert_eq!(
         globbed(&env, "outer.pak/inner.pak/a/*").await.unwrap(),
         ["outer.pak/inner.pak/a/x.dat", "outer.pak/inner.pak/a/y.bin"]
@@ -277,9 +409,15 @@ async fn double_star_alone_never_enters_a_container() {
     let err = globbed(&env, "**/*.dat").await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::NoMatch { .. }), "{err}");
     // ... and inside outer.pak it does not enter inner.pak either.
-    assert_eq!(globbed(&env, "outer.pak/**/*.dat").await.unwrap(), ["outer.pak/z.dat"]);
+    assert_eq!(
+        globbed(&env, "outer.pak/**/*.dat").await.unwrap(),
+        ["outer.pak/z.dat"]
+    );
     // a pattern that ends in `**` lists only real files
-    assert_eq!(globbed(&env, "**").await.unwrap(), ["outer.pak", "plain.txt"]);
+    assert_eq!(
+        globbed(&env, "**").await.unwrap(),
+        ["outer.pak", "plain.txt"]
+    );
 }
 
 #[tokio::test]
@@ -293,7 +431,17 @@ async fn a_pattern_through_a_file_that_is_not_a_container_matches_nothing() {
 async fn mounting_a_container_publishes_input_opened() {
     let env = fixture().await;
     let mut rx = env.engine.events();
-    env.engine.discover("outer.pak", &DiscoverOptions { depth: 1, ..Default::default() }, &respak_core::CancellationToken::new()).await.unwrap();
+    env.engine
+        .discover(
+            "outer.pak",
+            &DiscoverOptions {
+                depth: 1,
+                ..Default::default()
+            },
+            &respak_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
     let mut opened = Vec::new();
     while let Ok(e) = rx.try_recv() {
         if let respak_core::Event::InputOpened { path, entries } = e {

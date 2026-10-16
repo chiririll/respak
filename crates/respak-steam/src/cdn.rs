@@ -52,19 +52,38 @@ fn as_query(token: String) -> String {
 impl CdnSource {
     /// A source for the depots whose keys are in `keys`.
     pub fn new(resolver: Arc<Resolver>, keys: HashMap<u32, DepotKey>) -> Result<Self> {
-        Ok(Self { resolver, keys, cdn: CdnClient::new()?, pool: OnceCell::new(), tokens: Mutex::default(), tokenless: Mutex::default() })
+        Ok(Self {
+            resolver,
+            keys,
+            cdn: CdnClient::new()?,
+            pool: OnceCell::new(),
+            tokens: Mutex::default(),
+            tokenless: Mutex::default(),
+        })
     }
 
     async fn pool(&self) -> Result<&CdnServerPool> {
-        self.pool.get_or_try_init(|| async { self.resolver.cdn_pool().await }).await
+        self.pool
+            .get_or_try_init(|| async { self.resolver.cdn_pool().await })
+            .await
     }
 
     async fn token(&self, depot: u32, host: &str) -> Option<String> {
-        if self.tokenless.lock().unwrap_or_else(|e| e.into_inner()).contains(&depot) {
+        if self
+            .tokenless
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&depot)
+        {
             return None;
         }
         let key = (depot, host.to_string());
-        let cached = self.tokens.lock().unwrap_or_else(|e| e.into_inner()).get(&key).cloned();
+        let cached = self
+            .tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&key)
+            .cloned();
         if let Some(t) = cached.filter(|t| t.valid_until.is_none_or(|v| v > Instant::now())) {
             return t.value;
         }
@@ -78,12 +97,23 @@ impl CdnSource {
                 }),
             },
             Err(e) => {
-                tracing::debug!("no CDN auth token for {host}: {e}; not asking for the depot's other hosts");
-                self.tokenless.lock().unwrap_or_else(|e| e.into_inner()).insert(depot);
-                Token { value: None, valid_until: Some(Instant::now() + TOKEN_MARGIN) }
+                tracing::debug!(
+                    "no CDN auth token for {host}: {e}; not asking for the depot's other hosts"
+                );
+                self.tokenless
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(depot);
+                Token {
+                    value: None,
+                    valid_until: Some(Instant::now() + TOKEN_MARGIN),
+                }
             }
         };
-        self.tokens.lock().unwrap_or_else(|e| e.into_inner()).insert(key, token.clone());
+        self.tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, token.clone());
         token.value
     }
 }
@@ -91,7 +121,11 @@ impl CdnSource {
 #[async_trait]
 impl ChunkSource for CdnSource {
     async fn fetch(&self, depot: u32, chunk: &ChunkRef) -> Result<(Bytes, u64)> {
-        let key = self.keys.get(&depot).cloned().ok_or_else(|| Error::Fetch(format!("no key for depot {depot}")))?;
+        let key = self
+            .keys
+            .get(&depot)
+            .cloned()
+            .ok_or_else(|| Error::Fetch(format!("no key for depot {depot}")))?;
         let pool = self.pool().await?;
         let mut last = None;
         for _ in 0..pool.len().min(5) {
@@ -101,15 +135,24 @@ impl ChunkSource for CdnSource {
             }
             let token = self.token(depot, &server.host).await;
             let id = ChunkId(chunk.sha);
-            let download = self.cdn.download_chunk(server, DepotId(depot), &id, token.as_deref());
+            let download = self
+                .cdn
+                .download_chunk(server, DepotId(depot), &id, token.as_deref());
             let downloaded = tokio::time::timeout(DOWNLOAD_TIMEOUT, download)
                 .await
-                .unwrap_or_else(|_| Err(steamroom::Error::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "timed out"))));
+                .unwrap_or_else(|_| {
+                    Err(steamroom::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "timed out",
+                    )))
+                });
             let raw = match downloaded {
                 Ok(raw) => raw,
                 Err(e) => {
                     let retry = match &e {
-                        steamroom::Error::CdnStatus { retry_after, .. } => retry_after.map(Duration::from_secs),
+                        steamroom::Error::CdnStatus { retry_after, .. } => {
+                            retry_after.map(Duration::from_secs)
+                        }
                         _ => None,
                     };
                     tracing::warn!("CDN {} failed for chunk {}: {e}", server.host, chunk.hex());
@@ -122,7 +165,8 @@ impl ChunkSource for CdnSource {
             let (expected_len, expected_adler, sha) = (chunk.len, chunk.adler, chunk.sha);
             let key = key.clone();
             let decoded = tokio::task::spawn_blocking(move || {
-                let data = process_chunk(&raw, &key, expected_len, expected_adler).map_err(|e| e.to_string())?;
+                let data = process_chunk(&raw, &key, expected_len, expected_adler)
+                    .map_err(|e| e.to_string())?;
                 if sha != [0u8; 20] && Sha1Hash::compute(&data).0 != sha {
                     return Err("SHA-1 does not match the manifest".to_string());
                 }
@@ -142,7 +186,9 @@ impl ChunkSource for CdnSource {
                 }
             }
         }
-        Err(Error::Fetch(last.unwrap_or_else(|| "no CDN servers".into())))
+        Err(Error::Fetch(
+            last.unwrap_or_else(|| "no CDN servers".into()),
+        ))
     }
 }
 

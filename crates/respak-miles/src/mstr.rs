@@ -4,7 +4,10 @@
 use async_trait::async_trait;
 use respak_core::detect::{magic, u16le, u32le};
 use respak_core::value::FileData;
-use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version};
+use respak_core::{
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
+};
 
 use crate::corrupt;
 
@@ -44,7 +47,10 @@ impl MstrHeader {
         }
         let version = u16le(header, 4).expect("length checked");
         if version != 2 {
-            return Err(Error::new(ErrorKind::UnsupportedVersion { format: "mstr".into(), version: version.to_string() }));
+            return Err(Error::new(ErrorKind::UnsupportedVersion {
+                format: "mstr".into(),
+                version: version.to_string(),
+            }));
         }
         Ok(Self {
             language_idx: u16le(header, 6).expect("length checked"),
@@ -85,7 +91,10 @@ impl Detect for MstrRead {
             return Ok(None);
         }
         MstrHeader::parse(input.header)?;
-        Ok(Some(Detected { score: 12, version: Some(Version::new(2)) }))
+        Ok(Some(Detected {
+            score: 12,
+            version: Some(Version::new(2)),
+        }))
     }
 
     fn header_len(&self) -> usize {
@@ -96,13 +105,25 @@ impl Detect for MstrRead {
 #[async_trait]
 impl ReadHandler for MstrRead {
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let file = source
-            .downcast_ref::<FileData>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "mstr must be read from a file".into() }))?;
+        let file = source.downcast_ref::<FileData>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "mstr must be read from a file".into(),
+            })
+        })?;
         let start = file.range.as_ref().map_or(0, |r| r.start);
-        let header = file.op.read_with(&file.path).range(start..start + MSTR_HEADER_LEN as u64).await?.to_bytes();
+        let header = file
+            .op
+            .read_with(&file.path)
+            .range(start..start + MSTR_HEADER_LEN as u64)
+            .await?
+            .to_bytes();
         let header = MstrHeader::parse(&header)?;
-        Ok(std::sync::Arc::new(MstrData { format: FormatId::new("mstr").with_version(Version::new(2)), key: source.key().clone(), header }))
+        Ok(std::sync::Arc::new(MstrData {
+            format: FormatId::new("mstr").with_version(Version::new(2)),
+            key: source.key().clone(),
+            header,
+        }))
     }
 }
 
@@ -111,7 +132,13 @@ mod tests {
     use super::*;
 
     /// A header: `CSTR`, version, language, data offset, patch, build tag.
-    pub(crate) fn header_bytes(version: u16, language: u16, data_offset: u32, patch: i32, build_tag: u32) -> Vec<u8> {
+    pub(crate) fn header_bytes(
+        version: u16,
+        language: u16,
+        data_offset: u32,
+        patch: i32,
+        build_tag: u32,
+    ) -> Vec<u8> {
         let mut b = b"RTSC".to_vec();
         b.extend(version.to_le_bytes());
         b.extend(language.to_le_bytes());
@@ -124,21 +151,40 @@ mod tests {
     #[test]
     fn parses_the_header() {
         let h = MstrHeader::parse(&header_bytes(2, NOT_LOCALISED, 0x1000, 3, 0xABCD)).unwrap();
-        assert_eq!(h, MstrHeader { language_idx: NOT_LOCALISED, stream_data_offset: 0x1000, patch_idx: 3, build_tag: 0xABCD });
-        assert_eq!(MstrHeader::parse(&header_bytes(2, 0, 0, 0, 0)).unwrap().language_idx, 0);
+        assert_eq!(
+            h,
+            MstrHeader {
+                language_idx: NOT_LOCALISED,
+                stream_data_offset: 0x1000,
+                patch_idx: 3,
+                build_tag: 0xABCD
+            }
+        );
+        assert_eq!(
+            MstrHeader::parse(&header_bytes(2, 0, 0, 0, 0))
+                .unwrap()
+                .language_idx,
+            0
+        );
     }
 
     #[test]
     fn another_version_is_unsupported() {
         let e = MstrHeader::parse(&header_bytes(1, 0, 0, 0, 0)).unwrap_err();
-        assert!(matches!(e.kind(), ErrorKind::UnsupportedVersion { .. }), "{e}");
+        assert!(
+            matches!(e.kind(), ErrorKind::UnsupportedVersion { .. }),
+            "{e}"
+        );
     }
 
     #[test]
     fn wrong_magic_or_short_is_corrupt_and_not_detected() {
         let mut b = header_bytes(2, 0, 0, 0, 0);
         b[0] = b'X';
-        assert!(matches!(MstrHeader::parse(&b).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            MstrHeader::parse(&b).unwrap_err().kind(),
+            ErrorKind::Corrupt { .. }
+        ));
         assert!(!MstrHeader::has_magic(&b));
         assert!(MstrHeader::parse(&b"RTSC\x02\x00"[..]).is_err());
     }

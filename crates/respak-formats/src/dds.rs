@@ -5,16 +5,18 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use bytes::Bytes;
-use ddsfile::{AlphaMode, D3D10ResourceDimension, D3DFormat, Dds, DxgiFormat, NewD3dParams, NewDxgiParams};
+use ddsfile::{
+    AlphaMode, D3D10ResourceDimension, D3DFormat, Dds, DxgiFormat, NewD3dParams, NewDxgiParams,
+};
 use opendal::Operator;
 use respak_core::capability::{Bitmap, BitmapInfo, PixelFormat};
 use respak_core::value::BlobData;
 use respak_core::{
-    magic, u32le, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Target,
-    TypedTarget, Value, ValueKey,
+    magic, u32le, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe,
+    ReadHandler, Result, Target, TypedTarget, Value, ValueKey,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{bitmap_of, corrupt, file_of, unsupported};
 
@@ -59,8 +61,17 @@ impl Bitmap for DdsImage {
             .mips
             .get(layer as usize)
             .and_then(|l| l.get(level as usize))
-            .ok_or_else(|| Error::new(ErrorKind::NotFound { path: format!("mip {level} of layer {layer}") }))?;
-        Ok(self.op.read_with(&self.path).range(offset..offset + len).await?.to_bytes())
+            .ok_or_else(|| {
+                Error::new(ErrorKind::NotFound {
+                    path: format!("mip {level} of layer {layer}"),
+                })
+            })?;
+        Ok(self
+            .op
+            .read_with(&self.path)
+            .range(offset..offset + len)
+            .await?
+            .to_bytes())
     }
 }
 
@@ -83,7 +94,10 @@ impl Detect for DdsRead {
         }
         let size = u32::from(u32le(input.header, 4) == Some(124)) * 2;
         let ext = u32::from(input.extension == Some("dds"));
-        Ok(Some(Detected { score: 10 + size + ext, version: None }))
+        Ok(Some(Detected {
+            score: 10 + size + ext,
+            version: None,
+        }))
     }
 
     fn header_len(&self) -> usize {
@@ -130,7 +144,12 @@ impl ReadHandler for DdsRead {
             None => file.op.stat(&file.path).await?.content_length(),
         };
         let head_len = total.min(HEADER_LEN + HEADER10_LEN);
-        let head = file.op.read_with(&file.path).range(start..start + head_len).await?.to_vec();
+        let head = file
+            .op
+            .read_with(&file.path)
+            .range(start..start + head_len)
+            .await?
+            .to_vec();
         let dds = Dds::read(Cursor::new(&head)).map_err(|e| corrupt(format!("dds header: {e}")))?;
 
         let format = match &dds.header10 {
@@ -154,22 +173,32 @@ impl ReadHandler for DdsRead {
         }
         // A cube map is 6 faces per array element; layers are face-major within an element.
         let layers = dds.get_num_array_layers().max(1);
-        let cube = dds.header10.as_ref().map_or(
-            dds.header.caps2.contains(ddsfile::Caps2::CUBEMAP),
-            |h| h.misc_flag.contains(ddsfile::MiscFlag::TEXTURECUBE),
-        );
+        let cube = dds
+            .header10
+            .as_ref()
+            .map_or(dds.header.caps2.contains(ddsfile::Caps2::CUBEMAP), |h| {
+                h.misc_flag.contains(ddsfile::MiscFlag::TEXTURECUBE)
+            });
         let (array_len, faces) = if cube { (layers / 6, 6) } else { (layers, 1) };
 
         let (width, height) = (dds.get_width(), dds.get_height());
         let mip_count = dds.get_num_mipmap_levels().max(1);
-        let mut offset = start + HEADER_LEN + if dds.header10.is_some() { HEADER10_LEN } else { 0 };
+        let mut offset = start
+            + HEADER_LEN
+            + if dds.header10.is_some() {
+                HEADER10_LEN
+            } else {
+                0
+            };
         let mut mips = Vec::new();
         for _ in 0..layers {
             let mut chain = Vec::new();
             for level in 0..mip_count {
                 let len = format.mip_len(width >> level, height >> level);
                 chain.push((offset, len));
-                offset = offset.checked_add(len).ok_or_else(|| corrupt("dds: mip chain overflows"))?;
+                offset = offset
+                    .checked_add(len)
+                    .ok_or_else(|| corrupt("dds: mip chain overflows"))?;
             }
             mips.push(chain);
         }
@@ -177,7 +206,15 @@ impl ReadHandler for DdsRead {
             return Err(corrupt("dds: file is shorter than its mip chain"));
         }
 
-        let info = BitmapInfo { width, height, depth: 1, array_len, faces, mip_count, format };
+        let info = BitmapInfo {
+            width,
+            height,
+            depth: 1,
+            array_len,
+            faces,
+            mip_count,
+            format,
+        };
         Ok(Arc::new(DdsImage {
             info,
             format: FormatId::new("dds"),
@@ -249,8 +286,9 @@ impl ConvertHandler for DdsEncode {
                 caps2: None,
             }),
             None => {
-                let format = dxgi_format(info.format)
-                    .ok_or_else(|| unsupported("dds", &format!("pixel format {:?}", info.format)))?;
+                let format = dxgi_format(info.format).ok_or_else(|| {
+                    unsupported("dds", &format!("pixel format {:?}", info.format))
+                })?;
                 Dds::new_dxgi(NewDxgiParams {
                     height: info.height,
                     width: info.width,
@@ -271,9 +309,13 @@ impl ConvertHandler for DdsEncode {
         for layer in 0..info.array_len {
             for level in 0..mips {
                 let mip = bitmap.read_mip(level, layer).await?;
-                let want = info.format.mip_len(info.width >> level, info.height >> level);
+                let want = info
+                    .format
+                    .mip_len(info.width >> level, info.height >> level);
                 if mip.len() as u64 != want {
-                    return Err(corrupt(format!("bitmap mip {level} of layer {layer} has the wrong size")));
+                    return Err(corrupt(format!(
+                        "bitmap mip {level} of layer {layer} has the wrong size"
+                    )));
                 }
                 data.extend_from_slice(&mip);
             }
@@ -284,8 +326,17 @@ impl ConvertHandler for DdsEncode {
         dds.data = data;
 
         let mut out = Vec::new();
-        dds.write(&mut out).map_err(|e| Error::custom("dds encode", e))?;
-        let key = ValueKey::converted(Arc::new(source.key().clone()), target.format.unversioned(), options.normalized());
-        Ok(Arc::new(BlobData::with_format(FormatId::new("dds"), Bytes::from(out), key)))
+        dds.write(&mut out)
+            .map_err(|e| Error::custom("dds encode", e))?;
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            target.format.unversioned(),
+            options.normalized(),
+        );
+        Ok(Arc::new(BlobData::with_format(
+            FormatId::new("dds"),
+            Bytes::from(out),
+            key,
+        )))
     }
 }

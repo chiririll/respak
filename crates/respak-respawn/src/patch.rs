@@ -46,7 +46,9 @@
 use respak_core::{Error, ErrorKind, Result};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// Where a run of output bytes comes from.
@@ -99,12 +101,16 @@ fn decode_table(buf: &[u8], depth: u32) -> Result<(Table, usize)> {
     let mut remaining = size;
     let (mut code, mut offset, mut previous) = (0u32, 0usize, 0u32);
     while remaining > 0 {
-        let byte = *buf.get(offset).ok_or_else(|| corrupt("rpak patch: a Huffman table runs past the edit stream"))?;
+        let byte = *buf
+            .get(offset)
+            .ok_or_else(|| corrupt("rpak patch: a Huffman table runs past the edit stream"))?;
         let len = u32::from(byte & 7) + 1;
         if offset > 0 {
             // The next code: one past the last, with the extra bits of a longer code appended.
             if len < previous {
-                return Err(corrupt("rpak patch: Huffman code lengths are not in ascending order"));
+                return Err(corrupt(
+                    "rpak patch: Huffman code lengths are not in ascending order",
+                ));
             }
             code = (code + 1) << (len - previous);
         }
@@ -175,19 +181,34 @@ impl PageMap {
     ///   the output are copied from there.
     pub fn build(stream: &[u8], len: u64, stored_len: u64, first: u64) -> Result<Self> {
         if stored_len > len {
-            return Err(corrupt("rpak patch: the stored pages are larger than the pak"));
+            return Err(corrupt(
+                "rpak patch: the stored pages are larger than the pak",
+            ));
         }
         let (a, used_a) = decode_table(stream, 6)?;
         let (b, used_b) = decode_table(&stream[used_a..], 8)?;
         let base = used_a + used_b;
-        let word = stream.get(base..base + 8).ok_or_else(|| corrupt("rpak patch: the edit stream is too short"))?;
-        let replacement_at = base + (u32::from_le_bytes(word[..4].try_into().expect("4 bytes")) & 0xFF_FFFF) as usize;
+        let word = stream
+            .get(base..base + 8)
+            .ok_or_else(|| corrupt("rpak patch: the edit stream is too short"))?;
+        let replacement_at = base
+            + (u32::from_le_bytes(word[..4].try_into().expect("4 bytes")) & 0xFF_FFFF) as usize;
         if replacement_at < base + 8 || replacement_at > stream.len() {
-            return Err(corrupt("rpak patch: the replacement data is outside the edit stream"));
+            return Err(corrupt(
+                "rpak patch: the replacement data is outside the edit stream",
+            ));
         }
-        let mut bits = Bits { data: &stream[base..replacement_at], pos: 24 };
+        let mut bits = Bits {
+            data: &stream[base..replacement_at],
+            pos: 24,
+        };
 
-        let mut map = Self { runs: Vec::new(), stored_len, len, replacement_at };
+        let mut map = Self {
+            runs: Vec::new(),
+            stored_len,
+            len,
+            replacement_at,
+        };
         let mut out = 0u64;
         let (mut f, mut s) = (first, 0u64);
         let emit = |out: &mut u64, source: Source, n: u64, runs: &mut Vec<Run>| -> u64 {
@@ -196,8 +217,14 @@ impl PageMap {
                 return 0;
             }
             match runs.last_mut() {
-                Some(r) if r.at + r.len == *out && contiguous(r.source, r.len, source) => r.len += n,
-                _ => runs.push(Run { at: *out, len: n, source }),
+                Some(r) if r.at + r.len == *out && contiguous(r.source, r.len, source) => {
+                    r.len += n
+                }
+                _ => runs.push(Run {
+                    at: *out,
+                    len: n,
+                    source,
+                }),
             }
             *out += n;
             n
@@ -248,7 +275,9 @@ impl PageMap {
             }
         }
         if map.replacement_at as u64 + s > stream.len() as u64 {
-            return Err(corrupt("rpak patch: the script reads past the replacement data"));
+            return Err(corrupt(
+                "rpak patch: the script reads past the replacement data",
+            ));
         }
         Ok(map)
     }
@@ -267,7 +296,10 @@ impl PageMap {
         ];
         for (start, end, shift) in parts {
             if start < end {
-                self.pieces(start.wrapping_add(shift)..end.wrapping_add(shift), &mut pieces)?;
+                self.pieces(
+                    start.wrapping_add(shift)..end.wrapping_add(shift),
+                    &mut pieces,
+                )?;
             }
         }
         Ok(pieces)
@@ -277,7 +309,11 @@ impl PageMap {
         let mut i = self.runs.partition_point(|r| r.at + r.len <= range.start);
         let mut at = range.start;
         while at < range.end {
-            let run = self.runs.get(i).filter(|r| r.at <= at).ok_or_else(|| corrupt("rpak patch: the script leaves a gap"))?;
+            let run = self
+                .runs
+                .get(i)
+                .filter(|r| r.at <= at)
+                .ok_or_else(|| corrupt("rpak patch: the script leaves a gap"))?;
             let skip = at - run.at;
             let n = (run.len - skip).min(range.end - at);
             let source = match run.source {
@@ -295,7 +331,9 @@ impl PageMap {
 /// Whether a run of `len` bytes from `a` is followed directly by `b` in its source.
 fn contiguous(a: Source, len: u64, b: Source) -> bool {
     match (a, b) {
-        (Source::File(x), Source::File(y)) | (Source::Replacement(x), Source::Replacement(y)) => x + len == y,
+        (Source::File(x), Source::File(y)) | (Source::Replacement(x), Source::Replacement(y)) => {
+            x + len == y
+        }
         _ => false,
     }
 }

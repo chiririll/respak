@@ -10,12 +10,17 @@ use respak_core::capability::PixelFormat;
 use respak_core::{Error, ErrorKind, Result};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// `format` cannot be turned into RGBA8 here.
 fn unsupported(format: PixelFormat) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: "png".into(), version: format!("pixel format {format:?}") })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: "png".into(),
+        version: format!("pixel format {format:?}"),
+    })
 }
 
 /// Converts an IEEE half float to `f32`.
@@ -49,7 +54,10 @@ fn unorm8(v: f32) -> u8 {
 pub fn decode_rgba8(format: PixelFormat, width: u32, height: u32, data: &[u8]) -> Result<Vec<u8>> {
     let (w, h) = (width as usize, height as usize);
     if data.len() as u64 != format.mip_len(width, height) {
-        return Err(corrupt(format!("{format:?} mip of {width}x{height} has {} bytes", data.len())));
+        return Err(corrupt(format!(
+            "{format:?} mip of {width}x{height} has {} bytes",
+            data.len()
+        )));
     }
     let mut out = vec![255u8; w * h * 4];
     if format.is_block_compressed() {
@@ -95,14 +103,16 @@ pub fn decode_rgba8(format: PixelFormat, width: u32, height: u32, data: &[u8]) -
         PixelFormat::Rgba16F => {
             for (i, p) in data.chunks_exact(8).enumerate() {
                 for c in 0..4 {
-                    out[px(i) + c] = unorm8(half_to_f32(u16::from_le_bytes([p[c * 2], p[c * 2 + 1]])));
+                    out[px(i) + c] =
+                        unorm8(half_to_f32(u16::from_le_bytes([p[c * 2], p[c * 2 + 1]])));
                 }
             }
         }
         PixelFormat::Rgba32F => {
             for (i, p) in data.chunks_exact(16).enumerate() {
                 for c in 0..4 {
-                    let v = f32::from_le_bytes([p[c * 4], p[c * 4 + 1], p[c * 4 + 2], p[c * 4 + 3]]);
+                    let v =
+                        f32::from_le_bytes([p[c * 4], p[c * 4 + 1], p[c * 4 + 2], p[c * 4 + 3]]);
                     out[px(i) + c] = unorm8(v);
                 }
             }
@@ -112,7 +122,13 @@ pub fn decode_rgba8(format: PixelFormat, width: u32, height: u32, data: &[u8]) -
     Ok(out)
 }
 
-fn decode_blocks(format: PixelFormat, w: usize, h: usize, data: &[u8], out: &mut [u8]) -> Result<()> {
+fn decode_blocks(
+    format: PixelFormat,
+    w: usize,
+    h: usize,
+    data: &[u8],
+    out: &mut [u8],
+) -> Result<()> {
     use PixelFormat::*;
     let block_bytes = format.bytes_per_unit() as usize;
     let blocks_x = w.div_ceil(4);
@@ -138,7 +154,11 @@ fn decode_blocks(format: PixelFormat, w: usize, h: usize, data: &[u8], out: &mut
                 bcdec_rs::bc5(block, &mut rg, 8, format == Bc5Snorm);
                 for i in 0..16 {
                     let (r, g) = (rg[i * 2], rg[i * 2 + 1]);
-                    let (r, g) = if format == Bc5Snorm { (r ^ 0x80, g ^ 0x80) } else { (r, g) };
+                    let (r, g) = if format == Bc5Snorm {
+                        (r ^ 0x80, g ^ 0x80)
+                    } else {
+                        (r, g)
+                    };
                     tile[i * 4..i * 4 + 4].copy_from_slice(&[r, g, 0, 255]);
                 }
             }
@@ -217,7 +237,9 @@ mod tests {
     fn bc6h_and_bc7_do_not_panic_on_any_block() {
         for fmt in [PixelFormat::Bc6H, PixelFormat::Bc6HSigned, PixelFormat::Bc7] {
             for seed in 0u8..=255 {
-                let block: Vec<u8> = (0..16).map(|i| seed.wrapping_mul(31).wrapping_add(i * 17)).collect();
+                let block: Vec<u8> = (0..16)
+                    .map(|i| seed.wrapping_mul(31).wrapping_add(i * 17))
+                    .collect();
                 assert_eq!(decode_rgba8(fmt, 4, 4, &block).unwrap().len(), 64);
             }
         }
@@ -225,16 +247,33 @@ mod tests {
 
     #[test]
     fn plain_formats() {
-        assert_eq!(decode_rgba8(PixelFormat::Bgra8, 1, 1, &[1, 2, 3, 4]).unwrap(), [3, 2, 1, 4]);
-        assert_eq!(decode_rgba8(PixelFormat::R8, 2, 1, &[7, 9]).unwrap(), [7, 7, 7, 255, 9, 9, 9, 255]);
-        assert_eq!(decode_rgba8(PixelFormat::Rg8, 1, 1, &[7, 9]).unwrap(), [7, 9, 0, 255]);
+        assert_eq!(
+            decode_rgba8(PixelFormat::Bgra8, 1, 1, &[1, 2, 3, 4]).unwrap(),
+            [3, 2, 1, 4]
+        );
+        assert_eq!(
+            decode_rgba8(PixelFormat::R8, 2, 1, &[7, 9]).unwrap(),
+            [7, 7, 7, 255, 9, 9, 9, 255]
+        );
+        assert_eq!(
+            decode_rgba8(PixelFormat::Rg8, 1, 1, &[7, 9]).unwrap(),
+            [7, 9, 0, 255]
+        );
         // half floats: 1.0 = 0x3C00, 0.5 = 0x3800
         let half = [0x00, 0x3C, 0x00, 0x38, 0x00, 0x00, 0x00, 0x3C];
-        assert_eq!(decode_rgba8(PixelFormat::Rgba16F, 1, 1, &half).unwrap(), [255, 128, 0, 255]);
+        assert_eq!(
+            decode_rgba8(PixelFormat::Rgba16F, 1, 1, &half).unwrap(),
+            [255, 128, 0, 255]
+        );
     }
 
     #[test]
     fn wrong_length_is_corrupt() {
-        assert!(matches!(decode_rgba8(PixelFormat::Bc1, 4, 4, &[0; 7]).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            decode_rgba8(PixelFormat::Bc1, 4, 4, &[0; 7])
+                .unwrap_err()
+                .kind(),
+            ErrorKind::Corrupt { .. }
+        ));
     }
 }

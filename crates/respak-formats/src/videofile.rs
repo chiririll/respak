@@ -20,7 +20,10 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use respak_core::capability::{AudioChunk, AudioTrackInfo, FrameFormat, VideoFrame, VideoInfo};
 use respak_core::value::{LazyBlob, LazySource};
-use respak_core::{ConvertHandler, Cx, Error, ErrorKind, Event, FormatId, Result, Target, TypedTarget, Value, ValueKey};
+use respak_core::{
+    ConvertHandler, Cx, Error, ErrorKind, Event, FormatId, Result, Target, TypedTarget, Value,
+    ValueKey,
+};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 
@@ -138,7 +141,12 @@ pub struct VideoFileOptions {
 
 impl Default for VideoFileOptions {
     fn default() -> Self {
-        Self { codec: None, quality: 90, audio_track: None, mute: false }
+        Self {
+            codec: None,
+            quality: 90,
+            audio_track: None,
+            mute: false,
+        }
     }
 }
 
@@ -151,19 +159,43 @@ pub struct VideoFileEncode {
 impl VideoFileEncode {
     /// An edge that writes `container` files with any of `codecs` the container can hold.
     pub fn new(container: Arc<dyn Container>, codecs: Vec<Arc<dyn Codec>>) -> Self {
-        let codecs = codecs.into_iter().filter(|c| container.codecs().contains(&c.name())).collect();
+        let codecs = codecs
+            .into_iter()
+            .filter(|c| container.codecs().contains(&c.name()))
+            .collect();
         Self { container, codecs }
     }
 
     fn pick(&self, options: &VideoFileOptions) -> Result<Arc<dyn Codec>> {
         let invalid = |message: String| Error::new(ErrorKind::InvalidOptions { message });
-        let want = options.codec.as_deref().or_else(|| self.container.codecs().first().copied());
-        let available = || self.codecs.iter().map(|c| c.name()).collect::<Vec<_>>().join(", ");
+        let want = options
+            .codec
+            .as_deref()
+            .or_else(|| self.container.codecs().first().copied());
+        let available = || {
+            self.codecs
+                .iter()
+                .map(|c| c.name())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         match want {
-            Some(name) => self.codecs.iter().find(|c| c.name() == name).cloned().ok_or_else(|| {
-                invalid(format!("`{}` cannot hold codec `{name}` (available: {})", self.container.name(), available()))
-            }),
-            None => Err(invalid(format!("`{}` has no codec available", self.container.name()))),
+            Some(name) => self
+                .codecs
+                .iter()
+                .find(|c| c.name() == name)
+                .cloned()
+                .ok_or_else(|| {
+                    invalid(format!(
+                        "`{}` cannot hold codec `{name}` (available: {})",
+                        self.container.name(),
+                        available()
+                    ))
+                }),
+            None => Err(invalid(format!(
+                "`{}` has no codec available",
+                self.container.name()
+            ))),
         }
     }
 }
@@ -183,7 +215,10 @@ impl ConvertHandler for VideoFileEncode {
         }
         let codec = self.pick(&opts)?;
         if opts.audio_track.is_some() && !self.container.has_audio() {
-            return Err(invalid(format!("`{}` has no sound, so there is no audio track to pick", self.container.name())));
+            return Err(invalid(format!(
+                "`{}` has no sound, so there is no audio track to pick",
+                self.container.name()
+            )));
         }
         let track = match (opts.mute || !self.container.has_audio(), source.as_audio()) {
             (true, _) | (_, None) => None,
@@ -191,7 +226,10 @@ impl ConvertHandler for VideoFileEncode {
                 let tracks = audio.tracks();
                 match opts.audio_track {
                     Some(t) if t as usize >= tracks.len() => {
-                        return Err(invalid(format!("no audio track {t}: the source has {}", tracks.len())))
+                        return Err(invalid(format!(
+                            "no audio track {t}: the source has {}",
+                            tracks.len()
+                        )))
                     }
                     Some(t) => Some((t, tracks[t as usize])),
                     None => tracks.first().map(|t| (0, *t)),
@@ -200,7 +238,11 @@ impl ConvertHandler for VideoFileEncode {
         };
 
         let format = FormatId::new(self.container.name());
-        let key = ValueKey::converted(Arc::new(source.key().clone()), format.unversioned(), options.normalized());
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            format.unversioned(),
+            options.normalized(),
+        );
         let container = self.container.clone();
         let init = Box::new(move |cx: Cx| {
             Box::pin(async move { produce(source, info, codec, container, opts, track, cx).await })
@@ -233,9 +275,21 @@ async fn produce(
         (Some((index, shape)), Some(audio)) => Some((shape, audio.samples(index, &cx).await?)),
         _ => None,
     };
-    let job = Job { info, codec_name: codec.name(), encoder, container, frames, audio, handle: Handle::current(), cx: cx.clone() };
+    let job = Job {
+        info,
+        codec_name: codec.name(),
+        encoder,
+        container,
+        frames,
+        audio,
+        handle: Handle::current(),
+        cx: cx.clone(),
+    };
     // The source stays alive until the file is done: its frames are decoded from it.
-    let file = cx.blocking(move || job.run().map(|file| (file, source))).await??.0;
+    let file = cx
+        .blocking(move || job.run().map(|file| (file, source)))
+        .await??
+        .0;
     Ok(LazySource::File(file))
 }
 
@@ -254,8 +308,18 @@ impl Job {
     /// Encodes and muxes everything into a temporary file. Runs on a blocking thread, so it
     /// waits for the (async) frame and sample streams with `Handle::block_on`.
     fn run(self) -> Result<File> {
-        let Self { info, codec_name, mut encoder, container, mut frames, audio, handle, cx } = self;
-        let mut file = tempfile::tempfile().map_err(|e| storage(e, "creating the temporary file"))?;
+        let Self {
+            info,
+            codec_name,
+            mut encoder,
+            container,
+            mut frames,
+            audio,
+            handle,
+            cx,
+        } = self;
+        let mut file =
+            tempfile::tempfile().map_err(|e| storage(e, "creating the temporary file"))?;
         let setup = MuxSetup {
             codec: codec_name,
             size: encoder.coded_size(),
@@ -308,7 +372,10 @@ impl Job {
 }
 
 fn storage(e: std::io::Error, what: &str) -> Error {
-    Error::new(ErrorKind::Custom { source: Some(Box::new(e)), message: what.into() })
+    Error::new(ErrorKind::Custom {
+        source: Some(Box::new(e)),
+        message: what.into(),
+    })
 }
 
 /// An audio track, handed out in the runs that play during each video frame.
@@ -322,7 +389,12 @@ struct AudioFeed {
 
 impl AudioFeed {
     fn new(shape: AudioTrackInfo, stream: BoxStream<'static, Result<AudioChunk>>) -> Self {
-        Self { shape, stream: Some(stream), pending: VecDeque::new(), given: 0 }
+        Self {
+            shape,
+            stream: Some(stream),
+            pending: VecDeque::new(),
+            given: 0,
+        }
     }
 
     /// The audio up to the end of video frame number `frames` (the frames shown so far), as PCM.
@@ -330,7 +402,8 @@ impl AudioFeed {
     async fn take_until(&mut self, frames: u32, fps: (u32, u32)) -> Result<Vec<u8>> {
         // Sample frames that should have played when `frames` frames have been shown, rounded.
         let (num, den) = (u128::from(fps.0.max(1)), u128::from(fps.1));
-        let wanted = (u128::from(frames) * u128::from(self.shape.sample_rate) * den + num / 2) / num;
+        let wanted =
+            (u128::from(frames) * u128::from(self.shape.sample_rate) * den + num / 2) / num;
         let missing = (wanted as u64).saturating_sub(self.given);
         self.take(missing).await
     }
@@ -343,7 +416,9 @@ impl AudioFeed {
         let channels = usize::from(self.shape.channels.max(1));
         let wanted = frames.saturating_mul(channels as u64);
         while (self.pending.len() as u64) < wanted {
-            let Some(stream) = self.stream.as_mut() else { break };
+            let Some(stream) = self.stream.as_mut() else {
+                break;
+            };
             match stream.next().await {
                 Some(chunk) => self.pending.extend(chunk?.samples),
                 None => self.stream = None,

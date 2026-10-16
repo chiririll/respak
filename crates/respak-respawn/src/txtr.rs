@@ -31,17 +31,25 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::{Bitmap, BitmapInfo, Dependency, Metadata, PixelFormat};
-use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version};
+use respak_core::{
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
+};
 
 use crate::rpak::{RpakAsset, MEM};
 use crate::{oodle, rtech};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: "txtr".into(), version: version.into() })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: "txtr".into(),
+        version: version.into(),
+    })
 }
 
 const HEADER_LEN: usize = 56;
@@ -122,7 +130,10 @@ impl TxtrHeader {
             return Err(unsupported(version.to_string()));
         }
         if h.len() != HEADER_LEN {
-            return Err(corrupt(format!("txtr header is {} bytes, expected {HEADER_LEN}", h.len())));
+            return Err(corrupt(format!(
+                "txtr header is {} bytes, expected {HEADER_LEN}",
+                h.len()
+            )));
         }
         let ptr = |at: usize| {
             let v = u64::from_le_bytes(h[at..at + 8].try_into().expect("8 bytes"));
@@ -130,9 +141,29 @@ impl TxtrHeader {
             (v != u64::MAX && v != 0).then_some(v)
         };
         let (name_offset, w, ht, fmt, array, swizzle, perm, streamed, opt) = if version == 8 {
-            (ptr(8), le16(h, 0x10), le16(h, 0x12), le16(h, 0x16), h[0x1E], h[0x1C], h[0x21], h[0x22], h[0x1D])
+            (
+                ptr(8),
+                le16(h, 0x10),
+                le16(h, 0x12),
+                le16(h, 0x16),
+                h[0x1E],
+                h[0x1C],
+                h[0x21],
+                h[0x22],
+                h[0x1D],
+            )
         } else {
-            (ptr(0), le16(h, 0x0A), le16(h, 0x0C), le16(h, 0x08), h[0x10], h[0x12], h[0x18], h[0x19], h[0x1A])
+            (
+                ptr(0),
+                le16(h, 0x0A),
+                le16(h, 0x0C),
+                le16(h, 0x08),
+                h[0x10],
+                h[0x12],
+                h[0x18],
+                h[0x19],
+                h[0x1A],
+            )
         };
         // v9 keeps the codec bits at 0x1C and the sizes at 0x1E; v10 moved both two bytes up.
         // v8 has no compression.
@@ -149,7 +180,9 @@ impl TxtrHeader {
             }
         }
         if swizzle != 0 {
-            return Err(unsupported(format!("{version} (swizzle {swizzle}, console layout)")));
+            return Err(unsupported(format!(
+                "{version} (swizzle {swizzle}, console layout)"
+            )));
         }
         if version == 10 && h[0x1C] != 0 {
             return Err(unsupported("10 (unknown mip levels)"));
@@ -224,7 +257,11 @@ fn layout_entry(
     store: Store,
     shifts: std::ops::Range<u32>,
 ) -> Result<Vec<(u32, MipLoc)>> {
-    let order: Vec<u32> = if h.version == 8 { shifts.rev().collect() } else { shifts.collect() };
+    let order: Vec<u32> = if h.version == 8 {
+        shifts.rev().collect()
+    } else {
+        shifts.collect()
+    };
     let mut cursor = 0u64;
     let mut out = Vec::new();
     for shift in order {
@@ -233,16 +270,27 @@ fn layout_entry(
         let stride = if codec == 0 {
             len.div_ceil(16).max(1) * 16
         } else {
-            let block = h
-                .compressed_blocks
-                .get(shift as usize)
-                .ok_or_else(|| corrupt(format!("txtr: no compressed size for streamed mip {shift}")))?;
+            let block = h.compressed_blocks.get(shift as usize).ok_or_else(|| {
+                corrupt(format!("txtr: no compressed size for streamed mip {shift}"))
+            })?;
             if h.array_size > 1 {
-                return Err(unsupported(format!("{} (compressed streamed mips of an array)", h.version)));
+                return Err(unsupported(format!(
+                    "{} (compressed streamed mips of an array)",
+                    h.version
+                )));
             }
             (u64::from(*block) + 1) << 12
         };
-        out.push((shift, MipLoc { store, offset: cursor, stride, len, codec }));
+        out.push((
+            shift,
+            MipLoc {
+                store,
+                offset: cursor,
+                stride,
+                len,
+                codec,
+            },
+        ));
         cursor += stride * u64::from(h.array_size);
     }
     Ok(out)
@@ -250,7 +298,9 @@ fn layout_entry(
 
 /// Total bytes of the mips from [`layout_entry`].
 fn entry_len(h: &TxtrHeader, mips: &[(u32, MipLoc)]) -> u64 {
-    mips.iter().map(|(_, m)| m.stride * u64::from(h.array_size)).sum()
+    mips.iter()
+        .map(|(_, m)| m.stride * u64::from(h.array_size))
+        .sum()
 }
 
 /// A texture: `Data` + `Bitmap` + `Metadata`.
@@ -283,8 +333,13 @@ impl Bitmap for TxtrAsset {
     }
 
     async fn read_mip(&self, level: u32, layer: u32) -> Result<Bytes> {
-        let (Some(mip), true) = (self.mips.get(level as usize), layer < self.header.array_size) else {
-            return Err(Error::new(ErrorKind::NotFound { path: format!("mip {level} of layer {layer}") }));
+        let (Some(mip), true) = (
+            self.mips.get(level as usize),
+            layer < self.header.array_size,
+        ) else {
+            return Err(Error::new(ErrorKind::NotFound {
+                path: format!("mip {level} of layer {layer}"),
+            }));
         };
         let slice = mip.offset + mip.stride * u64::from(layer);
         if mip.codec == 0 {
@@ -294,7 +349,12 @@ impl Bitmap for TxtrAsset {
                 Store::Stream => (self.stream.as_deref().unwrap_or_default(), slice),
                 Store::Opt => (self.opt.as_deref().unwrap_or_default(), slice),
             };
-            return Ok(self.volume.read_with(path).range(at..at + mip.len).await?.to_bytes());
+            return Ok(self
+                .volume
+                .read_with(path)
+                .range(at..at + mip.len)
+                .await?
+                .to_bytes());
         }
         let path = match mip.store {
             Store::Opt => self.opt.as_deref(),
@@ -302,16 +362,23 @@ impl Bitmap for TxtrAsset {
         };
         // The decoder gets the whole padded block and the exact decoded length (rsx
         // `DecompressStreamedBuffer`).
-        let block = self.volume.read_with(path.unwrap_or_default()).range(slice..slice + mip.stride).await?.to_bytes();
+        let block = self
+            .volume
+            .read_with(path.unwrap_or_default())
+            .range(slice..slice + mip.stride)
+            .await?
+            .to_bytes();
         match mip.codec {
             1 => {
-                let decoded = rtech::decompress(&block, 0, Some(mip.len)).map_err(|e| Error::custom("rtech", e))?;
+                let decoded = rtech::decompress(&block, 0, Some(mip.len))
+                    .map_err(|e| Error::custom("rtech", e))?;
                 Ok(Bytes::from(decoded))
             }
             2 => Err(unsupported("Snowflake-compressed streamed mips")),
             3 => {
                 // The padded block holds the stream and zeros after it.
-                let decoded = oodle::decompress(&block, mip.len).map_err(|e| Error::custom("oodle", e))?;
+                let decoded =
+                    oodle::decompress(&block, mip.len).map_err(|e| Error::custom("oodle", e))?;
                 Ok(Bytes::from(decoded))
             }
             _ => Err(unsupported("streamed mips with an unknown codec")),
@@ -359,8 +426,10 @@ impl Detect for TxtrRead {
         let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
             return Ok(None);
         };
-        Ok((asset.entry.kind == *b"txtr")
-            .then(|| Detected { score: 10, version: Some(Version::new(asset.entry.version)) }))
+        Ok((asset.entry.kind == *b"txtr").then(|| Detected {
+            score: 10,
+            version: Some(Version::new(asset.entry.version)),
+        }))
     }
 }
 
@@ -385,21 +454,36 @@ async fn stat_len(volume: &Operator, path: &str) -> Result<u64> {
 #[async_trait]
 impl ReadHandler for TxtrRead {
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "txtr must be read from an rpak.asset".into() }))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "txtr must be read from an rpak.asset".into(),
+            })
+        })?;
         let header = TxtrHeader::parse(asset.entry.version, &asset.read_header().await?)?;
-        let pixel = pixel_format(header.format_index)
-            .ok_or_else(|| unsupported(format!("{} (pixel format #{})", header.version, header.format_index)))?;
+        let pixel = pixel_format(header.format_index).ok_or_else(|| {
+            unsupported(format!(
+                "{} (pixel format #{})",
+                header.version, header.format_index
+            ))
+        })?;
 
         let mem_len = asset.volume.stat(MEM).await?.content_length();
-        let data_offset = asset.data_mem_offset.ok_or_else(|| corrupt("txtr has no data pointer"))?;
+        let data_offset = asset
+            .data_mem_offset
+            .ok_or_else(|| corrupt("txtr has no data pointer"))?;
 
         let name = match header.name_offset {
             Some(at) => read_name(&asset.volume, at, mem_len).await,
             None => None,
         }
-        .map(|n| if n.to_ascii_lowercase().starts_with("texture/") { n } else { format!("texture/{n}") });
+        .map(|n| {
+            if n.to_ascii_lowercase().starts_with("texture/") {
+                n
+            } else {
+                format!("texture/{n}")
+            }
+        });
         let label = name.as_deref().unwrap_or("(unnamed)");
 
         // The permanent mips (shifts `streamed + optional ..`), smallest first in the CPU data.
@@ -408,12 +492,27 @@ impl ReadHandler for TxtrRead {
         let mut cursor = 0u64;
         let mut by_shift = Vec::new();
         for shift in (first_permanent..total).rev() {
-            let len = pixel.mip_len((header.width >> shift).max(1), (header.height >> shift).max(1));
+            let len = pixel.mip_len(
+                (header.width >> shift).max(1),
+                (header.height >> shift).max(1),
+            );
             let stride = len.div_ceil(16).max(1) * 16;
-            by_shift.push((shift, MipLoc { store: Store::Mem, offset: cursor, stride, len, codec: 0 }));
+            by_shift.push((
+                shift,
+                MipLoc {
+                    store: Store::Mem,
+                    offset: cursor,
+                    stride,
+                    len,
+                    codec: 0,
+                },
+            ));
             cursor += stride * u64::from(header.array_size);
         }
-        if data_offset.checked_add(cursor).is_none_or(|end| end > mem_len) {
+        if data_offset
+            .checked_add(cursor)
+            .is_none_or(|end| end > mem_len)
+        {
             return Err(corrupt("txtr mips run past the end of the pak's pages"));
         }
 
@@ -421,7 +520,10 @@ impl ReadHandler for TxtrRead {
         // mandatory mips `MissingDependency`; the optional ones are dropped with a warning.
         if header.streamed > 0 {
             let path = asset.stream.as_deref().ok_or_else(|| {
-                Error::new(ErrorKind::MissingDependency { item: label.to_owned(), file: "(no mandatory starpak reference)".into() })
+                Error::new(ErrorKind::MissingDependency {
+                    item: label.to_owned(),
+                    file: "(no mandatory starpak reference)".into(),
+                })
             })?;
             let size = match stat_len(&asset.volume, path).await {
                 Ok(n) => n,
@@ -433,7 +535,12 @@ impl ReadHandler for TxtrRead {
                 }
                 Err(e) => return Err(e),
             };
-            let mips = layout_entry(&header, pixel, Store::Stream, header.optional..header.optional + header.streamed)?;
+            let mips = layout_entry(
+                &header,
+                pixel,
+                Store::Stream,
+                header.optional..header.optional + header.streamed,
+            )?;
             if entry_len(&header, &mips) > size {
                 return Err(corrupt(format!("texture {label}: its streamed mips do not fit the starpak entry ({size} bytes)")));
             }
@@ -445,7 +552,12 @@ impl ReadHandler for TxtrRead {
                 None => Err("no optional starpak reference".to_owned()),
                 Some(path) => match stat_len(&asset.volume, path).await {
                     Ok(n) => Ok(n),
-                    Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. } | ErrorKind::MissingDependency { .. }) => {
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            ErrorKind::NotFound { .. } | ErrorKind::MissingDependency { .. }
+                        ) =>
+                    {
                         Err(format!("{path} is not available ({e})"))
                     }
                     Err(e) => return Err(e),
@@ -461,7 +573,10 @@ impl ReadHandler for TxtrRead {
                 }
                 Err(why) => {
                     first = header.optional;
-                    cx.warn(format!("texture {label}: {} optional mip(s) are skipped: {why}", header.optional));
+                    cx.warn(format!(
+                        "texture {label}: {} optional mip(s) are skipped: {why}",
+                        header.optional
+                    ));
                 }
             }
         }

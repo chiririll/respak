@@ -31,10 +31,12 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::{
-    Bone, Dependency, MaterialTexture, Mesh, MeshInfo, MeshMaterial, MeshModel, MeshPart, Metadata, ModelInfo, Skeleton,
+    Bone, Dependency, MaterialTexture, Mesh, MeshInfo, MeshMaterial, MeshModel, MeshPart, Metadata,
+    ModelInfo, Skeleton,
 };
 use respak_core::{
-    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version,
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
 };
 use serde_json::{json, Value as Json};
 
@@ -44,11 +46,16 @@ use crate::rpak::{RpakAsset, MEM};
 use crate::{oodle, rtech, snowflake};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: "rmdl".into(), version: version.into() })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: "rmdl".into(),
+        version: version.into(),
+    })
 }
 
 const ASSET_HEADER_LEN: usize = 96;
@@ -100,7 +107,11 @@ impl StudioLayout {
 
 /// The variant of a model: the minor of 19.x comes from the pak's creation time and the studiohdr's
 /// `sourceFilenameOffset` (the u16 at studiohdr + 216, `None` if the block is too short).
-pub fn variant(asset_version: u32, created_time: u64, source_filename_offset: Option<u16>) -> Result<Version> {
+pub fn variant(
+    asset_version: u32,
+    created_time: u64,
+    source_filename_offset: Option<u16>,
+) -> Result<Version> {
     match asset_version {
         16..=18 | 20 => Ok(Version::new(asset_version)),
         19 => {
@@ -124,27 +135,38 @@ pub(crate) struct B<'a>(pub(crate) &'a [u8]);
 
 impl<'a> B<'a> {
     pub(crate) fn get(&self, at: usize, len: usize) -> Result<&'a [u8]> {
-        at.checked_add(len).and_then(|end| self.0.get(at..end)).ok_or_else(|| {
-            corrupt(format!("rmdl: {len} bytes at {at:#x} are outside a block of {} bytes", self.0.len()))
-        })
+        at.checked_add(len)
+            .and_then(|end| self.0.get(at..end))
+            .ok_or_else(|| {
+                corrupt(format!(
+                    "rmdl: {len} bytes at {at:#x} are outside a block of {} bytes",
+                    self.0.len()
+                ))
+            })
     }
     pub(crate) fn u8(&self, at: usize) -> Result<u8> {
         Ok(self.get(at, 1)?[0])
     }
     pub(crate) fn u16(&self, at: usize) -> Result<u16> {
-        Ok(u16::from_le_bytes(self.get(at, 2)?.try_into().expect("2 bytes")))
+        Ok(u16::from_le_bytes(
+            self.get(at, 2)?.try_into().expect("2 bytes"),
+        ))
     }
     pub(crate) fn i16(&self, at: usize) -> Result<i16> {
         Ok(self.u16(at)? as i16)
     }
     pub(crate) fn u32(&self, at: usize) -> Result<u32> {
-        Ok(u32::from_le_bytes(self.get(at, 4)?.try_into().expect("4 bytes")))
+        Ok(u32::from_le_bytes(
+            self.get(at, 4)?.try_into().expect("4 bytes"),
+        ))
     }
     pub(crate) fn i32(&self, at: usize) -> Result<i32> {
         Ok(self.u32(at)? as i32)
     }
     pub(crate) fn u64(&self, at: usize) -> Result<u64> {
-        Ok(u64::from_le_bytes(self.get(at, 8)?.try_into().expect("8 bytes")))
+        Ok(u64::from_le_bytes(
+            self.get(at, 8)?.try_into().expect("8 bytes"),
+        ))
     }
     pub(crate) fn f32(&self, at: usize) -> Result<f32> {
         Ok(f32::from_bits(self.u32(at)?))
@@ -159,8 +181,14 @@ impl<'a> B<'a> {
     /// A NUL-terminated string that ends within `max` bytes.
     pub(crate) fn cstr(&self, at: usize, max: usize) -> Result<String> {
         let end = at.saturating_add(max).min(self.0.len());
-        let bytes = self.0.get(at..end).ok_or_else(|| corrupt(format!("rmdl: string at {at:#x} is outside its block")))?;
-        let nul = bytes.iter().position(|&b| b == 0).ok_or_else(|| corrupt(format!("rmdl: string at {at:#x} has no end")))?;
+        let bytes = self
+            .0
+            .get(at..end)
+            .ok_or_else(|| corrupt(format!("rmdl: string at {at:#x} is outside its block")))?;
+        let nul = bytes
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or_else(|| corrupt(format!("rmdl: string at {at:#x} has no end")))?;
         Ok(String::from_utf8_lossy(&bytes[..nul]).into_owned())
     }
     /// `base + FIX_OFFSET(u16 at field)`, bounds are checked by the reader that uses it.
@@ -208,10 +236,16 @@ impl RmdlHeader {
         let version = variant(asset_version, created_time, source_filename_offset)?;
         let layout = StudioLayout::for_version(version)?;
         if header.len() != ASSET_HEADER_LEN {
-            return Err(corrupt(format!("rmdl header is {} bytes, expected {ASSET_HEADER_LEN}", header.len())));
+            return Err(corrupt(format!(
+                "rmdl header is {} bytes, expected {ASSET_HEADER_LEN}",
+                header.len()
+            )));
         }
         if cpu.len() != CPU_LEN {
-            return Err(corrupt(format!("rmdl CPU data is {} bytes, expected {CPU_LEN}", cpu.len())));
+            return Err(corrupt(format!(
+                "rmdl CPU data is {} bytes, expected {CPU_LEN}",
+                cpu.len()
+            )));
         }
         let (h, c) = (B(header), B(cpu));
         let ptr = |at: usize| -> Result<Option<u64>> {
@@ -219,9 +253,13 @@ impl RmdlHeader {
             Ok((v != u64::MAX && v != 0).then_some(v))
         };
         let studio_offset = ptr(0x00)?.ok_or_else(|| corrupt("rmdl has no studio data pointer"))?;
-        let studio_len = u64::from(u32::try_from(c.i32(12)?).map_err(|_| corrupt("rmdl: negative studio size"))?);
+        let studio_len = u64::from(
+            u32::try_from(c.i32(12)?).map_err(|_| corrupt("rmdl: negative studio size"))?,
+        );
         if studio_len == 0 || studio_len > MAX_STUDIO_LEN {
-            return Err(corrupt(format!("rmdl studio block of {studio_len} bytes is not usable")));
+            return Err(corrupt(format!(
+                "rmdl studio block of {studio_len} bytes is not usable"
+            )));
         }
         Ok(Self {
             version,
@@ -334,20 +372,42 @@ pub(crate) fn parse_bones(b: &B, major: u32, layout: StudioLayout) -> Result<Vec
         let (parent, position, rotation, scale) = match linear {
             None => {
                 let d = data_base + i * 128;
-                (b.i16(d + 116)?, b.floats::<3>(d + 64)?, b.floats::<4>(d + 76)?, b.floats::<3>(d + 104)?)
+                (
+                    b.i16(d + 116)?,
+                    b.floats::<3>(d + 64)?,
+                    b.floats::<4>(d + 76)?,
+                    b.floats::<3>(d + 104)?,
+                )
             }
             Some(lb) => {
                 let d = data_base + i * 16;
-                let at = |field: usize, stride: usize| -> Result<usize> { Ok(b.fixed(lb, lb + field)? + i * stride) };
-                (b.i16(d)?, b.floats::<3>(at(6, 12)?)?, b.floats::<4>(at(8, 16)?)?, b.floats::<3>(at(16, 12)?)?)
+                let at = |field: usize, stride: usize| -> Result<usize> {
+                    Ok(b.fixed(lb, lb + field)? + i * stride)
+                };
+                (
+                    b.i16(d)?,
+                    b.floats::<3>(at(6, 12)?)?,
+                    b.floats::<4>(at(8, 16)?)?,
+                    b.floats::<3>(at(16, 12)?)?,
+                )
             }
         };
         let parent = match parent {
             -1 => None,
             p if p >= 0 && (p as usize) < i => Some(p as u32),
-            p => return Err(corrupt(format!("rmdl: bone {i} ({bone_name}) has parent {p}"))),
+            p => {
+                return Err(corrupt(format!(
+                    "rmdl: bone {i} ({bone_name}) has parent {p}"
+                )))
+            }
         };
-        bones.push(Bone { name: bone_name, parent, position, rotation, scale });
+        bones.push(Bone {
+            name: bone_name,
+            parent,
+            position,
+            rotation,
+            scale,
+        });
     }
     Ok(bones)
 }
@@ -365,12 +425,18 @@ impl Studio {
         // Materials and skins.
         let tex_count = usize::from(b.u16(0x90)?);
         let tex_base = b.fixed(0, 0x92)?;
-        let materials = (0..tex_count).map(|i| b.u64(tex_base + i * 8)).collect::<Result<Vec<_>>>()?;
+        let materials = (0..tex_count)
+            .map(|i| b.u64(tex_base + i * 8))
+            .collect::<Result<Vec<_>>>()?;
         let families = usize::from(b.u16(0x96)?);
         let skin_base = b.fixed(0, 0x98)?;
         let mut skins = Vec::with_capacity(families.max(1));
         for f in 0..families {
-            skins.push((0..tex_count).map(|t| b.u16(skin_base + (f * tex_count + t) * 2)).collect::<Result<Vec<_>>>()?);
+            skins.push(
+                (0..tex_count)
+                    .map(|t| b.u16(skin_base + (f * tex_count + t) * 2))
+                    .collect::<Result<Vec<_>>>()?,
+            );
         }
         if skins.is_empty() {
             skins.push((0..tex_count as u16).collect());
@@ -383,9 +449,12 @@ impl Studio {
         for i in 0..bp_count {
             let bp = bp_base + i * 16;
             let bp_name = b.cstr(b.fixed(bp, bp)?, 256)?;
-            let model_count = usize::try_from(b.i32(bp + 8)?).map_err(|_| corrupt("rmdl: negative model count"))?;
+            let model_count = usize::try_from(b.i32(bp + 8)?)
+                .map_err(|_| corrupt("rmdl: negative model count"))?;
             if model_count > MAX_ITEMS {
-                return Err(corrupt(format!("rmdl: body part {bp_name} has {model_count} models")));
+                return Err(corrupt(format!(
+                    "rmdl: body part {bp_name} has {model_count} models"
+                )));
             }
             let models_base = b.fixed(bp, bp + 2)?;
             let mut models = Vec::with_capacity(model_count);
@@ -396,12 +465,18 @@ impl Studio {
                 let meshes = (0..mesh_count)
                     .map(|k| {
                         let mp = mesh_base + k * 20;
-                        Ok(StudioMesh { material: b.u16(mp)?, mesh_id: b.u16(mp + 2)? })
+                        Ok(StudioMesh {
+                            material: b.u16(mp)?,
+                            mesh_id: b.u16(mp + 2)?,
+                        })
                     })
                     .collect::<Result<Vec<_>>>()?;
                 models.push(StudioModel { meshes });
             }
-            bodyparts.push(Bodypart { name: bp_name, models });
+            bodyparts.push(Bodypart {
+                name: bp_name,
+                models,
+            });
         }
 
         // LODs and groups.
@@ -410,7 +485,9 @@ impl Studio {
             return Err(corrupt(format!("rmdl: {lod_count} LODs")));
         }
         let lod_base = b.fixed(0xB8 + shift, 0xB8 + shift)?;
-        let lod_switch = (0..lod_count).map(|i| b.f32(lod_base + i * 4)).collect::<Result<Vec<_>>>()?;
+        let lod_switch = (0..lod_count)
+            .map(|i| b.f32(lod_base + i * 4))
+            .collect::<Result<Vec<_>>>()?;
         let group_count = usize::from(b.u16(0xB6 + shift)?);
         let group_base = b.fixed(0xB4 + shift, 0xB4 + shift)?;
         let groups = (0..group_count)
@@ -445,17 +522,52 @@ impl Studio {
         let state_count = usize::from(b.u16(0xB2)?);
         let state_base = b.fixed(0xB0, 0xB0)?;
         let bone_map = (0..state_count)
-            .map(|i| if shift > 0 { b.u16(state_base + i * 2) } else { Ok(u16::from(b.u8(state_base + i)?)) })
+            .map(|i| {
+                if shift > 0 {
+                    b.u16(state_base + i * 2)
+                } else {
+                    Ok(u16::from(b.u8(state_base + i)?))
+                }
+            })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { layout, flags, name, bones, bodyparts, materials, skins, lod_switch, groups, lod_slots, bone_map })
+        Ok(Self {
+            layout,
+            flags,
+            name,
+            bones,
+            bodyparts,
+            materials,
+            skins,
+            lod_switch,
+            groups,
+            lod_slots,
+            bone_map,
+        })
     }
 
     /// The material guid mesh `m` uses in `skin`.
     fn material_of(&self, skin: u32, m: &StudioMesh) -> Result<u64> {
-        let row = self.skins.get(skin as usize).ok_or_else(|| Error::new(ErrorKind::NotFound { path: format!("skin {skin}") }))?;
-        let index = *row.get(usize::from(m.material)).ok_or_else(|| corrupt(format!("rmdl: material index {} outside the skin row", m.material)))?;
-        self.materials.get(usize::from(index)).copied().ok_or_else(|| corrupt(format!("rmdl: skin refers to material {index} of {}", self.materials.len())))
+        let row = self.skins.get(skin as usize).ok_or_else(|| {
+            Error::new(ErrorKind::NotFound {
+                path: format!("skin {skin}"),
+            })
+        })?;
+        let index = *row.get(usize::from(m.material)).ok_or_else(|| {
+            corrupt(format!(
+                "rmdl: material index {} outside the skin row",
+                m.material
+            ))
+        })?;
+        self.materials
+            .get(usize::from(index))
+            .copied()
+            .ok_or_else(|| {
+                corrupt(format!(
+                    "rmdl: skin refers to material {index} of {}",
+                    self.materials.len()
+                ))
+            })
     }
 }
 
@@ -532,14 +644,25 @@ fn vertex_layout(flags: u64, stride: usize) -> Result<VertexLayout> {
         match (flags >> (24 + 4 * slot)) & 0xF {
             0 => {}
             2 => uv_layers += 1,
-            other => return Err(unsupported(format!("texcoord format {other} in slot {slot}"))),
+            other => {
+                return Err(unsupported(format!(
+                    "texcoord format {other} in slot {slot}"
+                )))
+            }
         }
     }
     let size = pos_len + if blend { 8 } else { 0 } + 4 + if color { 4 } else { 0 } + uv_layers * 8;
     if size != stride {
-        return Err(unsupported(format!("vertex flags {flags:#x} describe {size} bytes, the stride is {stride}")));
+        return Err(unsupported(format!(
+            "vertex flags {flags:#x} describe {size} bytes, the stride is {stride}"
+        )));
     }
-    Ok(VertexLayout { position, blend, color, uv_layers })
+    Ok(VertexLayout {
+        position,
+        blend,
+        color,
+        uv_layers,
+    })
 }
 
 /// What `decode_mesh` needs to know about the model.
@@ -555,7 +678,10 @@ impl DecodeCx<'_> {
         if self.bone_map.is_empty() {
             return Ok(i as u16);
         }
-        self.bone_map.get(i).copied().ok_or_else(|| corrupt(format!("rmdl: vertex bone {i} is outside the bone map")))
+        self.bone_map
+            .get(i)
+            .copied()
+            .ok_or_else(|| corrupt(format!("rmdl: vertex bone {i} is outside the bone map")))
     }
 }
 
@@ -563,12 +689,20 @@ impl DecodeCx<'_> {
 fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<MeshPart> {
     let layout = vertex_layout(m.flags, m.stride)?;
     let b = B(group);
-    let verts = b.get(m.verts, m.vert_count.checked_mul(m.stride).ok_or_else(|| corrupt("rmdl: vertex buffer size overflows"))?)?;
+    let verts = b.get(
+        m.verts,
+        m.vert_count
+            .checked_mul(m.stride)
+            .ok_or_else(|| corrupt("rmdl: vertex buffer size overflows"))?,
+    )?;
     let extra = B(b.get(m.extra, m.extra_len)?);
     let v = B(verts);
 
     let n = m.vert_count;
-    let mut part = MeshPart { material, ..MeshPart::default() };
+    let mut part = MeshPart {
+        material,
+        ..MeshPart::default()
+    };
     part.positions.reserve(n);
     part.normals.reserve(n);
     part.uvs = vec![Vec::with_capacity(n); layout.uv_layers];
@@ -597,9 +731,17 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
             if d.extra_weights {
                 let (first, last, count) = if d.wide_bones {
                     let packed = u32::from_le_bytes(idx.try_into().expect("4 bytes"));
-                    ((packed & 0x3FF) as usize, ((packed >> 10) & 0x3FF) as usize, (packed >> 24) as usize)
+                    (
+                        (packed & 0x3FF) as usize,
+                        ((packed >> 10) & 0x3FF) as usize,
+                        (packed >> 24) as usize,
+                    )
                 } else {
-                    (usize::from(idx[0]), usize::from(idx[1]), usize::from(idx[3]))
+                    (
+                        usize::from(idx[0]),
+                        usize::from(idx[1]),
+                        usize::from(idx[3]),
+                    )
                 };
                 flat.push((d.bone(first)?, unpack_weight(w0)));
                 let mut remaining = remaining_start - i32::from(w0);
@@ -611,12 +753,18 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
                     remaining -= i32::from(weight);
                 }
                 if count > 0 {
-                    flat.push((d.bone(last)?, unpack_weight(remaining.clamp(0, 32767) as u16)));
+                    flat.push((
+                        d.bone(last)?,
+                        unpack_weight(remaining.clamp(0, 32767) as u16),
+                    ));
                 }
             } else {
                 let count = usize::from(idx[3]);
                 if count > 2 {
-                    return Err(corrupt(format!("rmdl: vertex {i} has {} influences", count + 1)));
+                    return Err(corrupt(format!(
+                        "rmdl: vertex {i} has {} influences",
+                        count + 1
+                    )));
                 }
                 let w = [w0, w1];
                 let mut remaining = remaining_start;
@@ -624,18 +772,26 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
                     flat.push((d.bone(usize::from(idx[k]))?, unpack_weight(w[k])));
                     remaining -= i32::from(w[k]);
                 }
-                flat.push((d.bone(usize::from(idx[count]))?, unpack_weight(remaining.clamp(0, 32767) as u16)));
+                flat.push((
+                    d.bone(usize::from(idx[count]))?,
+                    unpack_weight(remaining.clamp(0, 32767) as u16),
+                ));
             }
         } else {
             flat.push((0, 1.0));
         }
         let influences = flat.len() - start;
         if influences > usize::from(u8::MAX) {
-            return Err(corrupt(format!("rmdl: vertex {i} has {influences} influences")));
+            return Err(corrupt(format!(
+                "rmdl: vertex {i} has {influences} influences"
+            )));
         }
         counts.push(influences as u8);
 
-        part.normals.push(unpack_normal32(v.u32(at)?).ok_or_else(|| corrupt(format!("rmdl: vertex {i} has an invalid normal")))?);
+        part.normals.push(
+            unpack_normal32(v.u32(at)?)
+                .ok_or_else(|| corrupt(format!("rmdl: vertex {i} has an invalid normal")))?,
+        );
         at += 4;
         if layout.color {
             part.colors.push(v.get(at, 4)?.try_into().expect("4 bytes"));
@@ -656,9 +812,16 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
         let mut cursor = 0;
         for &c in &counts {
             for k in 0..max {
-                let (bone, weight) = if k < usize::from(c) { flat[cursor + k] } else { (0, 0.0) };
+                let (bone, weight) = if k < usize::from(c) {
+                    flat[cursor + k]
+                } else {
+                    (0, 0.0)
+                };
                 if usize::from(bone) >= d.bone_count.max(1) {
-                    return Err(corrupt(format!("rmdl: vertex bone {bone} but the skeleton has {} bones", d.bone_count)));
+                    return Err(corrupt(format!(
+                        "rmdl: vertex bone {bone} but the skeleton has {} bones",
+                        d.bone_count
+                    )));
                 }
                 part.bone_indices.push(bone);
                 part.bone_weights.push(weight);
@@ -668,13 +831,19 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
     }
 
     if !m.index_count.is_multiple_of(3) {
-        return Err(corrupt(format!("rmdl: {} indices are not whole triangles", m.index_count)));
+        return Err(corrupt(format!(
+            "rmdl: {} indices are not whole triangles",
+            m.index_count
+        )));
     }
     let raw = b.get(m.indices, m.index_count * 2)?;
     for tri in raw.chunks_exact(6) {
         let t = [0, 2, 4].map(|o| u32::from(u16::from_le_bytes([tri[o], tri[o + 1]])));
         if t.iter().any(|&i| i as usize >= n) {
-            return Err(corrupt(format!("rmdl: a triangle refers to vertex {} of {n}", t.iter().max().expect("3 values"))));
+            return Err(corrupt(format!(
+                "rmdl: a triangle refers to vertex {} of {n}",
+                t.iter().max().expect("3 values")
+            )));
         }
         part.triangles.push(t);
     }
@@ -713,7 +882,12 @@ impl RmdlAsset {
     }
 
     fn flat_models(&self) -> impl Iterator<Item = (&Bodypart, u32, &StudioModel)> {
-        self.studio.bodyparts.iter().flat_map(|bp| bp.models.iter().enumerate().map(move |(i, m)| (bp, i as u32, m)))
+        self.studio.bodyparts.iter().flat_map(|bp| {
+            bp.models
+                .iter()
+                .enumerate()
+                .map(move |(i, m)| (bp, i as u32, m))
+        })
     }
 
     /// The decompressed bytes of a group.
@@ -728,27 +902,43 @@ impl RmdlAsset {
                 }));
             }
         };
-        let stored = if group.size_compressed != 0 { group.size_compressed } else { group.size_decompressed };
+        let stored = if group.size_compressed != 0 {
+            group.size_compressed
+        } else {
+            group.size_decompressed
+        };
         let start = base + u64::from(group.data_offset);
-        let block = self.volume.read_with(path).range(start..start + u64::from(stored)).await.map_err(|e| {
-            let e = Error::from(e);
-            if matches!(e.kind(), ErrorKind::NotFound { .. }) {
-                Error::new(ErrorKind::MissingDependency { item: self.label(), file: format!("{path} (no entry in the starpak)") })
-            } else {
-                e
-            }
-        })?;
+        let block = self
+            .volume
+            .read_with(path)
+            .range(start..start + u64::from(stored))
+            .await
+            .map_err(|e| {
+                let e = Error::from(e);
+                if matches!(e.kind(), ErrorKind::NotFound { .. }) {
+                    Error::new(ErrorKind::MissingDependency {
+                        item: self.label(),
+                        file: format!("{path} (no entry in the starpak)"),
+                    })
+                } else {
+                    e
+                }
+            })?;
         let block = block.to_bytes();
         let decoded_len = u64::from(group.size_decompressed);
         let out = match group.compression {
             0 => block.to_vec(),
-            1 => rtech::decompress(&block, 0, Some(decoded_len)).map_err(|e| Error::custom("rtech", e))?,
+            1 => rtech::decompress(&block, 0, Some(decoded_len))
+                .map_err(|e| Error::custom("rtech", e))?,
             2 => snowflake::decompress(&block).map_err(|e| Error::custom("snowflake", e))?,
             3 => oodle::decompress(&block, decoded_len).map_err(|e| Error::custom("oodle", e))?,
             other => return Err(unsupported(format!("vertex group compression {other}"))),
         };
         if out.len() as u64 != decoded_len && group.compression != 0 {
-            return Err(corrupt(format!("rmdl: a vertex group decoded to {} bytes, expected {decoded_len}", out.len())));
+            return Err(corrupt(format!(
+                "rmdl: a vertex group decoded to {} bytes, expected {decoded_len}",
+                out.len()
+            )));
         }
         Ok(out)
     }
@@ -841,7 +1031,11 @@ impl RmdlAsset {
             .map(|skin| {
                 let row: Vec<String> = s.skins[skin as usize]
                     .iter()
-                    .map(|&i| s.materials.get(usize::from(i)).map_or_else(|| "(missing)".to_owned(), |&g| hex(g)))
+                    .map(|&i| {
+                        s.materials
+                            .get(usize::from(i))
+                            .map_or_else(|| "(missing)".to_owned(), |&g| hex(g))
+                    })
                     .collect();
                 json!(row)
             })
@@ -875,18 +1069,31 @@ impl Mesh for RmdlAsset {
         MeshInfo {
             models: self
                 .flat_models()
-                .map(|(bp, index, _)| ModelInfo { bodypart: bp.name.clone(), index })
+                .map(|(bp, index, _)| ModelInfo {
+                    bodypart: bp.name.clone(),
+                    index,
+                })
                 .collect(),
-            lod_count: if has_vertex_data { self.studio.lod_slots.len() as u32 } else { 0 },
+            lod_count: if has_vertex_data {
+                self.studio.lod_slots.len() as u32
+            } else {
+                0
+            },
             skin_count: self.studio.skins.len() as u32,
         }
     }
 
     async fn read(&self, lod: u32, model: u32, skin: u32, cx: &Cx) -> Result<MeshModel> {
         let not_found = |what: String| Error::new(ErrorKind::NotFound { path: what });
-        let (_, _, studio_model) =
-            self.flat_models().nth(model as usize).ok_or_else(|| not_found(format!("model {model}")))?;
-        let slot = *self.studio.lod_slots.get(lod as usize).ok_or_else(|| not_found(format!("lod {lod}")))?;
+        let (_, _, studio_model) = self
+            .flat_models()
+            .nth(model as usize)
+            .ok_or_else(|| not_found(format!("model {model}")))?;
+        let slot = *self
+            .studio
+            .lod_slots
+            .get(lod as usize)
+            .ok_or_else(|| not_found(format!("lod {lod}")))?;
         let Some((group_index, in_group)) = slot else {
             return Ok(MeshModel::default());
         };
@@ -903,12 +1110,21 @@ impl Mesh for RmdlAsset {
         let mut parts = Vec::new();
         for sm in &studio_model.meshes {
             let Some(h) = headers.get(usize::from(sm.mesh_id)) else {
-                return Err(corrupt(format!("rmdl: mesh id {} but LOD {lod} has {} meshes", sm.mesh_id, headers.len())));
+                return Err(corrupt(format!(
+                    "rmdl: mesh id {} but LOD {lod} has {} meshes",
+                    sm.mesh_id,
+                    headers.len()
+                )));
             };
             if h.flags == 0 {
                 continue;
             }
-            parts.push(decode_mesh(&bytes, h, self.studio.material_of(skin, sm)?, &d)?);
+            parts.push(decode_mesh(
+                &bytes,
+                h,
+                self.studio.material_of(skin, sm)?,
+                &d,
+            )?);
         }
         Ok(MeshModel { parts })
     }
@@ -937,15 +1153,27 @@ impl RmdlAsset {
     /// One material with its textures located; whatever cannot be found is left out with a warning.
     async fn material(&self, guid: u64, origin: &str, cx: &Cx) -> Result<MeshMaterial> {
         let missing = |why: &Error| {
-            cx.warn(format!("model {}: material {} is not available ({why})", self.label(), hex(guid)));
-            MeshMaterial { guid, name: hex(guid), textures: Vec::new() }
+            cx.warn(format!(
+                "model {}: material {} is not available ({why})",
+                self.label(),
+                hex(guid)
+            ));
+            MeshMaterial {
+                guid,
+                name: hex(guid),
+                textures: Vec::new(),
+            }
         };
         let asset = match locate(guid, "matl", origin, cx).await {
             Ok(a) => a,
             Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
             Err(e) => return Ok(missing(&e)),
         };
-        let matl_value = match cx.mediator.identify_as(asset, &FormatId::new("matl"), cx).await {
+        let matl_value = match cx
+            .mediator
+            .identify_as(asset, &FormatId::new("matl"), cx)
+            .await
+        {
             Ok(v) => v,
             Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
             Err(e) => return Ok(missing(&e)),
@@ -953,7 +1181,10 @@ impl RmdlAsset {
         let Some(matl) = matl_value.downcast_ref::<MatlAsset>() else {
             return Ok(missing(&corrupt("the material is not a matl")));
         };
-        let name = matl.name.as_deref().map_or_else(|| hex(guid), |n| n.rsplit('/').next().unwrap_or(n).to_owned());
+        let name = matl.name.as_deref().map_or_else(
+            || hex(guid),
+            |n| n.rsplit('/').next().unwrap_or(n).to_owned(),
+        );
         let slot_names = if matl.bound_textures().next().is_none() {
             Default::default()
         } else {
@@ -961,7 +1192,9 @@ impl RmdlAsset {
                 Ok(names) => names,
                 Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
                 Err(e) => {
-                    cx.warn(format!("material {name}: texture slots are not named ({e}); using slot_<n>"));
+                    cx.warn(format!(
+                        "material {name}: texture slots are not named ({e}); using slot_<n>"
+                    ));
                     Default::default()
                 }
             }
@@ -972,14 +1205,28 @@ impl RmdlAsset {
                 Ok(t) => Some(t),
                 Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
                 Err(e) => {
-                    cx.warn(format!("material {name}: texture {} is not available ({e})", hex(texture_guid)));
+                    cx.warn(format!(
+                        "material {name}: texture {} is not available ({e})",
+                        hex(texture_guid)
+                    ));
                     None
                 }
             };
-            let slot_name = slot_names.get(&slot).cloned().unwrap_or_else(|| format!("slot_{slot}"));
-            textures.push(MaterialTexture { slot: slot_name, guid: texture_guid, texture });
+            let slot_name = slot_names
+                .get(&slot)
+                .cloned()
+                .unwrap_or_else(|| format!("slot_{slot}"));
+            textures.push(MaterialTexture {
+                slot: slot_name,
+                guid: texture_guid,
+                texture,
+            });
         }
-        Ok(MeshMaterial { guid, name, textures })
+        Ok(MeshMaterial {
+            guid,
+            name,
+            textures,
+        })
     }
 }
 
@@ -1001,12 +1248,20 @@ impl Metadata for RmdlAsset {
     }
     fn dependencies(&self) -> Vec<Dependency> {
         let mut seen = Vec::new();
-        for &guid in self.studio.materials.iter().chain(&self.anim_rigs).chain(&self.anim_seqs) {
+        for &guid in self
+            .studio
+            .materials
+            .iter()
+            .chain(&self.anim_rigs)
+            .chain(&self.anim_seqs)
+        {
             if guid != 0 && !seen.contains(&guid) {
                 seen.push(guid);
             }
         }
-        seen.into_iter().map(|guid| Dependency { guid, name: None }).collect()
+        seen.into_iter()
+            .map(|guid| Dependency { guid, name: None })
+            .collect()
     }
 }
 
@@ -1039,42 +1294,63 @@ impl Detect for RmdlRead {
         let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
             return Ok(None);
         };
-        Ok((asset.entry.kind == *b"mdl_").then(|| Detected { score: 10, version: Some(Version::new(asset.entry.version)) }))
+        Ok((asset.entry.kind == *b"mdl_").then(|| Detected {
+            score: 10,
+            version: Some(Version::new(asset.entry.version)),
+        }))
     }
 }
 
 /// `count` guids at `.mem` offset `at`.
 pub(crate) async fn read_guids(asset: &RpakAsset, at: Option<u64>, count: u32) -> Result<Vec<u64>> {
-    let (Some(at), true) = (at, count > 0) else { return Ok(Vec::new()) };
+    let (Some(at), true) = (at, count > 0) else {
+        return Ok(Vec::new());
+    };
     if count as usize > MAX_GUIDS {
         return Err(corrupt(format!("rmdl lists {count} animation assets")));
     }
     let bytes = asset.read_mem(at, u64::from(count) * 8).await?;
-    Ok(bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes"))).collect())
+    Ok(bytes
+        .chunks_exact(8)
+        .map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes")))
+        .collect())
 }
 
 #[async_trait]
 impl ReadHandler for RmdlRead {
     /// Parses the headers, the bones and the body part tables. Vertex data is read later, by `Mesh::read`.
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "rmdl must be read from an rpak.asset".into() }))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "rmdl must be read from an rpak.asset".into(),
+            })
+        })?;
         let major = asset.entry.version;
         if !(16..=20).contains(&major) {
             return Err(unsupported(major.to_string()));
         }
         let header_bytes = asset.read_header().await?;
-        let data_at = asset.data_mem_offset.ok_or_else(|| corrupt("rmdl has no CPU data pointer"))?;
+        let data_at = asset
+            .data_mem_offset
+            .ok_or_else(|| corrupt("rmdl has no CPU data pointer"))?;
         let cpu = asset.read_mem(data_at, CPU_LEN as u64).await?;
         let studio_at = B(&header_bytes).u64(0)?;
         let studio_len = u64::from(B(&cpu).u32(12)?);
         if studio_len == 0 || studio_len > MAX_STUDIO_LEN {
-            return Err(corrupt(format!("rmdl studio block of {studio_len} bytes is not usable")));
+            return Err(corrupt(format!(
+                "rmdl studio block of {studio_len} bytes is not usable"
+            )));
         }
         let studio_blob = asset.read_mem(studio_at, studio_len).await?;
         let source_filename_offset = B(&studio_blob).u16(0xD8).ok();
-        let header = RmdlHeader::parse(major, &header_bytes, &cpu, asset.pak_created_time, source_filename_offset)?;
+        let header = RmdlHeader::parse(
+            major,
+            &header_bytes,
+            &cpu,
+            asset.pak_created_time,
+            source_filename_offset,
+        )?;
         let studio = Studio::parse(major, header.layout, &studio_blob)?;
 
         let mem_len = asset.volume.stat(MEM).await?.content_length();
@@ -1144,7 +1420,9 @@ pub(crate) fn unpack_weight(w: u16) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::rmdl::{blend_vertex, flags, normal_z, put16, studio, vg_single as vg_group};
+    use crate::testing::rmdl::{
+        blend_vertex, flags, normal_z, put16, studio, vg_single as vg_group,
+    };
 
     fn studio_block(major: u32, wide: bool) -> Vec<u8> {
         studio(major, wide, 100)
@@ -1175,13 +1453,27 @@ mod tests {
         for (idx1, neg) in [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)] {
             let n = unpack_normal32(pack(idx1, neg)).unwrap();
             for (axis, v) in n.iter().enumerate() {
-                let want = if axis as u32 == idx1 { if neg == 1 { -1.0 } else { 1.0 } } else { 0.0 };
-                assert!((v - want).abs() < 1e-6, "idx1 {idx1} neg {neg} axis {axis}: {v}");
+                let want = if axis as u32 == idx1 {
+                    if neg == 1 {
+                        -1.0
+                    } else {
+                        1.0
+                    }
+                } else {
+                    0.0
+                };
+                assert!(
+                    (v - want).abs() < 1e-6,
+                    "idx1 {idx1} neg {neg} axis {axis}: {v}"
+                );
             }
         }
         assert!(unpack_normal32(3 << 29).is_none());
         let n = unpack_normal32((2 << 29) | (300 << 19) | (200 << 10)).unwrap();
-        assert!((n.iter().map(|v| v * v).sum::<f32>() - 1.0).abs() < 1e-5, "unit length");
+        assert!(
+            (n.iter().map(|v| v * v).sum::<f32>() - 1.0).abs() < 1e-5,
+            "unit length"
+        );
     }
 
     #[test]
@@ -1195,19 +1487,52 @@ mod tests {
         assert_eq!(variant(16, 0, None).unwrap(), Version::new(16));
         assert_eq!(variant(20, 0, None).unwrap(), Version::new(20));
         assert_eq!(variant(19, 0, None).unwrap(), Version::with_minor(19, 0));
-        assert_eq!(variant(19, CREATED_19_1, None).unwrap(), Version::with_minor(19, 1));
-        assert_eq!(variant(19, 0, Some(244)).unwrap(), Version::with_minor(19, 2));
-        assert_eq!(variant(19, CREATED_19_1, Some(244)).unwrap(), Version::with_minor(19, 2));
-        assert_eq!(variant(19, CREATED_19_3, Some(244)).unwrap(), Version::with_minor(19, 3));
-        assert_eq!(variant(19, CREATED_19_3, None).unwrap(), Version::with_minor(19, 3));
+        assert_eq!(
+            variant(19, CREATED_19_1, None).unwrap(),
+            Version::with_minor(19, 1)
+        );
+        assert_eq!(
+            variant(19, 0, Some(244)).unwrap(),
+            Version::with_minor(19, 2)
+        );
+        assert_eq!(
+            variant(19, CREATED_19_1, Some(244)).unwrap(),
+            Version::with_minor(19, 2)
+        );
+        assert_eq!(
+            variant(19, CREATED_19_3, Some(244)).unwrap(),
+            Version::with_minor(19, 3)
+        );
+        assert_eq!(
+            variant(19, CREATED_19_3, None).unwrap(),
+            Version::with_minor(19, 3)
+        );
         for bad in [8, 15, 21] {
-            assert!(matches!(variant(bad, 0, None).unwrap_err().kind(), ErrorKind::UnsupportedVersion { .. }));
+            assert!(matches!(
+                variant(bad, 0, None).unwrap_err().kind(),
+                ErrorKind::UnsupportedVersion { .. }
+            ));
         }
-        assert_eq!(StudioLayout::for_version(Version::new(16)).unwrap(), StudioLayout::V16);
-        assert_eq!(StudioLayout::for_version(Version::new(18)).unwrap(), StudioLayout::V17);
-        assert_eq!(StudioLayout::for_version(Version::with_minor(19, 1)).unwrap(), StudioLayout::V17);
-        assert_eq!(StudioLayout::for_version(Version::with_minor(19, 2)).unwrap(), StudioLayout::V19_2);
-        assert_eq!(StudioLayout::for_version(Version::new(20)).unwrap(), StudioLayout::V19_2);
+        assert_eq!(
+            StudioLayout::for_version(Version::new(16)).unwrap(),
+            StudioLayout::V16
+        );
+        assert_eq!(
+            StudioLayout::for_version(Version::new(18)).unwrap(),
+            StudioLayout::V17
+        );
+        assert_eq!(
+            StudioLayout::for_version(Version::with_minor(19, 1)).unwrap(),
+            StudioLayout::V17
+        );
+        assert_eq!(
+            StudioLayout::for_version(Version::with_minor(19, 2)).unwrap(),
+            StudioLayout::V19_2
+        );
+        assert_eq!(
+            StudioLayout::for_version(Version::new(20)).unwrap(),
+            StudioLayout::V19_2
+        );
     }
 
     /// A 96-byte asset header and 16-byte CPU data.
@@ -1234,30 +1559,65 @@ mod tests {
         let p = RmdlHeader::parse(20, &h, &c, 0, None).unwrap();
         assert_eq!(p.version, Version::new(20));
         assert_eq!(p.layout, StudioLayout::V19_2);
-        assert_eq!((p.studio_offset, p.studio_len, p.streaming_size), (0x1000, 500, 8192));
+        assert_eq!(
+            (p.studio_offset, p.studio_len, p.streaming_size),
+            (0x1000, 500, 8192)
+        );
         assert_eq!(p.name_offset, Some(0x2000));
         assert_eq!(p.static_data, None);
         assert_eq!(p.bounds, ([-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
         assert_eq!(p.anim_rigs, (Some(0x3000), 2));
         assert_eq!(p.anim_seqs, (Some(0x4000), 3));
 
-        assert!(matches!(RmdlHeader::parse(15, &h, &c, 0, None).unwrap_err().kind(), ErrorKind::UnsupportedVersion { .. }));
-        assert!(matches!(RmdlHeader::parse(16, &h[..90], &c, 0, None).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
-        assert!(matches!(RmdlHeader::parse(16, &h, &c[..8], 0, None).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            RmdlHeader::parse(15, &h, &c, 0, None).unwrap_err().kind(),
+            ErrorKind::UnsupportedVersion { .. }
+        ));
+        assert!(matches!(
+            RmdlHeader::parse(16, &h[..90], &c, 0, None)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::Corrupt { .. }
+        ));
+        assert!(matches!(
+            RmdlHeader::parse(16, &h, &c[..8], 0, None)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::Corrupt { .. }
+        ));
         let (h0, c0) = headers(0);
-        assert!(matches!(RmdlHeader::parse(16, &h0, &c0, 0, None).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            RmdlHeader::parse(16, &h0, &c0, 0, None).unwrap_err().kind(),
+            ErrorKind::Corrupt { .. }
+        ));
         let mut no_studio = h.clone();
         no_studio[0..8].copy_from_slice(&u64::MAX.to_le_bytes());
-        assert!(matches!(RmdlHeader::parse(16, &no_studio, &c, 0, None).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            RmdlHeader::parse(16, &no_studio, &c, 0, None)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::Corrupt { .. }
+        ));
     }
 
     fn check_studio(major: u32, layout: StudioLayout) {
-        let s = Studio::parse(major, layout, &studio_block(major, layout == StudioLayout::V19_2)).unwrap();
+        let s = Studio::parse(
+            major,
+            layout,
+            &studio_block(major, layout == StudioLayout::V19_2),
+        )
+        .unwrap();
         assert_eq!(s.name, "model");
         assert_eq!(s.flags, 0x4000);
         assert_eq!(s.bones.len(), 2);
-        assert_eq!((s.bones[0].name.as_str(), s.bones[0].parent), ("root", None));
-        assert_eq!((s.bones[1].name.as_str(), s.bones[1].parent), ("arm", Some(0)));
+        assert_eq!(
+            (s.bones[0].name.as_str(), s.bones[0].parent),
+            ("root", None)
+        );
+        assert_eq!(
+            (s.bones[1].name.as_str(), s.bones[1].parent),
+            ("arm", Some(0))
+        );
         assert_eq!(s.bones[1].position, [2.0, 2.0, 3.0]);
         assert_eq!(s.bones[1].rotation, [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(s.bones[1].scale, [1.0; 3]);
@@ -1265,16 +1625,48 @@ mod tests {
         assert_eq!(s.skins, vec![vec![0, 1], vec![1, 0]]);
         assert_eq!(s.bodyparts.len(), 1);
         assert_eq!(s.bodyparts[0].name, "weapon");
-        assert_eq!(s.bodyparts[0].models[0].meshes, vec![StudioMesh { material: 0, mesh_id: 0 }, StudioMesh { material: 1, mesh_id: 1 }]);
+        assert_eq!(
+            s.bodyparts[0].models[0].meshes,
+            vec![
+                StudioMesh {
+                    material: 0,
+                    mesh_id: 0
+                },
+                StudioMesh {
+                    material: 1,
+                    mesh_id: 1
+                }
+            ]
+        );
         assert_eq!(s.lod_switch, vec![10.0, 50.0]);
         assert_eq!(s.groups.len(), 1);
-        assert_eq!((s.groups[0].size_compressed, s.groups[0].lod_count, s.groups[0].lod_map), (100, 2, 0b11));
+        assert_eq!(
+            (
+                s.groups[0].size_compressed,
+                s.groups[0].lod_count,
+                s.groups[0].lod_map
+            ),
+            (100, 2, 0b11)
+        );
         assert_eq!(s.lod_slots, vec![Some((0, 0)), Some((0, 1))]);
         assert_eq!(s.bone_map, vec![1, 0]);
         // skin 1 swaps the materials
-        assert_eq!(s.material_of(0, &s.bodyparts[0].models[0].meshes[0]).unwrap(), 0xAAAA);
-        assert_eq!(s.material_of(1, &s.bodyparts[0].models[0].meshes[0]).unwrap(), 0xBBBB);
-        assert!(matches!(s.material_of(2, &s.bodyparts[0].models[0].meshes[0]).unwrap_err().kind(), ErrorKind::NotFound { .. }));
+        assert_eq!(
+            s.material_of(0, &s.bodyparts[0].models[0].meshes[0])
+                .unwrap(),
+            0xAAAA
+        );
+        assert_eq!(
+            s.material_of(1, &s.bodyparts[0].models[0].meshes[0])
+                .unwrap(),
+            0xBBBB
+        );
+        assert!(matches!(
+            s.material_of(2, &s.bodyparts[0].models[0].meshes[0])
+                .unwrap_err()
+                .kind(),
+            ErrorKind::NotFound { .. }
+        ));
     }
 
     #[test]
@@ -1301,37 +1693,88 @@ mod tests {
     fn studio_is_bounded() {
         let block = studio_block(16, false);
         for len in [0, 10, 0x74, 0x120, 0x290, 0x328] {
-            assert!(Studio::parse(16, StudioLayout::V16, &block[..len]).is_err(), "len {len}");
+            assert!(
+                Studio::parse(16, StudioLayout::V16, &block[..len]).is_err(),
+                "len {len}"
+            );
         }
         let mut bad_parent = block.clone();
         bad_parent[0x140 + 116..0x140 + 118].copy_from_slice(&5i16.to_le_bytes());
-        assert!(matches!(Studio::parse(16, StudioLayout::V16, &bad_parent).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            Studio::parse(16, StudioLayout::V16, &bad_parent)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::Corrupt { .. }
+        ));
         let mut too_many = block;
         put16(&mut too_many, 0x74, 5000);
-        assert!(matches!(Studio::parse(16, StudioLayout::V16, &too_many).unwrap_err().kind(), ErrorKind::Corrupt { .. }));
+        assert!(matches!(
+            Studio::parse(16, StudioLayout::V16, &too_many)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::Corrupt { .. }
+        ));
     }
 
     #[test]
     fn layouts() {
         assert_eq!(
             vertex_layout(flags(1, true, true, 2), 12 + 8 + 4 + 4 + 16).unwrap(),
-            VertexLayout { position: 1, blend: true, color: true, uv_layers: 2 }
+            VertexLayout {
+                position: 1,
+                blend: true,
+                color: true,
+                uv_layers: 2
+            }
         );
-        assert_eq!(vertex_layout(flags(2, false, false, 1), 8 + 4 + 8).unwrap().position, 2);
-        assert!(matches!(vertex_layout(flags(3, false, false, 0), 10).unwrap_err().kind(), ErrorKind::UnsupportedVersion { .. }));
-        assert!(matches!(vertex_layout(flags(0, false, false, 0), 4).unwrap_err().kind(), ErrorKind::UnsupportedVersion { .. }));
+        assert_eq!(
+            vertex_layout(flags(2, false, false, 1), 8 + 4 + 8)
+                .unwrap()
+                .position,
+            2
+        );
+        assert!(matches!(
+            vertex_layout(flags(3, false, false, 0), 10)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::UnsupportedVersion { .. }
+        ));
+        assert!(matches!(
+            vertex_layout(flags(0, false, false, 0), 4)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::UnsupportedVersion { .. }
+        ));
         // stride that does not match
-        assert!(matches!(vertex_layout(flags(1, false, false, 0), 20).unwrap_err().kind(), ErrorKind::UnsupportedVersion { .. }));
+        assert!(matches!(
+            vertex_layout(flags(1, false, false, 0), 20)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::UnsupportedVersion { .. }
+        ));
         // an unknown texcoord format
         assert!(vertex_layout(flags(1, false, false, 0) | (5 << 24), 16).is_err());
         // VERT_UNK (0x40) takes no bytes, but a stride that does not fit is still refused
-        assert_eq!(vertex_layout(flags(1, false, false, 0) | 0x40, 16).unwrap().position, 1);
+        assert_eq!(
+            vertex_layout(flags(1, false, false, 0) | 0x40, 16)
+                .unwrap()
+                .position,
+            1
+        );
         assert!(vertex_layout(flags(1, false, false, 0) | 0x40, 24).is_err());
-        assert!(vertex_layout(flags(1, false, false, 0) | 0x2000, 16).is_err(), "unpacked weights");
+        assert!(
+            vertex_layout(flags(1, false, false, 0) | 0x2000, 16).is_err(),
+            "unpacked weights"
+        );
     }
 
     fn cx_plain<'a>(map: &'a [u16], bones: usize, extra: bool, wide: bool) -> DecodeCx<'a> {
-        DecodeCx { bone_map: map, bone_count: bones, extra_weights: extra, wide_bones: wide }
+        DecodeCx {
+            bone_map: map,
+            bone_count: bones,
+            extra_weights: extra,
+            wide_bones: wide,
+        }
     }
 
     #[test]
@@ -1340,7 +1783,8 @@ mod tests {
         let f = flags(2, false, false, 1);
         let mut verts = Vec::new();
         for i in 0..3u64 {
-            verts.extend_from_slice(&((1024 * (i + 1)) | (2048 << 21) | (4096 << 42)).to_le_bytes());
+            verts
+                .extend_from_slice(&((1024 * (i + 1)) | (2048 << 21) | (4096 << 42)).to_le_bytes());
             verts.extend_from_slice(&normal_z().to_le_bytes());
             verts.extend_from_slice(&(0.25f32 * i as f32).to_le_bytes());
             verts.extend_from_slice(&0.5f32.to_le_bytes());
@@ -1350,14 +1794,20 @@ mod tests {
         assert_eq!(headers.len(), 1);
         let part = decode_mesh(&g, &headers[0], 9, &cx_plain(&[], 1, false, false)).unwrap();
         assert_eq!(part.material, 9);
-        assert_eq!(part.positions, vec![[-1023.0, -1022.0, -2044.0], [-1022.0, -1022.0, -2044.0], [-1021.0, -1022.0, -2044.0]]);
+        assert_eq!(
+            part.positions,
+            vec![
+                [-1023.0, -1022.0, -2044.0],
+                [-1022.0, -1022.0, -2044.0],
+                [-1021.0, -1022.0, -2044.0]
+            ]
+        );
         assert!(part.normals.iter().all(|n| (n[2] - 1.0).abs() < 1e-6));
         assert_eq!(part.uvs, vec![vec![[0.0, 0.5], [0.25, 0.5], [0.5, 0.5]]]);
         assert_eq!(part.triangles, vec![[0, 1, 2]]);
         assert_eq!(part.influences, 0);
         assert!(part.bone_indices.is_empty());
     }
-
 
     #[test]
     fn decodes_blend_weights() {
@@ -1392,7 +1842,10 @@ mod tests {
     fn decodes_extra_weights() {
         let f = flags(1, true, false, 0);
         // 256-bone form: first 2, last 5, unk, count 3 -> weights: first, extras[w1..w1+1], last
-        let extra: Vec<u8> = [(8000i16, 3i16), (4000, 4)].iter().flat_map(|(w, b)| w.to_le_bytes().into_iter().chain(b.to_le_bytes())).collect();
+        let extra: Vec<u8> = [(8000i16, 3i16), (4000, 4)]
+            .iter()
+            .flat_map(|(w, b)| w.to_le_bytes().into_iter().chain(b.to_le_bytes()))
+            .collect();
         let verts = blend_vertex(10000, 0, [2, 5, 0, 3]);
         let g = vg_group(f, 24, 1, &verts, &[], &extra);
         let h = vg_meshes(&g, 0).unwrap();
@@ -1410,7 +1863,10 @@ mod tests {
         let verts = blend_vertex(20000, 0, idx);
         idx = [0; 4];
         let _ = idx;
-        let extra: Vec<u8> = [(6000i16, 800i16)].iter().flat_map(|(w, b)| w.to_le_bytes().into_iter().chain(b.to_le_bytes())).collect();
+        let extra: Vec<u8> = [(6000i16, 800i16)]
+            .iter()
+            .flat_map(|(w, b)| w.to_le_bytes().into_iter().chain(b.to_le_bytes()))
+            .collect();
         let g = vg_group(f, 24, 1, &verts, &[], &extra);
         let h = vg_meshes(&g, 0).unwrap();
         let part = decode_mesh(&g, &h[0], 1, &cx_plain(&[], 1024, true, true)).unwrap();

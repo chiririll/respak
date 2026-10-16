@@ -12,7 +12,8 @@ use respak_core::capability::{
 };
 use respak_core::value::BundleData;
 use respak_core::{
-    CancellationToken, Cx, Data, Error, ErrorKind, Event, FormatId, Mediator, Plugin, Registry, Target, Value, ValueKey,
+    CancellationToken, Cx, Data, Error, ErrorKind, Event, FormatId, Mediator, Plugin, Registry,
+    Target, Value, ValueKey,
 };
 use respak_formats::FormatsPlugin;
 
@@ -46,11 +47,17 @@ impl Stub {
     }
 
     fn video(colours: &[[u8; 3]]) -> Self {
-        Self { colours: colours.to_vec(), ..Self::new() }
+        Self {
+            colours: colours.to_vec(),
+            ..Self::new()
+        }
     }
 
     fn audio(tracks: Vec<(AudioTrackInfo, Vec<Vec<f32>>)>) -> Self {
-        Self { tracks, ..Self::new() }
+        Self {
+            tracks,
+            ..Self::new()
+        }
     }
 
     /// Counts each item the stream yields and triggers the cancel token at the scripted one.
@@ -72,10 +79,20 @@ impl Stub {
 #[async_trait]
 impl Video for Stub {
     fn info(&self) -> VideoInfo {
-        VideoInfo { width: 2, height: 2, fps: (30, 1), frame_count: self.colours.len() as u32, full_range: true }
+        VideoInfo {
+            width: 2,
+            height: 2,
+            fps: (30, 1),
+            frame_count: self.colours.len() as u32,
+            full_range: true,
+        }
     }
 
-    async fn frames(&self, format: FrameFormat, _cx: &Cx) -> respak_core::Result<BoxStream<'static, respak_core::Result<VideoFrame>>> {
+    async fn frames(
+        &self,
+        format: FrameFormat,
+        _cx: &Cx,
+    ) -> respak_core::Result<BoxStream<'static, respak_core::Result<VideoFrame>>> {
         self.asked.lock().unwrap().push(format);
         let short = self.short_frames;
         let mut items: Vec<respak_core::Result<VideoFrame>> = self
@@ -87,11 +104,18 @@ impl Video for Stub {
                 if short {
                     rgba.pop();
                 }
-                Ok(VideoFrame { index: index as u32, format, planes: vec![Bytes::from(rgba)], strides: vec![8] })
+                Ok(VideoFrame {
+                    index: index as u32,
+                    format,
+                    planes: vec![Bytes::from(rgba)],
+                    strides: vec![8],
+                })
             })
             .collect();
         if self.truncated {
-            items.push(Err(Error::new(ErrorKind::Corrupt { context: "truncated".into() })));
+            items.push(Err(Error::new(ErrorKind::Corrupt {
+                context: "truncated".into(),
+            })));
         }
         Ok(self.counted(items))
     }
@@ -103,9 +127,18 @@ impl Audio for Stub {
         self.tracks.iter().map(|(info, _)| *info).collect()
     }
 
-    async fn samples(&self, track: u32, _cx: &Cx) -> respak_core::Result<BoxStream<'static, respak_core::Result<AudioChunk>>> {
+    async fn samples(
+        &self,
+        track: u32,
+        _cx: &Cx,
+    ) -> respak_core::Result<BoxStream<'static, respak_core::Result<AudioChunk>>> {
         let chunks = self.tracks[track as usize].1.clone();
-        Ok(self.counted(chunks.into_iter().map(|samples| Ok(AudioChunk { samples })).collect()))
+        Ok(self.counted(
+            chunks
+                .into_iter()
+                .map(|samples| Ok(AudioChunk { samples }))
+                .collect(),
+        ))
     }
 }
 
@@ -140,7 +173,9 @@ impl Plugin for StubPlugin {
         "stub"
     }
     fn register(&self, r: &mut Registry) {
-        r.format("stub").provides::<dyn Video>().provides::<dyn Audio>();
+        r.format("stub")
+            .provides::<dyn Video>()
+            .provides::<dyn Audio>();
     }
 }
 
@@ -155,20 +190,34 @@ fn cx() -> Cx {
 
 fn value(stub: Stub) -> (Arc<Stub>, Value) {
     let stub = Arc::new(stub);
-    let value: Value = Arc::new(Holder(stub.clone(), FormatId::new("stub"), ValueKey::file("clip")));
+    let value: Value = Arc::new(Holder(
+        stub.clone(),
+        FormatId::new("stub"),
+        ValueKey::file("clip"),
+    ));
     (stub, value)
 }
 
 fn target(format: &str, options: serde_json::Value) -> Target {
-    Target { format: FormatId::new(format.to_owned()), options, via: Vec::new() }
+    Target {
+        format: FormatId::new(format.to_owned()),
+        options,
+        via: Vec::new(),
+    }
 }
 
 fn stereo() -> AudioTrackInfo {
-    AudioTrackInfo { channels: 2, sample_rate: 48_000 }
+    AudioTrackInfo {
+        channels: 2,
+        sample_rate: 48_000,
+    }
 }
 
 fn mono() -> AudioTrackInfo {
-    AudioTrackInfo { channels: 1, sample_rate: 22_050 }
+    AudioTrackInfo {
+        channels: 1,
+        sample_rate: 22_050,
+    }
 }
 
 // ---------------------------------------------------------------- wav
@@ -176,7 +225,8 @@ fn mono() -> AudioTrackInfo {
 /// (channels, sample rate, samples) of a 16-bit PCM wav, checking every header field.
 fn parse_wav(bytes: &[u8]) -> (u16, u32, Vec<i16>) {
     let u16at = |at: usize| u16::from_le_bytes([bytes[at], bytes[at + 1]]);
-    let u32at = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+    let u32at =
+        |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
     assert_eq!(&bytes[0..4], b"RIFF");
     assert_eq!(u32at(4) as usize, bytes.len() - 8, "RIFF size");
     assert_eq!(&bytes[8..16], b"WAVEfmt ");
@@ -188,23 +238,37 @@ fn parse_wav(bytes: &[u8]) -> (u16, u32, Vec<i16>) {
     assert_eq!(u16at(34), 16, "bits per sample");
     assert_eq!(&bytes[36..40], b"data");
     assert_eq!(u32at(40) as usize, bytes.len() - 44, "data size");
-    let samples = bytes[44..].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+    let samples = bytes[44..]
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .collect();
     (channels, rate, samples)
 }
 
 async fn wav_of(stub: Stub, options: serde_json::Value) -> respak_core::Result<Value> {
     let cx = cx();
     let (_, value) = value(stub);
-    cx.mediator.convert(value, target("wav", options), &cx).await
+    cx.mediator
+        .convert(value, target("wav", options), &cx)
+        .await
 }
 
 fn bytes_of(value: &Value) -> Bytes {
-    value.downcast_ref::<respak_core::value::BlobData>().expect("a blob").bytes().clone()
+    value
+        .downcast_ref::<respak_core::value::BlobData>()
+        .expect("a blob")
+        .bytes()
+        .clone()
 }
 
 #[tokio::test]
 async fn a_wav_has_the_right_header_and_samples() {
-    let out = wav_of(Stub::audio(vec![(stereo(), vec![vec![0.0, 0.5, -0.5, 1.0]])]), serde_json::json!({})).await.unwrap();
+    let out = wav_of(
+        Stub::audio(vec![(stereo(), vec![vec![0.0, 0.5, -0.5, 1.0]])]),
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
     assert_eq!(out.format().name(), "wav");
     let (channels, rate, samples) = parse_wav(&bytes_of(&out));
     assert_eq!((channels, rate), (2, 48_000));
@@ -213,8 +277,21 @@ async fn a_wav_has_the_right_header_and_samples() {
 
 #[tokio::test]
 async fn samples_round_to_nearest_and_clamp() {
-    let input = vec![0.6 / 32768.0, -0.6 / 32768.0, 1.5, -2.0, f32::NAN, 0.99999, -1.0];
-    let out = wav_of(Stub::audio(vec![(mono(), vec![input])]), serde_json::json!({})).await.unwrap();
+    let input = vec![
+        0.6 / 32768.0,
+        -0.6 / 32768.0,
+        1.5,
+        -2.0,
+        f32::NAN,
+        0.99999,
+        -1.0,
+    ];
+    let out = wav_of(
+        Stub::audio(vec![(mono(), vec![input])]),
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
     let (_, _, samples) = parse_wav(&bytes_of(&out));
     // Truncating would give 0 and 0 for the first two.
     assert_eq!(samples, [1, -1, 32_767, -32_768, 0, 32_767, -32_768]);
@@ -223,16 +300,28 @@ async fn samples_round_to_nearest_and_clamp() {
 #[tokio::test]
 async fn chunk_boundaries_do_not_change_the_output() {
     let all: Vec<f32> = (0..60).map(|i| (i as f32 / 30.0) - 1.0).collect();
-    let one = wav_of(Stub::audio(vec![(stereo(), vec![all.clone()])]), serde_json::json!({})).await.unwrap();
+    let one = wav_of(
+        Stub::audio(vec![(stereo(), vec![all.clone()])]),
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap();
     let parts = vec![all[..10].to_vec(), all[10..14].to_vec(), all[14..].to_vec()];
-    let many = wav_of(Stub::audio(vec![(stereo(), parts)]), serde_json::json!({})).await.unwrap();
+    let many = wav_of(Stub::audio(vec![(stereo(), parts)]), serde_json::json!({}))
+        .await
+        .unwrap();
     assert_eq!(bytes_of(&one), bytes_of(&many));
 }
 
 #[tokio::test]
 async fn the_track_option_picks_the_track() {
-    let tracks = vec![(stereo(), vec![vec![0.5, 0.5]]), (mono(), vec![vec![-0.5, -0.25]])];
-    let out = wav_of(Stub::audio(tracks), serde_json::json!({ "track": 1 })).await.unwrap();
+    let tracks = vec![
+        (stereo(), vec![vec![0.5, 0.5]]),
+        (mono(), vec![vec![-0.5, -0.25]]),
+    ];
+    let out = wav_of(Stub::audio(tracks), serde_json::json!({ "track": 1 }))
+        .await
+        .unwrap();
     let (channels, rate, samples) = parse_wav(&bytes_of(&out));
     assert_eq!((channels, rate), (1, 22_050));
     assert_eq!(samples, [-16_384, -8_192]);
@@ -240,20 +329,43 @@ async fn the_track_option_picks_the_track() {
 
 #[tokio::test]
 async fn a_missing_track_or_no_audio_says_so() {
-    let err = wav_of(Stub::audio(vec![(stereo(), vec![vec![0.0, 0.0]])]), serde_json::json!({ "track": 1 })).await.unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::InvalidOptions { message } if message.contains("track 1") && message.contains('1')), "{err}");
+    let err = wav_of(
+        Stub::audio(vec![(stereo(), vec![vec![0.0, 0.0]])]),
+        serde_json::json!({ "track": 1 }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err.kind(), ErrorKind::InvalidOptions { message } if message.contains("track 1") && message.contains('1')),
+        "{err}"
+    );
 
-    let err = wav_of(Stub::new(), serde_json::json!({})).await.unwrap_err();
+    let err = wav_of(Stub::new(), serde_json::json!({}))
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("no audio"), "{err}");
 
-    let err = wav_of(Stub::audio(vec![(stereo(), vec![vec![0.0]])]), serde_json::json!({ "volume": 2 })).await.unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::InvalidOptions { .. }), "{err}");
+    let err = wav_of(
+        Stub::audio(vec![(stereo(), vec![vec![0.0]])]),
+        serde_json::json!({ "volume": 2 }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err.kind(), ErrorKind::InvalidOptions { .. }),
+        "{err}"
+    );
 }
 
 #[tokio::test]
 async fn a_chunk_that_is_not_whole_frames_is_corrupt() {
     // Three samples for two channels: the last frame is incomplete.
-    let err = wav_of(Stub::audio(vec![(stereo(), vec![vec![0.0, 0.0, 0.0]])]), serde_json::json!({})).await.unwrap_err();
+    let err = wav_of(
+        Stub::audio(vec![(stereo(), vec![vec![0.0, 0.0, 0.0]])]),
+        serde_json::json!({}),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
 }
 
@@ -263,15 +375,25 @@ async fn a_triggered_token_stops_the_wav_between_chunks() {
     let mut stub = Stub::audio(vec![(mono(), vec![vec![0.1; 4]; 5])]);
     stub.cancel_at = Some((2, cx.cancel.clone()));
     let (stub, value) = value(stub);
-    let err = cx.mediator.convert(value, target("wav", serde_json::json!({})), &cx).await.unwrap_err();
+    let err = cx
+        .mediator
+        .convert(value, target("wav", serde_json::json!({})), &cx)
+        .await
+        .unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Cancelled), "{err}");
-    assert_eq!(stub.polled.load(Ordering::SeqCst), 2, "no chunk is pulled after the cancel");
+    assert_eq!(
+        stub.polled.load(Ordering::SeqCst),
+        2,
+        "no chunk is pulled after the cancel"
+    );
 }
 
 // ---------------------------------------------------------------- png.frames
 
 fn decode_png(bytes: &[u8]) -> (u32, u32, Vec<u8>) {
-    let mut reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
+    let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
+        .read_info()
+        .unwrap();
     let mut buf = vec![0; reader.output_buffer_size().unwrap()];
     let info = reader.next_frame(&mut buf).unwrap();
     buf.truncate(info.buffer_size());
@@ -290,18 +412,31 @@ const BLUE: [u8; 3] = [0, 0, 255];
 async fn every_frame_becomes_a_numbered_png_in_one_bundle() {
     let cx = cx();
     let (stub, value) = value(Stub::video(&[RED, GREEN, BLUE]));
-    let out = cx.mediator.convert(value, frames_target(), &cx).await.unwrap();
+    let out = cx
+        .mediator
+        .convert(value, frames_target(), &cx)
+        .await
+        .unwrap();
 
     let bundle = out.downcast_ref::<BundleData>().expect("a bundle");
-    assert_eq!(bundle.names, ["frame_00001.png", "frame_00002.png", "frame_00003.png"]);
+    assert_eq!(
+        bundle.names,
+        ["frame_00001.png", "frame_00002.png", "frame_00003.png"]
+    );
     for (item, colour) in bundle.items.iter().zip([RED, GREEN, BLUE]) {
         assert_eq!(item.format().name(), "png");
         let (w, h, pixels) = decode_png(&bytes_of(item));
         assert_eq!((w, h), (2, 2));
-        let expected: Vec<u8> = (0..4).flat_map(|_| [colour[0], colour[1], colour[2], 255]).collect();
+        let expected: Vec<u8> = (0..4)
+            .flat_map(|_| [colour[0], colour[1], colour[2], 255])
+            .collect();
         assert_eq!(pixels, expected);
     }
-    assert_eq!(*stub.asked.lock().unwrap(), [FrameFormat::Rgba8], "frames are asked for as RGBA8, once");
+    assert_eq!(
+        *stub.asked.lock().unwrap(),
+        [FrameFormat::Rgba8],
+        "frames are asked for as RGBA8, once"
+    );
 }
 
 #[tokio::test]
@@ -309,7 +444,11 @@ async fn from_step_and_count_select_frames_but_keep_their_numbers() {
     let cx = cx();
     let (_, value_) = value(Stub::video(&[RED, GREEN, BLUE, RED, GREEN, BLUE]));
     let options = serde_json::json!({ "from": 2, "step": 2, "count": 2 });
-    let out = cx.mediator.convert(value_, target("png.frames", options), &cx).await.unwrap();
+    let out = cx
+        .mediator
+        .convert(value_, target("png.frames", options), &cx)
+        .await
+        .unwrap();
     let bundle = out.downcast_ref::<BundleData>().expect("a bundle");
     assert_eq!(bundle.names, ["frame_00002.png", "frame_00004.png"]);
     for (item, colour) in bundle.items.iter().zip([GREEN, RED]) {
@@ -323,7 +462,10 @@ async fn the_video_is_not_read_past_the_last_selected_frame() {
     let cx = cx();
     let (stub, value_) = value(Stub::video(&[RED, GREEN, BLUE, RED, GREEN]));
     let options = serde_json::json!({ "from": 2, "count": 1 });
-    cx.mediator.convert(value_, target("png.frames", options), &cx).await.unwrap();
+    cx.mediator
+        .convert(value_, target("png.frames", options), &cx)
+        .await
+        .unwrap();
     assert_eq!(stub.polled.load(Ordering::SeqCst), 2);
 }
 
@@ -337,8 +479,15 @@ async fn bad_frame_selections_are_invalid_options() {
         serde_json::json!({ "from": 9 }),
     ] {
         let (_, value_) = value(Stub::video(&[RED, GREEN]));
-        let err = cx.mediator.convert(value_, target("png.frames", options.clone()), &cx).await.unwrap_err();
-        assert!(matches!(err.kind(), ErrorKind::InvalidOptions { .. }), "{options}: {err}");
+        let err = cx
+            .mediator
+            .convert(value_, target("png.frames", options.clone()), &cx)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err.kind(), ErrorKind::InvalidOptions { .. }),
+            "{options}: {err}"
+        );
     }
 }
 
@@ -347,7 +496,10 @@ async fn frames_report_progress_before_each_frame() {
     let cx = cx();
     let mut rx = cx.mediator.subscribe();
     let (_, value) = value(Stub::video(&[RED, GREEN, BLUE]));
-    cx.mediator.convert(value, frames_target(), &cx).await.unwrap();
+    cx.mediator
+        .convert(value, frames_target(), &cx)
+        .await
+        .unwrap();
     let mut progress = Vec::new();
     while let Ok(e) = rx.try_recv() {
         if let Event::Progress { task, done, total } = e {
@@ -364,9 +516,17 @@ async fn a_triggered_token_stops_the_frames_and_returns_no_bundle() {
     let mut stub = Stub::video(&[RED, GREEN, BLUE, RED, GREEN]);
     stub.cancel_at = Some((2, cx.cancel.clone()));
     let (stub, value) = value(stub);
-    let err = cx.mediator.convert(value, frames_target(), &cx).await.unwrap_err();
+    let err = cx
+        .mediator
+        .convert(value, frames_target(), &cx)
+        .await
+        .unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Cancelled), "{err}");
-    assert_eq!(stub.polled.load(Ordering::SeqCst), 2, "no frame is pulled after the cancel");
+    assert_eq!(
+        stub.polled.load(Ordering::SeqCst),
+        2,
+        "no frame is pulled after the cancel"
+    );
 }
 
 #[tokio::test]
@@ -375,7 +535,11 @@ async fn a_truncated_video_fails_instead_of_writing_a_partial_folder() {
     let mut stub = Stub::video(&[RED, GREEN]);
     stub.truncated = true;
     let (_, value) = value(stub);
-    let err = cx.mediator.convert(value, frames_target(), &cx).await.unwrap_err();
+    let err = cx
+        .mediator
+        .convert(value, frames_target(), &cx)
+        .await
+        .unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
 }
 
@@ -385,7 +549,11 @@ async fn a_frame_of_the_wrong_size_is_corrupt() {
     let mut stub = Stub::video(&[RED]);
     stub.short_frames = true;
     let (_, value) = value(stub);
-    let err = cx.mediator.convert(value, frames_target(), &cx).await.unwrap_err();
+    let err = cx
+        .mediator
+        .convert(value, frames_target(), &cx)
+        .await
+        .unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
 }
 
@@ -393,10 +561,25 @@ async fn a_frame_of_the_wrong_size_is_corrupt() {
 async fn a_video_without_frames_is_corrupt_and_unknown_options_are_rejected() {
     let cx = cx();
     let (_, value_) = value(Stub::video(&[]));
-    let err = cx.mediator.convert(value_, frames_target(), &cx).await.unwrap_err();
+    let err = cx
+        .mediator
+        .convert(value_, frames_target(), &cx)
+        .await
+        .unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Corrupt { .. }), "{err}");
 
     let (_, value_) = value(Stub::video(&[RED]));
-    let err = cx.mediator.convert(value_, target("png.frames", serde_json::json!({ "fps": 5 })), &cx).await.unwrap_err();
-    assert!(matches!(err.kind(), ErrorKind::InvalidOptions { .. }), "{err}");
+    let err = cx
+        .mediator
+        .convert(
+            value_,
+            target("png.frames", serde_json::json!({ "fps": 5 })),
+            &cx,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err.kind(), ErrorKind::InvalidOptions { .. }),
+        "{err}"
+    );
 }

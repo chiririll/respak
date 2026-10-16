@@ -74,7 +74,9 @@ pub struct Events {
 impl Events {
     /// A channel holding up to `capacity` unread events per subscriber.
     pub fn new(capacity: usize) -> Self {
-        Self { tx: broadcast::channel(capacity.max(1)).0 }
+        Self {
+            tx: broadcast::channel(capacity.max(1)).0,
+        }
     }
 
     /// Sends `event` to every subscriber.
@@ -101,11 +103,17 @@ impl LogSubscriber {
             loop {
                 match rx.recv().await {
                     Ok(Event::Warning { message }) => tracing::warn!("{message}"),
-                    Ok(Event::RequestFailed { what, error }) => tracing::debug!("failed {what}: {error}"),
-                    Ok(Event::InputOpened { path, entries }) => tracing::info!("opened {path} ({entries} entries)"),
+                    Ok(Event::RequestFailed { what, error }) => {
+                        tracing::debug!("failed {what}: {error}")
+                    }
+                    Ok(Event::InputOpened { path, entries }) => {
+                        tracing::info!("opened {path} ({entries} entries)")
+                    }
                     Ok(Event::OutputWritten { path }) => tracing::info!("wrote {path}"),
                     Ok(event) => tracing::debug!("{event:?}"),
-                    Err(broadcast::error::RecvError::Lagged(n)) => tracing::debug!("missed {n} events"),
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::debug!("missed {n} events")
+                    }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }

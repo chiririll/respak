@@ -10,7 +10,8 @@ use nihav_core::codecs::NAStreamRef;
 use nihav_core::demuxers::StreamManager;
 use nihav_core::formats::SND_S16_FORMAT;
 use nihav_core::frame::{
-    NAAudioInfo, NACodecInfo, NACodecTypeInfo, NAPacket, NAStream, NATimeInfo, NAVideoInfo, StreamType,
+    NAAudioInfo, NACodecInfo, NACodecTypeInfo, NAPacket, NAStream, NATimeInfo, NAVideoInfo,
+    StreamType,
 };
 use nihav_core::io::byteio::FileWriter;
 use nihav_core::muxers::{create_muxer, Muxer, RegisteredMuxers};
@@ -32,17 +33,32 @@ pub struct NihavContainer {
 impl NihavContainer {
     /// AVI: MJPEG, Cinepak or ZMBV, with PCM sound.
     pub const fn avi() -> Self {
-        Self { name: "avi", muxer: "avi", codecs: &["mjpeg", "cinepak", "zmbv"], audio: true }
+        Self {
+            name: "avi",
+            muxer: "avi",
+            codecs: &["mjpeg", "cinepak", "zmbv"],
+            audio: true,
+        }
     }
 
     /// QuickTime MOV: MJPEG or Cinepak, with PCM sound.
     pub const fn mov() -> Self {
-        Self { name: "mov", muxer: "mov", codecs: &["mjpeg", "cinepak"], audio: true }
+        Self {
+            name: "mov",
+            muxer: "mov",
+            codecs: &["mjpeg", "cinepak"],
+            audio: true,
+        }
     }
 
     /// YUV4MPEG2: raw planar video, no sound.
     pub const fn y4m() -> Self {
-        Self { name: "y4m", muxer: "yuv4mpeg", codecs: &["rawvideo"], audio: false }
+        Self {
+            name: "y4m",
+            muxer: "yuv4mpeg",
+            codecs: &["rawvideo"],
+            audio: false,
+        }
     }
 }
 
@@ -78,7 +94,8 @@ impl Container for NihavContainer {
             })?;
         guarded(step, || {
             let (num, den) = setup.fps;
-            let vinfo = NAVideoInfo::new(setup.size.0 as usize, setup.size.1 as usize, false, format);
+            let vinfo =
+                NAVideoInfo::new(setup.size.0 as usize, setup.size.1 as usize, false, format);
             let vcodec = NACodecInfo::new(codec, NACodecTypeInfo::Video(vinfo), None);
             let mut streams = StreamManager::new();
             streams.add_stream(NAStream::new(StreamType::Video, 0, vcodec, den, num, 0));
@@ -86,19 +103,32 @@ impl Container for NihavContainer {
             if let Some(a) = audio {
                 let ainfo = NAAudioInfo::new(a.sample_rate, a.channels as u8, SND_S16_FORMAT, 0);
                 let acodec = NACodecInfo::new("pcm", NACodecTypeInfo::Audio(ainfo), None);
-                streams.add_stream(NAStream::new(StreamType::Audio, 1, acodec, 1, a.sample_rate, 0));
+                streams.add_stream(NAStream::new(
+                    StreamType::Audio,
+                    1,
+                    acodec,
+                    1,
+                    a.sample_rate,
+                    0,
+                ));
             }
 
             {
                 // A buffer in front of the file; it flushes before every seek, so the header
                 // patches at the end land in the right place (and when it is dropped).
-                let mut writer = FileWriter::new_write(BufWriter::with_capacity(1 << 20, &mut *file));
+                let mut writer =
+                    FileWriter::new_write(BufWriter::with_capacity(1 << 20, &mut *file));
                 let mut registry = RegisteredMuxers::new();
                 nihav_commonfmt::generic_register_all_muxers(&mut registry);
-                let creator = registry.find_muxer(self.muxer).ok_or_else(|| backend(step, "not built in"))?;
-                let mut muxer = create_muxer(creator, streams, &mut writer).map_err(|e| backend(step, e))?;
+                let creator = registry
+                    .find_muxer(self.muxer)
+                    .ok_or_else(|| backend(step, "not built in"))?;
+                let mut muxer =
+                    create_muxer(creator, streams, &mut writer).map_err(|e| backend(step, e))?;
 
-                let video = muxer.get_stream(0).ok_or_else(|| backend(step, "no video stream"))?;
+                let video = muxer
+                    .get_stream(0)
+                    .ok_or_else(|| backend(step, "no video stream"))?;
                 let audio_stream = muxer.get_stream(1);
                 let mut sink = Sink {
                     step,
@@ -139,15 +169,26 @@ impl PacketSink for Sink<'_, '_> {
         let ts = NATimeInfo::new(Some(self.frame), None, Some(1), self.fps.1, self.fps.0);
         self.frame += 1;
         let packet = NAPacket::new(self.video.clone(), ts, packet.keyframe, packet.data);
-        self.muxer.mux_frame(packet).map_err(|e| backend(self.step, e))
+        self.muxer
+            .mux_frame(packet)
+            .map_err(|e| backend(self.step, e))
     }
 
     fn audio(&mut self, pcm: &[u8]) -> Result<()> {
-        let Some(stream) = self.audio.clone() else { return Ok(()) };
+        let Some(stream) = self.audio.clone() else {
+            return Ok(());
+        };
         let frames = (pcm.len() / self.block) as u64;
         let ts = NATimeInfo::new(Some(self.samples), None, Some(frames), 1, self.sample_rate);
         self.samples += frames;
-        let packet = NAPacket::new(stream, ts, true, pcm[..frames as usize * self.block].to_vec());
-        self.muxer.mux_frame(packet).map_err(|e| backend(self.step, e))
+        let packet = NAPacket::new(
+            stream,
+            ts,
+            true,
+            pcm[..frames as usize * self.block].to_vec(),
+        );
+        self.muxer
+            .mux_frame(packet)
+            .map_err(|e| backend(self.step, e))
     }
 }

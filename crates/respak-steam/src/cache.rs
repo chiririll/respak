@@ -35,19 +35,30 @@ pub struct ChunkCache {
 }
 
 fn io_error(path: &Path, e: impl ToString) -> Error {
-    Error::Account { path: path.display().to_string(), message: e.to_string() }
+    Error::Account {
+        path: path.display().to_string(),
+        message: e.to_string(),
+    }
 }
 
 /// Every file under `dir/<depot>/` with its size and mtime.
 fn scan(dir: &Path) -> Vec<(PathBuf, u64, SystemTime)> {
     let mut out = Vec::new();
-    let Ok(depots) = fs::read_dir(dir) else { return out };
+    let Ok(depots) = fs::read_dir(dir) else {
+        return out;
+    };
     for depot in depots.flatten() {
-        let Ok(files) = fs::read_dir(depot.path()) else { continue };
+        let Ok(files) = fs::read_dir(depot.path()) else {
+            continue;
+        };
         for file in files.flatten() {
             if let Ok(meta) = file.metadata() {
                 if meta.is_file() {
-                    out.push((file.path(), meta.len(), meta.modified().unwrap_or(SystemTime::UNIX_EPOCH)));
+                    out.push((
+                        file.path(),
+                        meta.len(),
+                        meta.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                    ));
                 }
             }
         }
@@ -61,7 +72,14 @@ impl ChunkCache {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir).map_err(|e| io_error(&dir, e))?;
         let size = scan(&dir).iter().map(|(_, len, _)| len).sum();
-        Ok(Self { inner: Arc::new(Inner { dir, cap, size: AtomicU64::new(size), evicting: Default::default() }) })
+        Ok(Self {
+            inner: Arc::new(Inner {
+                dir,
+                cap,
+                size: AtomicU64::new(size),
+                evicting: Default::default(),
+            }),
+        })
     }
 
     /// Where a chunk lives.
@@ -110,7 +128,9 @@ impl ChunkCache {
             let tmp = path.with_extension("tmp");
             fs::write(&tmp, &data).map_err(|e| io_error(&tmp, e))?;
             fs::rename(&tmp, &path).map_err(|e| io_error(&path, e))?;
-            let size = inner.size.fetch_add(data.len() as u64, Ordering::Relaxed) + data.len() as u64 - old;
+            let size = inner.size.fetch_add(data.len() as u64, Ordering::Relaxed)
+                + data.len() as u64
+                - old;
             if old > 0 {
                 inner.size.fetch_sub(old, Ordering::Relaxed);
             }
@@ -152,12 +172,24 @@ mod tests {
     fn chunk(n: u8, body: &[u8]) -> (ChunkRef, Bytes) {
         let mut sha = [0u8; 20];
         sha[0] = n;
-        (ChunkRef { sha, offset: 0, len: body.len() as u32, adler: SteamAdler32::compute(body).0 }, Bytes::copy_from_slice(body))
+        (
+            ChunkRef {
+                sha,
+                offset: 0,
+                len: body.len() as u32,
+                adler: SteamAdler32::compute(body).0,
+            },
+            Bytes::copy_from_slice(body),
+        )
     }
 
     fn age(cache: &ChunkCache, depot: u32, c: &ChunkRef, secs: u64) {
-        let file = fs::File::options().write(true).open(cache.path_of(depot, &c.sha)).unwrap();
-        file.set_modified(SystemTime::now() - Duration::from_secs(secs)).unwrap();
+        let file = fs::File::options()
+            .write(true)
+            .open(cache.path_of(depot, &c.sha))
+            .unwrap();
+        file.set_modified(SystemTime::now() - Duration::from_secs(secs))
+            .unwrap();
     }
 
     #[tokio::test]
@@ -168,10 +200,17 @@ mod tests {
         assert!(cache.get(7, &c).await.is_none());
         cache.put(7, &c, &data).await.unwrap();
         assert_eq!(cache.get(7, &c).await.unwrap(), data);
-        assert!(cache.get(8, &c).await.is_none(), "chunks are not shared across depots");
+        assert!(
+            cache.get(8, &c).await.is_none(),
+            "chunks are not shared across depots"
+        );
         assert_eq!(cache.size(), data.len() as u64);
         cache.put(7, &c, &data).await.unwrap();
-        assert_eq!(cache.size(), data.len() as u64, "storing the same chunk twice counts once");
+        assert_eq!(
+            cache.size(),
+            data.len() as u64,
+            "storing the same chunk twice counts once"
+        );
     }
 
     #[tokio::test]
@@ -203,7 +242,10 @@ mod tests {
         let (c4, d4) = chunk(9, &[9; 100]);
         cache.put(1, &c4, &d4).await.unwrap();
         assert!(cache.size() <= 300);
-        assert!(cache.get(1, &chunks[0].0).await.is_none(), "the oldest went first");
+        assert!(
+            cache.get(1, &chunks[0].0).await.is_none(),
+            "the oldest went first"
+        );
         assert!(cache.get(1, &c4).await.is_some(), "the new chunk stays");
         assert!(cache.get(1, &chunks[2].0).await.is_some());
     }
@@ -219,9 +261,15 @@ mod tests {
         age(&cache, 1, &a, 100);
         age(&cache, 1, &b, 50);
         age(&cache, 1, &c, 10);
-        assert!(cache.get(1, &a).await.is_some(), "the hit makes a the newest");
+        assert!(
+            cache.get(1, &a).await.is_some(),
+            "the hit makes a the newest"
+        );
         cache.put(1, &d, &dd).await.unwrap();
-        assert!(cache.get(1, &b).await.is_none() && cache.get(1, &c).await.is_none(), "b and c were the oldest");
+        assert!(
+            cache.get(1, &b).await.is_none() && cache.get(1, &c).await.is_none(),
+            "b and c were the oldest"
+        );
         assert!(cache.get(1, &a).await.is_some() && cache.get(1, &d).await.is_some());
     }
 

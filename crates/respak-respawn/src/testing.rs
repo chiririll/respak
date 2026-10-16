@@ -13,7 +13,12 @@ pub struct TestAsset {
 
 impl TestAsset {
     pub fn new(guid: u64, kind: &[u8; 4], version: u32, header: &[u8]) -> Self {
-        Self { guid, kind: *kind, version, header: header.to_vec() }
+        Self {
+            guid,
+            kind: *kind,
+            version,
+            header: header.to_vec(),
+        }
     }
 }
 
@@ -178,7 +183,9 @@ impl EditScript {
 
     /// Command 4, 5 or 6: one byte (two for 6) of replacement, then a copy of 3, 7 or 6 bytes.
     pub fn patched_copy(&mut self, command: u8, replacement: &[u8]) -> &mut Self {
-        assert!((4..=6).contains(&command) && replacement.len() == if command == 6 { 2 } else { 1 });
+        assert!(
+            (4..=6).contains(&command) && replacement.len() == if command == 6 { 2 } else { 1 }
+        );
         self.replacement.extend_from_slice(replacement);
         self.code(command);
         self
@@ -198,7 +205,12 @@ impl EditScript {
         word.extend(&self.bits);
         let mut bits: Vec<u8> = word
             .chunks(8)
-            .map(|chunk| chunk.iter().enumerate().fold(0u8, |b, (i, &set)| b | u8::from(set) << i))
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .enumerate()
+                    .fold(0u8, |b, (i, &set)| b | u8::from(set) << i)
+            })
             .collect();
         while bits.len() < 8 {
             bits.push(0);
@@ -229,7 +241,12 @@ pub struct RawAsset {
 }
 
 /// Builds a pak from explicit pages, a pointer table and raw asset entries (uncompressed).
-pub fn build_raw(version: u16, pages: &[Vec<u8>], pointers: &[(u32, u32)], assets: &[RawAsset]) -> Vec<u8> {
+pub fn build_raw(
+    version: u16,
+    pages: &[Vec<u8>],
+    pointers: &[(u32, u32)],
+    assets: &[RawAsset],
+) -> Vec<u8> {
     build_raw_with(version, pages, pointers, assets, &[], &[])
 }
 
@@ -243,7 +260,15 @@ pub fn build_raw_with(
     starpaks: &[&str],
     opt_starpaks: &[&str],
 ) -> Vec<u8> {
-    build_raw_inner(version, pages, pointers, assets, starpaks, opt_starpaks, None)
+    build_raw_inner(
+        version,
+        pages,
+        pointers,
+        assets,
+        starpaks,
+        opt_starpaks,
+        None,
+    )
 }
 
 /// The patch part of a patch file: which pages it does not store, which files are below it, and
@@ -278,8 +303,20 @@ fn build_raw_inner(
     opt_starpaks: &[&str],
     patch: Option<&PatchSpec>,
 ) -> Vec<u8> {
-    let list = |paths: &[&str]| paths.iter().flat_map(|p| p.bytes().chain([0])).collect::<Vec<u8>>();
-    let (starpaks, opt_starpaks) = (list(starpaks), if version == 8 { list(opt_starpaks) } else { Vec::new() });
+    let list = |paths: &[&str]| {
+        paths
+            .iter()
+            .flat_map(|p| p.bytes().chain([0]))
+            .collect::<Vec<u8>>()
+    };
+    let (starpaks, opt_starpaks) = (
+        list(starpaks),
+        if version == 8 {
+            list(opt_starpaks)
+        } else {
+            Vec::new()
+        },
+    );
     let header_len = if version == 8 { 0x80 } else { 0x58 };
     let entry_len = if version == 8 { 0x50 } else { 0x48 };
     let mut body = Vec::new();
@@ -331,7 +368,10 @@ fn build_raw_inner(
     if let Some(patch) = patch {
         body.extend_from_slice(&patch.stream);
     }
-    for p in pages.get(patch.map_or(0, |p| p.patch_pages as usize)..).unwrap_or_default() {
+    for p in pages
+        .get(patch.map_or(0, |p| p.patch_pages as usize)..)
+        .unwrap_or_default()
+    {
         body.extend_from_slice(p);
     }
 
@@ -341,7 +381,11 @@ fn build_raw_inner(
     put(&mut h, 4, &version.to_le_bytes());
     put(&mut h, 0x18, &total.to_le_bytes());
     let patch_count = patch.map_or(0, |p| p.indices.len() as i16);
-    let (np, nptr, na) = (pages.len() as u32, pointers.len() as i32, assets.len() as i32);
+    let (np, nptr, na) = (
+        pages.len() as u32,
+        pointers.len() as i32,
+        assets.len() as i32,
+    );
     match version {
         6 => {
             put(&mut h, 0x30, &(starpaks.len() as i32).to_le_bytes());
@@ -402,7 +446,15 @@ pub struct TexSpec {
 }
 
 impl TexSpec {
-    pub fn new(guid: u64, version: u32, w: u16, h: u16, format: u16, permanent: u8, data: Vec<u8>) -> Self {
+    pub fn new(
+        guid: u64,
+        version: u32,
+        w: u16,
+        h: u16,
+        format: u16,
+        permanent: u8,
+        data: Vec<u8>,
+    ) -> Self {
         Self {
             guid,
             version,
@@ -463,7 +515,13 @@ impl TexSpec {
 
 /// Appends one texture to the header page (`headers`), the data page (`misc`), the pointer table
 /// and the asset table.
-fn push_texture(t: &TexSpec, headers: &mut Vec<u8>, misc: &mut Vec<u8>, pointers: &mut Vec<(u32, u32)>, assets: &mut Vec<RawAsset>) {
+fn push_texture(
+    t: &TexSpec,
+    headers: &mut Vec<u8>,
+    misc: &mut Vec<u8>,
+    pointers: &mut Vec<(u32, u32)>,
+    assets: &mut Vec<RawAsset>,
+) {
     let name_offset = t.name.map(|n| {
         let at = misc.len() as u32;
         misc.extend_from_slice(n.as_bytes());
@@ -500,11 +558,19 @@ const TEX_OPT_STARPAKS: [&str; 1] = ["paks/Win64/opt.starpak"];
 
 /// A pak with `txtr` assets: page 0 holds the headers, page 1 the names and CPU data.
 pub fn build_tex_pak(pak_version: u16, textures: &[TexSpec]) -> Vec<u8> {
-    let (mut headers, mut misc, mut pointers, mut assets) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut headers, mut misc, mut pointers, mut assets) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for t in textures {
         push_texture(t, &mut headers, &mut misc, &mut pointers, &mut assets);
     }
-    build_raw_with(pak_version, &[headers, misc], &pointers, &assets, &TEX_STARPAKS, &TEX_OPT_STARPAKS)
+    build_raw_with(
+        pak_version,
+        &[headers, misc],
+        &pointers,
+        &assets,
+        &TEX_STARPAKS,
+        &TEX_OPT_STARPAKS,
+    )
 }
 
 /// One sprite of a [`UimgSpec`].
@@ -536,7 +602,8 @@ pub struct UimgSpec {
 /// A pak with `txtr` and `uimg` assets (the textures first). Page 0 holds the headers, page 1 the
 /// arrays, names and CPU data.
 pub fn build_uimg_pak(pak_version: u16, textures: &[TexSpec], atlases: &[UimgSpec]) -> Vec<u8> {
-    let (mut headers, mut misc, mut pointers, mut assets) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut headers, mut misc, mut pointers, mut assets) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for t in textures {
         push_texture(t, &mut headers, &mut misc, &mut pointers, &mut assets);
     }
@@ -547,7 +614,8 @@ pub fn build_uimg_pak(pak_version: u16, textures: &[TexSpec], atlases: &[UimgSpe
     };
     for a in atlases {
         let n = a.sprites.len();
-        let (stride, mut names_blob, mut hashes) = (if a.version == 10 { 8 } else { 12 }, Vec::new(), Vec::new());
+        let (stride, mut names_blob, mut hashes) =
+            (if a.version == 10 { 8 } else { 12 }, Vec::new(), Vec::new());
         let (mut offsets, mut dims, mut bounds) = (Vec::new(), Vec::new(), Vec::new());
         for s in &a.sprites {
             let at = names_blob.len() as u32;
@@ -574,8 +642,13 @@ pub fn build_uimg_pak(pak_version: u16, textures: &[TexSpec], atlases: &[UimgSpe
             pad(&mut misc);
             at
         };
-        let (offsets_at, dims_at, hashes_at, names_at, cpu_at) =
-            (place(&offsets), place(&dims), place(&hashes), place(&names_blob), place(&bounds));
+        let (offsets_at, dims_at, hashes_at, names_at, cpu_at) = (
+            place(&offsets),
+            place(&dims),
+            place(&hashes),
+            place(&names_blob),
+            place(&bounds),
+        );
 
         let mut h = vec![0u8; 0x40];
         put(&mut h, 0, &(1.0 / f32::from(a.width)).to_le_bytes());
@@ -586,7 +659,12 @@ pub fn build_uimg_pak(pak_version: u16, textures: &[TexSpec], atlases: &[UimgSpe
         put(&mut h, 0x20, &[0xFF; 8]);
         put(&mut h, 0x38, &a.atlas_guid.to_le_bytes());
         let head_offset = headers.len() as u32;
-        let slots = [(0x10, Some(offsets_at)), (0x18, Some(dims_at)), (0x28, Some(hashes_at)), (0x30, a.names.then_some(names_at))];
+        let slots = [
+            (0x10, Some(offsets_at)),
+            (0x18, Some(dims_at)),
+            (0x28, Some(hashes_at)),
+            (0x30, a.names.then_some(names_at)),
+        ];
         for (slot, target) in slots {
             match target {
                 Some(t) => {
@@ -609,7 +687,14 @@ pub fn build_uimg_pak(pak_version: u16, textures: &[TexSpec], atlases: &[UimgSpe
             opt_starpak: -1,
         });
     }
-    build_raw_with(pak_version, &[headers, misc], &pointers, &assets, &TEX_STARPAKS, &TEX_OPT_STARPAKS)
+    build_raw_with(
+        pak_version,
+        &[headers, misc],
+        &pointers,
+        &assets,
+        &TEX_STARPAKS,
+        &TEX_OPT_STARPAKS,
+    )
 }
 
 /// A starpak file: the entries at their offsets (zero-filled between), then the table of
@@ -663,7 +748,11 @@ pub fn oodle_pak(plain: &[u8], restart_blocks: usize, pad_to: usize) -> Vec<u8> 
     put(&mut out, 6, &flags.to_le_bytes());
     put(&mut out, 0x18, &(stream.len() as i64).to_le_bytes());
     let decompressed = (header_len + body.len()) as i64;
-    put(&mut out, if version == 8 { 0x30 } else { 0x28 }, &decompressed.to_le_bytes());
+    put(
+        &mut out,
+        if version == 8 { 0x30 } else { 0x28 },
+        &decompressed.to_le_bytes(),
+    );
     out.extend_from_slice(&stream);
     out
 }
@@ -735,7 +824,15 @@ impl PakBuilder {
 
     /// Adds an asset. `pointers` are `(slot offset in header, target offset in page 1)`; `data`
     /// is the page-1 offset of the asset's CPU data.
-    pub fn asset(&mut self, guid: u64, kind: &[u8; 4], version: u32, mut header: Vec<u8>, pointers: &[(usize, u32)], data: Option<u32>) {
+    pub fn asset(
+        &mut self,
+        guid: u64,
+        kind: &[u8; 4],
+        version: u32,
+        mut header: Vec<u8>,
+        pointers: &[(usize, u32)],
+        data: Option<u32>,
+    ) {
         for &(slot, target) in pointers {
             header[slot..slot + 4].copy_from_slice(&1u32.to_le_bytes());
             header[slot + 4..slot + 8].copy_from_slice(&target.to_le_bytes());
@@ -770,14 +867,22 @@ impl PakBuilder {
         put(&mut h, 0x74, &256u16.to_le_bytes());
         put(&mut h, 0x76, &1u16.to_le_bytes());
         let name_at = self.string(name);
-        let array: Vec<u8> = textures.iter().flat_map(|g| g.to_le_bytes()).chain([0; 8]).collect();
+        let array: Vec<u8> = textures
+            .iter()
+            .flat_map(|g| g.to_le_bytes())
+            .chain([0; 8])
+            .collect();
         let array_at = self.data(&array);
         self.asset(
             guid,
             b"matl",
             16,
             h,
-            &[(0x18, name_at), (0x60, array_at), (0x68, array_at + 8 * textures.len() as u32)],
+            &[
+                (0x18, name_at),
+                (0x60, array_at),
+                (0x68, array_at + 8 * textures.len() as u32),
+            ],
             None,
         );
     }
@@ -795,20 +900,33 @@ impl PakBuilder {
         let entry = vec![0u8; 16];
         let entry_at = self.data(&entry);
         self.data_pointer(entry_at, code_at);
-        self.misc[entry_at as usize + 8..entry_at as usize + 12].copy_from_slice(&(bytecode.len() as i32).to_le_bytes());
+        self.misc[entry_at as usize + 8..entry_at as usize + 12]
+            .copy_from_slice(&(bytecode.len() as i32).to_le_bytes());
         self.asset(guid, b"shdr", 12, vec![0u8; 32], &[], Some(entry_at));
     }
 
     /// A `dtbl` of asset `version` (0 or 1); `wide` uses the V1.1 column record (0x18 bytes).
     /// Columns are `(name, type)`; cells are packed in column order, the row stride is their sum.
-    pub fn dtbl(&mut self, guid: u64, version: u32, wide: bool, columns: &[(&str, i32)], rows: &[Vec<DtblCell>]) {
+    pub fn dtbl(
+        &mut self,
+        guid: u64,
+        version: u32,
+        wide: bool,
+        columns: &[(&str, i32)],
+        rows: &[Vec<DtblCell>],
+    ) {
         let size = |ty: i32| match ty {
             0 => 1,
             1 | 2 => 4,
             3 => 12,
             _ => 8,
         };
-        let offsets: Vec<u32> = columns.iter().scan(0, |at, &(_, ty)| Some(std::mem::replace(at, *at + size(ty)))).collect();
+        let offsets: Vec<u32> = columns
+            .iter()
+            .scan(0, |at, &(_, ty)| {
+                Some(std::mem::replace(at, *at + size(ty)))
+            })
+            .collect();
         let stride = columns.iter().map(|&(_, ty)| size(ty)).sum::<u32>();
         let record = if wide { 0x18 } else { 0x10 };
 
@@ -852,13 +970,29 @@ impl PakBuilder {
         let mut h = vec![0u8; if version == 0 { 0x20 } else { 0x28 }];
         put(&mut h, 0, &(columns.len() as i32).to_le_bytes());
         put(&mut h, 4, &(rows.len() as i32).to_le_bytes());
-        put(&mut h, if version == 0 { 0x18 } else { 0x20 }, &stride.to_le_bytes());
-        self.asset(guid, b"dtbl", version, h, &[(0x08, records_at), (0x10, rows_at)], None);
+        put(
+            &mut h,
+            if version == 0 { 0x18 } else { 0x20 },
+            &stride.to_le_bytes(),
+        );
+        self.asset(
+            guid,
+            b"dtbl",
+            version,
+            h,
+            &[(0x08, records_at), (0x10, rows_at)],
+            None,
+        );
     }
 
     /// The pak file.
     pub fn build(self, pak_version: u16) -> Vec<u8> {
-        build_raw(pak_version, &[self.heads, self.misc], &self.pointers, &self.assets)
+        build_raw(
+            pak_version,
+            &[self.heads, self.misc],
+            &self.pointers,
+            &self.assets,
+        )
     }
 }
 
@@ -930,7 +1064,7 @@ pub mod rmdl {
         put16(&mut b, 0x74, 2);
         put16(&mut b, 0x76, 0x100); // bonehdr
         put16(&mut b, 0x78, 0x140); // bonedata
-        // bonehdr[i]: sznameindex at +10, relative to the bonehdr.
+                                    // bonehdr[i]: sznameindex at +10, relative to the bonehdr.
         for (i, name) in ["root", "arm"].iter().enumerate() {
             let h = 0x100 + i * 12;
             let at = 0x3A0 + i * 8;
@@ -1012,7 +1146,6 @@ pub mod rmdl {
         b
     }
 
-
     /// Flags for: a position form (1 = `Vec3`, 2 = `Vector64`), packed blend, colour, `uvs` UV layers.
     pub fn flags(position: u64, blend: bool, color: bool, uvs: u64) -> u64 {
         let mut f = position;
@@ -1092,8 +1225,22 @@ pub mod rmdl {
     }
 
     /// A group with one LOD of one mesh.
-    pub fn vg_single(flags: u64, stride: u16, vert_count: u32, verts: &[u8], indices: &[u16], extra: &[u8]) -> Vec<u8> {
-        vg(&[vec![VgMeshSpec { flags, stride, vert_count, verts: verts.to_vec(), indices: indices.to_vec(), extra: extra.to_vec() }]])
+    pub fn vg_single(
+        flags: u64,
+        stride: u16,
+        vert_count: u32,
+        verts: &[u8],
+        indices: &[u16],
+        extra: &[u8],
+    ) -> Vec<u8> {
+        vg(&[vec![VgMeshSpec {
+            flags,
+            stride,
+            vert_count,
+            verts: verts.to_vec(),
+            indices: indices.to_vec(),
+            extra: extra.to_vec(),
+        }]])
     }
 }
 
@@ -1105,7 +1252,14 @@ impl PakBuilder {
     }
 
     /// Like [`PakBuilder::rmdl_without_vertex_data`] but listing the animation sequences `seqs`.
-    pub fn rmdl_with_sequences(&mut self, guid: u64, name: &str, major: u32, studio: &[u8], seqs: &[u64]) {
+    pub fn rmdl_with_sequences(
+        &mut self,
+        guid: u64,
+        name: &str,
+        major: u32,
+        studio: &[u8],
+        seqs: &[u64],
+    ) {
         self.rmdl_inner(guid, name, major, studio, None, seqs);
     }
 
@@ -1114,7 +1268,15 @@ impl PakBuilder {
         self.rmdl_inner(guid, name, major, studio, None, &[]);
     }
 
-    fn rmdl_inner(&mut self, guid: u64, name: &str, major: u32, studio: &[u8], vg: Option<&[u8]>, seqs: &[u64]) {
+    fn rmdl_inner(
+        &mut self,
+        guid: u64,
+        name: &str,
+        major: u32,
+        studio: &[u8],
+        vg: Option<&[u8]>,
+        seqs: &[u64],
+    ) {
         let studio_at = self.data(studio);
         let name_at = self.string(name);
         let vg_at = vg.map(|v| self.data(v));
@@ -1122,7 +1284,11 @@ impl PakBuilder {
         put(&mut cpu, 12, &(studio.len() as i32).to_le_bytes());
         let cpu_at = self.data(&cpu);
         let mut h = vec![0u8; 96];
-        put(&mut h, 0x2C, &(vg.map_or(0, <[u8]>::len) as u32).to_le_bytes());
+        put(
+            &mut h,
+            0x2C,
+            &(vg.map_or(0, <[u8]>::len) as u32).to_le_bytes(),
+        );
         put(&mut h, 0x30, &(-1.0f32).to_le_bytes());
         put(&mut h, 0x3C, &1.0f32.to_le_bytes());
         let mut pointers = vec![(0x00, studio_at), (0x08, name_at)];
@@ -1150,7 +1316,10 @@ pub mod aseq {
         }
         let bits = v.to_bits();
         let exponent = ((bits >> 23) & 0xFF) as i32 - 127 + 15;
-        assert!((1..31).contains(&exponent), "{v} is not a normal half float");
+        assert!(
+            (1..31).contains(&exponent),
+            "{v} is not a normal half float"
+        );
         (((bits >> 16) & 0x8000) as u16) | ((exponent as u16) << 10) | ((bits >> 13) & 0x3FF) as u16
     }
 
@@ -1165,8 +1334,10 @@ pub mod aseq {
 
     /// A `Quaternion64` from `[x, y, z, w]`.
     pub fn quat64(q: [f32; 4]) -> [u8; 8] {
-        let axis = |v: f32| ((v * 1_048_576.5 + 1_048_576.0).round() as i64).clamp(0, 0x1F_FFFF) as u64;
-        let packed = axis(q[0]) | (axis(q[1]) << 21) | (axis(q[2]) << 42) | (u64::from(q[3] < 0.0) << 63);
+        let axis =
+            |v: f32| ((v * 1_048_576.5 + 1_048_576.0).round() as i64).clamp(0, 0x1F_FFFF) as u64;
+        let packed =
+            axis(q[0]) | (axis(q[1]) << 21) | (axis(q[2]) << 42) | (u64::from(q[3] < 0.0) << 63);
         packed.to_le_bytes()
     }
 
@@ -1186,7 +1357,9 @@ pub mod aseq {
 
     /// A bone's header (`size`, `tracked`: 0x1 scale, 0x2 rotation, 0x4 position) and its `data`.
     pub fn bone(tracked: u8, data: &[u8]) -> Vec<u8> {
-        let mut out = ((data.len() as u16 + 2) | (u16::from(tracked) << 13)).to_le_bytes().to_vec();
+        let mut out = ((data.len() as u16 + 2) | (u16::from(tracked) << 13))
+            .to_le_bytes()
+            .to_vec();
         out.extend_from_slice(data);
         out
     }
@@ -1278,7 +1451,14 @@ pub mod aseq {
     impl Seq {
         /// No scale, all weights one, no autolayers.
         pub fn new(label: &str, anims: Vec<Anim>) -> Self {
-            Self { label: label.into(), flags: 0, group: None, weights: Weights::One, autolayers: Vec::new(), anims }
+            Self {
+                label: label.into(),
+                flags: 0,
+                group: None,
+                weights: Weights::One,
+                autolayers: Vec::new(),
+                anims,
+            }
         }
     }
 
@@ -1343,7 +1523,11 @@ pub mod aseq {
 
     /// A `mstudioframemovement_t`: `scale` (x, y, z, yaw), the frames per section, and per section
     /// the four tracks (x, y, z, yaw; `None` = no track).
-    pub fn movement(scale: [f32; 4], section_frames: i32, sections: &[[Option<Vec<u8>>; 4]]) -> Vec<u8> {
+    pub fn movement(
+        scale: [f32; 4],
+        section_frames: i32,
+        sections: &[[Option<Vec<u8>>; 4]],
+    ) -> Vec<u8> {
         let mut out = vec![0u8; 0x14 + 2 * sections.len()];
         for (i, s) in scale.iter().enumerate() {
             put(&mut out, 4 * i, &s.to_le_bytes());
@@ -1374,7 +1558,15 @@ pub mod aseq {
 impl PakBuilder {
     /// A sequence of asset `version` (12 to 14; 64-byte header) whose data block is `block` (see
     /// [`aseq::seq_block`]), listing `models`, with `extra` as its `dataExtra`.
-    pub fn aseq(&mut self, guid: u64, name: &str, version: u32, block: &[u8], models: &[u64], extra: Option<&[u8]>) {
+    pub fn aseq(
+        &mut self,
+        guid: u64,
+        name: &str,
+        version: u32,
+        block: &[u8],
+        models: &[u64],
+        extra: Option<&[u8]>,
+    ) {
         let block_at = self.data(block);
         let name_at = self.string(name);
         let mut h = vec![0u8; 64];

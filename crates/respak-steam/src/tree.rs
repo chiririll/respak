@@ -41,7 +41,11 @@ pub struct TreeEntry {
 
 /// Lowercased lookup key of a path: no leading, trailing or doubled slashes.
 fn key(path: &str) -> String {
-    path.split(['/', '\\']).filter(|s| !s.is_empty()).collect::<Vec<_>>().join("/").to_lowercase()
+    path.split(['/', '\\'])
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+        .to_lowercase()
 }
 
 /// The merged tree.
@@ -65,14 +69,29 @@ impl DepotTree {
             }
             let mut dir = String::new();
             for (i, part) in parts.iter().enumerate() {
-                let child = if dir.is_empty() { part.to_lowercase() } else { format!("{dir}/{}", part.to_lowercase()) };
-                self.children.entry(dir.clone()).or_default().entry(child.clone()).or_insert_with(|| part.to_string());
+                let child = if dir.is_empty() {
+                    part.to_lowercase()
+                } else {
+                    format!("{dir}/{}", part.to_lowercase())
+                };
+                self.children
+                    .entry(dir.clone())
+                    .or_default()
+                    .entry(child.clone())
+                    .or_insert_with(|| part.to_string());
                 if i + 1 < parts.len() {
                     self.dirs.insert(child.clone(), ());
                 }
                 dir = child;
             }
-            self.files.insert(dir, TreeFile { depot, manifest, file: DepotFile { path, ..file } });
+            self.files.insert(
+                dir,
+                TreeFile {
+                    depot,
+                    manifest,
+                    file: DepotFile { path, ..file },
+                },
+            );
         }
     }
 
@@ -96,8 +115,16 @@ impl DepotTree {
         let mut out: Vec<TreeEntry> = kids
             .iter()
             .map(|(k, name)| match self.files.get(k) {
-                Some(f) => TreeEntry { name: name.clone(), is_dir: false, size: f.file.size },
-                None => TreeEntry { name: name.clone(), is_dir: true, size: 0 },
+                Some(f) => TreeEntry {
+                    name: name.clone(),
+                    is_dir: false,
+                    size: f.file.size,
+                },
+                None => TreeEntry {
+                    name: name.clone(),
+                    is_dir: true,
+                    size: 0,
+                },
             })
             .collect();
         out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -115,7 +142,11 @@ mod tests {
     use super::*;
 
     fn f(path: &str, size: u64) -> DepotFile {
-        DepotFile { path: path.into(), size, chunks: Arc::from(vec![]) }
+        DepotFile {
+            path: path.into(),
+            size,
+            chunks: Arc::from(vec![]),
+        }
     }
 
     #[test]
@@ -134,7 +165,10 @@ mod tests {
         t.add(1, 1, vec![f("Paks\\Win64\\Common.rpak", 9)]);
         assert!(t.file("paks/win64/common.rpak").is_some());
         assert!(t.file("PAKS/WIN64/COMMON.RPAK").is_some());
-        assert_eq!(t.file("paks/win64/common.rpak").unwrap().file.path, "Paks/Win64/Common.rpak");
+        assert_eq!(
+            t.file("paks/win64/common.rpak").unwrap().file.path,
+            "Paks/Win64/Common.rpak"
+        );
         assert!(t.file("paks/win64").is_none());
         assert!(t.file("nope").is_none());
     }
@@ -151,19 +185,43 @@ mod tests {
     #[test]
     fn list_gives_sorted_children_with_directories() {
         let mut t = DepotTree::default();
-        t.add(1, 1, vec![f("b.txt", 3), f("Paks/Win64/c.rpak", 7), f("Paks/a.rpak", 5)]);
+        t.add(
+            1,
+            1,
+            vec![
+                f("b.txt", 3),
+                f("Paks/Win64/c.rpak", 7),
+                f("Paks/a.rpak", 5),
+            ],
+        );
         assert_eq!(
             t.list("").unwrap(),
             [
-                TreeEntry { name: "Paks".into(), is_dir: true, size: 0 },
-                TreeEntry { name: "b.txt".into(), is_dir: false, size: 3 },
+                TreeEntry {
+                    name: "Paks".into(),
+                    is_dir: true,
+                    size: 0
+                },
+                TreeEntry {
+                    name: "b.txt".into(),
+                    is_dir: false,
+                    size: 3
+                },
             ]
         );
         assert_eq!(
             t.list("paks").unwrap(),
             [
-                TreeEntry { name: "Win64".into(), is_dir: true, size: 0 },
-                TreeEntry { name: "a.rpak".into(), is_dir: false, size: 5 },
+                TreeEntry {
+                    name: "Win64".into(),
+                    is_dir: true,
+                    size: 0
+                },
+                TreeEntry {
+                    name: "a.rpak".into(),
+                    is_dir: false,
+                    size: 5
+                },
             ]
         );
         assert!(t.is_dir("") && t.is_dir("PAKS/win64") && !t.is_dir("b.txt") && !t.is_dir("zzz"));

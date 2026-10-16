@@ -24,18 +24,26 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::{Bitmap, BitmapInfo, Dependency, Metadata, PixelFormat};
-use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version};
+use respak_core::{
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
+};
 use respak_formats::decode_rgba8;
 
 use crate::matl_json::{locate, pak_of};
 use crate::rpak::{RpakAsset, MEM};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: "uimg".into(), version: version.into() })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: "uimg".into(),
+        version: version.into(),
+    })
 }
 
 const HEADER_LEN: usize = 0x40;
@@ -89,7 +97,10 @@ impl UimgHeader {
             return Err(unsupported(version.to_string()));
         }
         if h.len() < HEADER_LEN {
-            return Err(corrupt(format!("uimg header is {} bytes, expected {HEADER_LEN}", h.len())));
+            return Err(corrupt(format!(
+                "uimg header is {} bytes, expected {HEADER_LEN}",
+                h.len()
+            )));
         }
         // Null is all ones after relocation.
         let ptr = |at: usize| {
@@ -188,7 +199,11 @@ pub struct UimgAsset {
 
 impl std::fmt::Debug for UimgAsset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UimgAsset").field("key", &self.key).field("header", &self.header).field("sprites", &self.sprites.len()).finish()
+        f.debug_struct("UimgAsset")
+            .field("key", &self.key)
+            .field("header", &self.header)
+            .field("sprites", &self.sprites.len())
+            .finish()
     }
 }
 
@@ -212,10 +227,19 @@ impl UimgAsset {
     pub(crate) async fn atlas_rgba(&self) -> Result<(u32, u32, Vec<u8>)> {
         let asset = locate(self.header.atlas_guid, "txtr", &self.origin, &self.cx).await?;
         let texture = self.cx.mediator.identify(asset, &self.cx).await?;
-        let bitmap = texture.as_bitmap().ok_or_else(|| corrupt(format!("the atlas {:#018x} is not a texture", self.header.atlas_guid)))?;
+        let bitmap = texture.as_bitmap().ok_or_else(|| {
+            corrupt(format!(
+                "the atlas {:#018x} is not a texture",
+                self.header.atlas_guid
+            ))
+        })?;
         let info = bitmap.info();
         let raw = bitmap.read_mip(0, 0).await?;
-        Ok((info.width, info.height, decode_rgba8(info.format, info.width, info.height, &raw)?))
+        Ok((
+            info.width,
+            info.height,
+            decode_rgba8(info.format, info.width, info.height, &raw)?,
+        ))
     }
 }
 
@@ -243,7 +267,9 @@ impl Bitmap for UimgAsset {
     /// streamed mips are missing).
     async fn read_mip(&self, level: u32, layer: u32) -> Result<Bytes> {
         if level != 0 || layer != 0 {
-            return Err(Error::new(ErrorKind::NotFound { path: format!("mip {level} of layer {layer}") }));
+            return Err(Error::new(ErrorKind::NotFound {
+                path: format!("mip {level} of layer {layer}"),
+            }));
         }
         let (w, h, rgba) = self.atlas_rgba().await?;
         if (w, h) == (self.header.width, self.header.height) {
@@ -253,7 +279,13 @@ impl Bitmap for UimgAsset {
             "uimg {:#018x}: the atlas texture is {w}x{h} but the header says {}x{}; it is resized",
             self.guid, self.header.width, self.header.height
         ));
-        Ok(Bytes::from(resize(&rgba, w, h, self.header.width, self.header.height)))
+        Ok(Bytes::from(resize(
+            &rgba,
+            w,
+            h,
+            self.header.width,
+            self.header.height,
+        )))
     }
 }
 
@@ -268,7 +300,10 @@ impl Metadata for UimgAsset {
         Some(self.guid)
     }
     fn dependencies(&self) -> Vec<Dependency> {
-        vec![Dependency { guid: self.header.atlas_guid, name: None }]
+        vec![Dependency {
+            guid: self.header.atlas_guid,
+            name: None,
+        }]
     }
 }
 
@@ -288,10 +323,18 @@ impl Data for UimgAsset {
 }
 
 /// `len` bytes of `.mem` at `at`, which must lie inside it.
-async fn mem(volume: &Operator, what: &str, at: Option<u64>, len: u64, mem_len: u64) -> Result<Bytes> {
+async fn mem(
+    volume: &Operator,
+    what: &str,
+    at: Option<u64>,
+    len: u64,
+    mem_len: u64,
+) -> Result<Bytes> {
     let at = at.ok_or_else(|| corrupt(format!("uimg has no {what}")))?;
     if at.checked_add(len).is_none_or(|end| end > mem_len) {
-        return Err(corrupt(format!("uimg {what} runs past the end of the pak's pages")));
+        return Err(corrupt(format!(
+            "uimg {what} runs past the end of the pak's pages"
+        )));
     }
     Ok(volume.read_with(MEM).range(at..at + len).await?.to_bytes())
 }
@@ -313,25 +356,44 @@ impl Detect for UimgRead {
         let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
             return Ok(None);
         };
-        Ok((asset.entry.kind == *b"uimg")
-            .then(|| Detected { score: 10, version: Some(Version::new(asset.entry.version)) }))
+        Ok((asset.entry.kind == *b"uimg").then(|| Detected {
+            score: 10,
+            version: Some(Version::new(asset.entry.version)),
+        }))
     }
 }
 
 #[async_trait]
 impl ReadHandler for UimgRead {
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "uimg must be read from an rpak.asset".into() }))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "uimg must be read from an rpak.asset".into(),
+            })
+        })?;
         let header = UimgHeader::parse(asset.entry.version, &asset.read_header().await?)?;
         let n = u64::from(header.count);
         let mem_len = asset.volume.stat(MEM).await?.content_length();
         let v = &asset.volume;
 
         let offsets = mem(v, "offsets", header.offsets, n * OFFSET_LEN, mem_len).await?;
-        let dims = mem(v, "dimensions", header.dimensions, n * DIMENSION_LEN, mem_len).await?;
-        let hashes = mem(v, "hashes", header.hashes, n * header.hash_stride(), mem_len).await?;
+        let dims = mem(
+            v,
+            "dimensions",
+            header.dimensions,
+            n * DIMENSION_LEN,
+            mem_len,
+        )
+        .await?;
+        let hashes = mem(
+            v,
+            "hashes",
+            header.hashes,
+            n * header.hash_stride(),
+            mem_len,
+        )
+        .await?;
         let bounds = mem(v, "bounds", asset.data_mem_offset, n * BOUNDS_LEN, mem_len).await?;
 
         // (hash, offset into the names blob) per sprite.
@@ -339,7 +401,11 @@ impl ReadHandler for UimgRead {
         let entries: Vec<(u32, usize)> = hashes
             .chunks_exact(stride)
             .map(|e| {
-                let at = if header.version == 10 { u32::from(le16(e, 6)) } else { le32(e, 4) };
+                let at = if header.version == 10 {
+                    u32::from(le16(e, 6))
+                } else {
+                    le32(e, 4)
+                };
                 (le32(e, 0), at as usize)
             })
             .collect();
@@ -371,7 +437,10 @@ impl ReadHandler for UimgRead {
             })
             .collect::<Vec<_>>();
         if missing > 0 && names.is_some() {
-            cx.warn(format!("uimg {:#018x}: {missing} sprite name(s) are not readable; their hashes are used", asset.entry.guid));
+            cx.warn(format!(
+                "uimg {:#018x}: {missing} sprite name(s) are not readable; their hashes are used",
+                asset.entry.guid
+            ));
         }
 
         let info = BitmapInfo {
@@ -402,13 +471,22 @@ mod tests {
     use super::*;
 
     fn sprite(uv: [f32; 4]) -> Sprite {
-        Sprite { path: "a".into(), named: true, hash: 0, uv, layout: [0.0; 8], render: [0, 0] }
+        Sprite {
+            path: "a".into(),
+            named: true,
+            hash: 0,
+            uv,
+            layout: [0.0; 8],
+            render: [0, 0],
+        }
     }
 
     #[test]
     fn position_truncates_and_size_rounds() {
         // 0.5/64 of 64 = 0.5 -> 0; 1.5/64 of 64 -> 1; size 2.5/64 of 64 -> 3.
-        let r = sprite([0.5 / 64.0, 1.5 / 64.0, 2.5 / 64.0, 0.49 / 64.0 + 1.0 / 64.0]).rect(64, 64).unwrap();
+        let r = sprite([0.5 / 64.0, 1.5 / 64.0, 2.5 / 64.0, 0.49 / 64.0 + 1.0 / 64.0])
+            .rect(64, 64)
+            .unwrap();
         assert_eq!((r.x, r.y, r.width, r.height), (0, 1, 3, 1));
     }
 
@@ -430,6 +508,9 @@ mod tests {
     #[test]
     fn resize_picks_the_nearest_pixel() {
         let src: Vec<u8> = [1u8, 2].iter().flat_map(|&v| [v; 4]).collect();
-        assert_eq!(resize(&src, 2, 1, 4, 1), [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2]);
+        assert_eq!(
+            resize(&src, 2, 1, 4, 1),
+            [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2]
+        );
     }
 }

@@ -13,6 +13,7 @@ mod guid;
 mod locate;
 mod matl;
 mod matl_json;
+mod names;
 mod oodle;
 mod pak;
 mod patch;
@@ -23,35 +24,40 @@ mod rtech;
 mod shader;
 mod snowflake;
 mod starpak;
+#[cfg(feature = "testing")]
+pub mod testing;
 mod txtr;
 mod uiia;
 mod uiia_json;
 mod uimg;
 mod uimg_json;
-#[cfg(feature = "testing")]
-pub mod testing;
 
 use std::sync::Arc;
 
-use respak_core::capability::{Animation, Bitmap, Container, Mesh, Metadata, Skeleton, Table};
+use respak_core::capability::{
+    Animation, Bitmap, Container, Mesh, Metadata, NameSource, Skeleton, Table,
+};
 use respak_core::{Plugin, Registry};
 
 pub use arig::{studio_variant, ArigAsset, ArigHeader, ArigRead, StudioSelect};
 pub use aseq::{
-    variant as aseq_variant, AnimDesc, AseqAsset, AseqHeader, AseqRead, FrameMovement, RigSelect, SectionData, SeqDesc,
-    Weights,
+    variant as aseq_variant, AnimDesc, AseqAsset, AseqHeader, AseqRead, FrameMovement, RigSelect,
+    SectionData, SeqDesc, Weights,
 };
 pub use asqd::{AsqdAsset, AsqdHeader, AsqdRead};
 pub use dtbl::{variant as dtbl_variant, DtblAsset, DtblHeader, DtblRead, DATA_EXCLUDED};
-pub use dtbl_text::{format_g, to_csv as dtbl_csv, to_json as dtbl_json, DtblCsvEncode, DtblJsonEncode};
+pub use dtbl_text::{
+    format_g, to_csv as dtbl_csv, to_json as dtbl_json, DtblCsvEncode, DtblJsonEncode,
+};
 pub use dxbc::texture_slots;
 pub use guid::string_to_guid;
 pub use locate::{GuidRef, RpakLocate};
 pub use matl::{MatlAsset, MatlHeader, MatlRead};
 pub use matl_json::{MatlJsonEncode, MatlJsonOptions, TextureTarget};
+pub use names::{parse_guids, Finder};
+pub use pak::{AssetEntry, PagePtr, PakHeader, PatchBlock, Tables};
 pub use rmdl::{variant as rmdl_variant, RmdlAsset, RmdlHeader, RmdlRead, Studio, StudioLayout};
 pub use rmdl_json::{RmdlJsonEncode, RmdlJsonOptions};
-pub use pak::{AssetEntry, PagePtr, PakHeader, PatchBlock, Tables};
 pub use rpak::{RpakAsset, RpakData, RpakRead, MEM};
 pub use starpak::{Starpak, StarpakData, StarpakEntry, StarpakRead};
 pub use txtr::{pixel_format, TxtrAsset, TxtrHeader, TxtrRead};
@@ -121,7 +127,11 @@ impl Plugin for RespawnPlugin {
     }
 
     fn register(&self, r: &mut Registry) {
-        r.format("rpak").label("Respawn pak").from("file", RpakRead::new(!self.ignore_patches)).extensions(["rpak"]).provides::<dyn Container>();
+        r.format("rpak")
+            .label("Respawn pak")
+            .from("file", RpakRead::new(!self.ignore_patches))
+            .extensions(["rpak"])
+            .provides::<dyn Container>();
         r.format("starpak")
             .label("Respawn starpak")
             .from("file", StarpakRead)
@@ -140,7 +150,9 @@ impl Plugin for RespawnPlugin {
             .extensions(["matl"])
             .provides::<dyn Metadata>()
             .to("matl.json", MatlJsonEncode);
-        r.format("matl.json").label("Material (JSON)").extensions(["json"]);
+        r.format("matl.json")
+            .label("Material (JSON)")
+            .extensions(["json"]);
         r.format("txtr")
             .label("Respawn texture")
             .from("rpak.asset", TxtrRead)
@@ -155,7 +167,9 @@ impl Plugin for RespawnPlugin {
             .provides::<dyn Skeleton>()
             .provides::<dyn Metadata>()
             .to("rmdl.json", RmdlJsonEncode);
-        r.format("rmdl.json").label("Model (JSON)").extensions(["json"]);
+        r.format("rmdl.json")
+            .label("Model (JSON)")
+            .extensions(["json"]);
         r.format("uiia")
             .label("Respawn UI image")
             .from("rpak.asset", UiiaRead)
@@ -163,7 +177,9 @@ impl Plugin for RespawnPlugin {
             .provides::<dyn Bitmap>()
             .provides::<dyn Metadata>()
             .to("uiia.json", UiiaJsonEncode);
-        r.format("uiia.json").label("UI image (JSON)").extensions(["json"]);
+        r.format("uiia.json")
+            .label("UI image (JSON)")
+            .extensions(["json"]);
         r.format("uimg")
             .label("Respawn UI image atlas")
             .from("rpak.asset", UimgRead)
@@ -171,9 +187,13 @@ impl Plugin for RespawnPlugin {
             .provides::<dyn Bitmap>()
             .provides::<dyn Metadata>()
             .to("uimg.json", UimgJsonEncode);
-        r.format("uimg.json").label("UI image atlas (JSON)").extensions(["json"]);
+        r.format("uimg.json")
+            .label("UI image atlas (JSON)")
+            .extensions(["json"]);
         // One sprite cut out of an atlas, made by `uimg.json`.
-        r.format("uimg.sprite").label("UI image sprite").provides::<dyn Bitmap>();
+        r.format("uimg.sprite")
+            .label("UI image sprite")
+            .provides::<dyn Bitmap>();
         r.format("aseq")
             .label("Respawn animation")
             .from("rpak.asset", AseqRead::new(self.rig.clone()))
@@ -196,10 +216,15 @@ impl Plugin for RespawnPlugin {
             .from("rpak.asset", DtblRead)
             .extensions(["dtbl"])
             .provides::<dyn Table>()
+            .provides::<dyn NameSource>()
             .provides::<dyn Metadata>()
             .to("dtbl.csv", DtblCsvEncode)
             .to("dtbl.json", DtblJsonEncode);
-        r.format("dtbl.csv").label("Datatable (CSV)").extensions(["csv"]);
-        r.format("dtbl.json").label("Datatable (JSON)").extensions(["json"]);
+        r.format("dtbl.csv")
+            .label("Datatable (CSV)")
+            .extensions(["csv"]);
+        r.format("dtbl.json")
+            .label("Datatable (JSON)")
+            .extensions(["json"]);
     }
 }

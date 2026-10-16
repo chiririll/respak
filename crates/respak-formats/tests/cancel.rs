@@ -8,7 +8,8 @@ use bytes::Bytes;
 use opendal::{services::Memory, Operator};
 use respak_core::capability::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 use respak_core::{
-    CancellationToken, Cx, Data, ErrorKind, Event, FormatId, Mediator, Plugin, Registry, Target, Value, ValueKey,
+    CancellationToken, Cx, Data, ErrorKind, Event, FormatId, Mediator, Plugin, Registry, Target,
+    Value, ValueKey,
 };
 use respak_formats::FormatsPlugin;
 
@@ -66,11 +67,27 @@ impl Plugin for ImgPlugin {
 }
 
 fn image(cancel: Option<CancellationToken>) -> (Arc<Img>, Value) {
-    let info = BitmapInfo { width: 4, height: 4, depth: 1, array_len: 1, faces: 1, mip_count: 3, format: PixelFormat::Rgba8 };
+    let info = BitmapInfo {
+        width: 4,
+        height: 4,
+        depth: 1,
+        array_len: 1,
+        faces: 1,
+        mip_count: 3,
+        format: PixelFormat::Rgba8,
+    };
     let mip = |side: usize| Bytes::from(vec![7u8; side * side * 4]);
     let buf = BitmapBuf::new(info, vec![vec![mip(4), mip(2), mip(1)]]).unwrap();
-    let img = Arc::new(Img { buf, reads: AtomicUsize::new(0), cancel_on_first_read: cancel });
-    let value: Value = Arc::new(Holder(img.clone(), FormatId::new("img"), ValueKey::file("pic")));
+    let img = Arc::new(Img {
+        buf,
+        reads: AtomicUsize::new(0),
+        cancel_on_first_read: cancel,
+    });
+    let value: Value = Arc::new(Holder(
+        img.clone(),
+        FormatId::new("img"),
+        ValueKey::file("pic"),
+    ));
     (img, value)
 }
 
@@ -84,7 +101,11 @@ fn cx() -> Cx {
 }
 
 fn all_mips() -> Target {
-    Target { format: FormatId::new("png"), options: serde_json::json!({ "mips": "all" }), via: Vec::new() }
+    Target {
+        format: FormatId::new("png"),
+        options: serde_json::json!({ "mips": "all" }),
+        via: Vec::new(),
+    }
 }
 
 #[tokio::test]
@@ -107,7 +128,15 @@ async fn all_mips_report_progress() {
 async fn a_triggered_token_stops_between_mips_and_returns_no_bundle() {
     let cx = cx();
     let (img, value) = image(Some(cx.cancel.clone()));
-    let err = cx.mediator.convert(value, all_mips(), &cx).await.unwrap_err();
+    let err = cx
+        .mediator
+        .convert(value, all_mips(), &cx)
+        .await
+        .unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Cancelled), "{err}");
-    assert_eq!(img.reads.load(Ordering::SeqCst), 1, "no mip is read after the cancel");
+    assert_eq!(
+        img.reads.load(Ordering::SeqCst),
+        1,
+        "no mip is read after the cancel"
+    );
 }

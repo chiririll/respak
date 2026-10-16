@@ -10,11 +10,26 @@ fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
 
 #[test]
 fn login_qr_and_user_parse_without_root_or_out() {
-    let Command::Steam { command: SteamCommand::Login { qr, user } } = parse(&["login", "--qr"]).unwrap().command else { panic!() };
+    let Command::Steam {
+        command: SteamCommand::Login { qr, user },
+    } = parse(&["login", "--qr"]).unwrap().command
+    else {
+        panic!()
+    };
     assert!(qr && user.is_none());
-    let Command::Steam { command: SteamCommand::Login { qr, user } } = parse(&["login", "--user", "gordon"]).unwrap().command else { panic!() };
+    let Command::Steam {
+        command: SteamCommand::Login { qr, user },
+    } = parse(&["login", "--user", "gordon"]).unwrap().command
+    else {
+        panic!()
+    };
     assert!(!qr && user.as_deref() == Some("gordon"));
-    assert!(matches!(parse(&["logout"]).unwrap().command, Command::Steam { command: SteamCommand::Logout }));
+    assert!(matches!(
+        parse(&["logout"]).unwrap().command,
+        Command::Steam {
+            command: SteamCommand::Logout
+        }
+    ));
 }
 
 #[test]
@@ -26,8 +41,20 @@ fn login_needs_exactly_one_method() {
 #[test]
 fn steam_input_flags() {
     let cli = Cli::try_parse_from([
-        "respak", "--steam", "1172470", "--depot", "1172471=7843921", "--depot", "1172472", "--branch", "beta", "--steam-cache-size", "500MiB",
-        "--out", "out", "formats",
+        "respak",
+        "--steam",
+        "1172470",
+        "--depot",
+        "1172471=7843921",
+        "--depot",
+        "1172472",
+        "--branch",
+        "beta",
+        "--steam-cache-size",
+        "500MiB",
+        "--out",
+        "out",
+        "formats",
     ])
     .unwrap();
     assert_eq!(cli.steam, Some(1172470));
@@ -36,15 +63,22 @@ fn steam_input_flags() {
     assert_eq!(
         cli.depot,
         [
-            respak_steam::DepotSpec { depot: 1172471, manifest: Some(7843921) },
-            respak_steam::DepotSpec { depot: 1172472, manifest: None }
+            respak_steam::DepotSpec {
+                depot: 1172471,
+                manifest: Some(7843921)
+            },
+            respak_steam::DepotSpec {
+                depot: 1172472,
+                manifest: None
+            }
         ]
     );
 }
 
 #[test]
 fn steam_and_root_exclude_each_other_and_steam_needs_a_depot() {
-    let parse = |args: &[&str]| Cli::try_parse_from(["respak", "--out", "o", "formats"].iter().chain(args));
+    let parse =
+        |args: &[&str]| Cli::try_parse_from(["respak", "--out", "o", "formats"].iter().chain(args));
     assert!(parse(&["--steam", "1", "--depot", "2", "--root", "r"]).is_err());
     assert!(parse(&["--steam", "1"]).is_err());
     assert!(parse(&["--depot", "2"]).is_err());

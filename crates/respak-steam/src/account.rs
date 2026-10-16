@@ -24,7 +24,10 @@ pub struct Account {
 
 impl std::fmt::Debug for Account {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Account").field("account_name", &self.account_name).field("steam_id", &self.steam_id).finish_non_exhaustive()
+        f.debug_struct("Account")
+            .field("account_name", &self.account_name)
+            .field("steam_id", &self.steam_id)
+            .finish_non_exhaustive()
     }
 }
 
@@ -48,7 +51,9 @@ pub struct AccountStore {
 impl AccountStore {
     /// A store in `dir` (usually `.respak`); the directory is created on save.
     pub fn new(dir: impl AsRef<Path>) -> Self {
-        Self { dir: dir.as_ref().to_path_buf() }
+        Self {
+            dir: dir.as_ref().to_path_buf(),
+        }
     }
 
     /// The account file.
@@ -57,7 +62,10 @@ impl AccountStore {
     }
 
     fn error(&self, message: impl ToString) -> Error {
-        Error::Account { path: self.path().display().to_string(), message: message.to_string() }
+        Error::Account {
+            path: self.path().display().to_string(),
+            message: message.to_string(),
+        }
     }
 
     /// Reads the stored account. A missing file is `NeedLogin`, a malformed one an `Account` error.
@@ -66,7 +74,8 @@ impl AccountStore {
             std::io::ErrorKind::NotFound => Error::NeedLogin("no account.json".into()),
             _ => self.error(e),
         })?;
-        serde_json::from_str(&text).map_err(|e| self.error(format!("malformed ({e}); run `respak steam login` again")))
+        serde_json::from_str(&text)
+            .map_err(|e| self.error(format!("malformed ({e}); run `respak steam login` again")))
     }
 
     /// Writes the account (creating the directory).
@@ -88,7 +97,10 @@ impl AccountStore {
 
 /// Seconds since the Unix epoch.
 pub fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// The claims of a JWT payload that respak reads.
@@ -102,8 +114,13 @@ pub struct Claims {
 
 /// Decodes the payload of a JWT (no signature check: Steam checks it, we only read `exp` and `sub`).
 pub fn claims(jwt: &str) -> Result<Claims> {
-    let payload = jwt.split('.').nth(1).ok_or_else(|| Error::Protocol("the token is not a JWT".into()))?;
-    let bytes = URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).map_err(|e| Error::Protocol(format!("token payload: {e}")))?;
+    let payload = jwt
+        .split('.')
+        .nth(1)
+        .ok_or_else(|| Error::Protocol("the token is not a JWT".into()))?;
+    let bytes = URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .map_err(|e| Error::Protocol(format!("token payload: {e}")))?;
     serde_json::from_slice(&bytes).map_err(|e| Error::Protocol(format!("token payload: {e}")))
 }
 
@@ -119,7 +136,10 @@ pub fn expiry(jwt: &str, now: u64) -> Result<Expiry> {
 
 /// The Steam ID in the token's `sub`.
 pub fn steam_id_of(jwt: &str) -> Result<u64> {
-    claims(jwt)?.sub.and_then(|s| s.parse().ok()).ok_or_else(|| Error::Protocol("the token has no steam id".into()))
+    claims(jwt)?
+        .sub
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| Error::Protocol("the token has no steam id".into()))
 }
 
 #[cfg(test)]
@@ -127,11 +147,19 @@ mod tests {
     use super::*;
 
     fn jwt(payload: &str) -> String {
-        format!("{}.{}.sig", URL_SAFE_NO_PAD.encode("{}"), URL_SAFE_NO_PAD.encode(payload))
+        format!(
+            "{}.{}.sig",
+            URL_SAFE_NO_PAD.encode("{}"),
+            URL_SAFE_NO_PAD.encode(payload)
+        )
     }
 
     fn account() -> Account {
-        Account { account_name: "gordon".into(), steam_id: 76561198000000000, refresh_token: "a.b.c".into() }
+        Account {
+            account_name: "gordon".into(),
+            steam_id: 76561198000000000,
+            refresh_token: "a.b.c".into(),
+        }
     }
 
     #[test]
@@ -148,7 +176,10 @@ mod tests {
     #[test]
     fn missing_file_needs_login() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(matches!(AccountStore::new(dir.path()).load(), Err(Error::NeedLogin(_))));
+        assert!(matches!(
+            AccountStore::new(dir.path()).load(),
+            Err(Error::NeedLogin(_))
+        ));
     }
 
     #[test]
@@ -162,17 +193,32 @@ mod tests {
     #[test]
     fn expiry_past_near_far() {
         let now = 1_000_000;
-        assert_eq!(expiry(&jwt(r#"{"exp":999999}"#), now).unwrap(), Expiry::Expired);
-        assert_eq!(expiry(&jwt(r#"{"exp":1000000}"#), now).unwrap(), Expiry::Expired);
-        assert_eq!(expiry(&jwt(&format!(r#"{{"exp":{}}}"#, now + 3600)), now).unwrap(), Expiry::Near);
-        assert_eq!(expiry(&jwt(&format!(r#"{{"exp":{}}}"#, now + 30 * 24 * 3600)), now).unwrap(), Expiry::Fresh);
+        assert_eq!(
+            expiry(&jwt(r#"{"exp":999999}"#), now).unwrap(),
+            Expiry::Expired
+        );
+        assert_eq!(
+            expiry(&jwt(r#"{"exp":1000000}"#), now).unwrap(),
+            Expiry::Expired
+        );
+        assert_eq!(
+            expiry(&jwt(&format!(r#"{{"exp":{}}}"#, now + 3600)), now).unwrap(),
+            Expiry::Near
+        );
+        assert_eq!(
+            expiry(&jwt(&format!(r#"{{"exp":{}}}"#, now + 30 * 24 * 3600)), now).unwrap(),
+            Expiry::Fresh
+        );
         assert_eq!(expiry(&jwt("{}"), now).unwrap(), Expiry::Fresh);
         assert!(expiry("garbage", now).is_err());
     }
 
     #[test]
     fn steam_id_from_sub() {
-        assert_eq!(steam_id_of(&jwt(r#"{"sub":"76561198000000000"}"#)).unwrap(), 76561198000000000);
+        assert_eq!(
+            steam_id_of(&jwt(r#"{"sub":"76561198000000000"}"#)).unwrap(),
+            76561198000000000
+        );
         assert!(steam_id_of(&jwt("{}")).is_err());
     }
 }

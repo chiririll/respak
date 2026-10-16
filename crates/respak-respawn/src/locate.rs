@@ -14,7 +14,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use respak_core::{
-    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version,
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
 };
 
 /// A reference to an asset by guid and kind, made by an asset in the pak at `origin`.
@@ -74,7 +75,14 @@ impl RpakLocate {
 async fn try_pak(pak: &str, file: &str, cx: &Cx) -> Result<Option<Value>> {
     match cx.mediator.open(&format!("{pak}/{file}"), cx).await {
         Ok(asset) => Ok(Some(asset)),
-        Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. } | ErrorKind::NoMatch { .. }) => Ok(None),
+        Err(e)
+            if matches!(
+                e.kind(),
+                ErrorKind::NotFound { .. } | ErrorKind::NoMatch { .. }
+            ) =>
+        {
+            Ok(None)
+        }
         Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => Err(e),
         Err(e) => {
             cx.warn(format!("cannot look for {file} in {pak}: {e}"));
@@ -91,16 +99,22 @@ fn pak_of(key: &str) -> &str {
 #[async_trait]
 impl Detect for RpakLocate {
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        Ok(input.source.is::<GuidRef>().then_some(Detected { score: 10, version: None }))
+        Ok(input.source.is::<GuidRef>().then_some(Detected {
+            score: 10,
+            version: None,
+        }))
     }
 }
 
 #[async_trait]
 impl ReadHandler for RpakLocate {
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let r = source
-            .downcast_ref::<GuidRef>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "rpak.guid expected".into() }))?;
+        let r = source.downcast_ref::<GuidRef>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "rpak.guid expected".into(),
+            })
+        })?;
         let file = r.file_name();
         let mut tried = vec![r.origin.clone()];
 
@@ -109,7 +123,10 @@ impl ReadHandler for RpakLocate {
             return Ok(asset);
         }
         // 2. `common.rpak` next to it.
-        let dir = r.origin.rsplit_once('/').map_or(String::new(), |(d, _)| format!("{d}/"));
+        let dir = r
+            .origin
+            .rsplit_once('/')
+            .map_or(String::new(), |(d, _)| format!("{d}/"));
         let common = format!("{dir}common.rpak");
         if common != r.origin {
             if let Some(asset) = try_pak(&common, &file, cx).await? {
@@ -133,7 +150,9 @@ impl ReadHandler for RpakLocate {
                 }
                 if let Some(asset) = try_pak(&pak, &file, cx).await? {
                     if let Some(cache) = &cache {
-                        cache.put_json(&index_key, &pak_of(&asset.key().to_string())).await;
+                        cache
+                            .put_json(&index_key, &pak_of(&asset.key().to_string()))
+                            .await;
                     }
                     return Ok(asset);
                 }

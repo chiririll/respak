@@ -27,7 +27,11 @@ fn join(dir: &str, name: &str) -> String {
 
 /// The children of `dir` on `op` as `(name, is_dir)`, sorted by name.
 async fn children(op: &Operator, dir: &str) -> Result<Vec<(String, bool)>> {
-    let listed = if dir.is_empty() { "/".to_owned() } else { format!("{dir}/") };
+    let listed = if dir.is_empty() {
+        "/".to_owned()
+    } else {
+        format!("{dir}/")
+    };
     let mut out = Vec::new();
     for e in op.list(&listed).await? {
         let path = e.path().trim_matches('/');
@@ -52,11 +56,14 @@ impl Mediator {
         }
         let segments: Vec<&str> = pattern.split('/').collect();
         let mut out = Vec::new();
-        self.expand_in(&cx.input, "", "", &segments, cx, &mut out).await?;
+        self.expand_in(&cx.input, "", "", &segments, cx, &mut out)
+            .await?;
         out.sort();
         out.dedup();
         if out.is_empty() {
-            return Err(Error::new(ErrorKind::NoMatch { pattern: pattern.to_owned() }));
+            return Err(Error::new(ErrorKind::NoMatch {
+                pattern: pattern.to_owned(),
+            }));
         }
         Ok(out)
     }
@@ -72,7 +79,11 @@ impl Mediator {
         out: &mut Vec<String>,
     ) -> Result<()> {
         let (segment, rest) = (segments[0], &segments[1..]);
-        let invalid = |e: globset::Error| Error::new(ErrorKind::InvalidRequest { message: format!("bad glob `{segment}`: {e}") });
+        let invalid = |e: globset::Error| {
+            Error::new(ErrorKind::InvalidRequest {
+                message: format!("bad glob `{segment}`: {e}"),
+            })
+        };
 
         if segment == "**" {
             if rest.is_empty() {
@@ -94,7 +105,8 @@ impl Mediator {
             Box::pin(self.expand_in(op, mount, dir, rest, cx, out)).await?;
             for (name, is_dir) in children(op, dir).await? {
                 if is_dir {
-                    Box::pin(self.expand_in(op, mount, &join(dir, &name), segments, cx, out)).await?;
+                    Box::pin(self.expand_in(op, mount, &join(dir, &name), segments, cx, out))
+                        .await?;
                 }
             }
             return Ok(());
@@ -103,12 +115,18 @@ impl Mediator {
         // A plain name needs no listing.
         let candidates: Vec<(String, bool)> = if is_glob(segment) {
             let matcher = Glob::new(segment).map_err(invalid)?.compile_matcher();
-            children(op, dir).await?.into_iter().filter(|(name, _)| matcher.is_match(name)).collect()
+            children(op, dir)
+                .await?
+                .into_iter()
+                .filter(|(name, _)| matcher.is_match(name))
+                .collect()
         } else {
             let path = join(dir, segment);
             // Some services only know a directory by its trailing slash.
             let found = match op.stat(&path).await {
-                Err(e) if e.kind() == opendal::ErrorKind::NotFound => op.stat(&format!("{path}/")).await,
+                Err(e) if e.kind() == opendal::ErrorKind::NotFound => {
+                    op.stat(&format!("{path}/")).await
+                }
                 other => other,
             };
             match found {
@@ -125,15 +143,24 @@ impl Mediator {
                 (false, false) => {
                     // More pattern follows a file: it must be a container.
                     let virtual_path = join(mount, &child);
-                    let file: crate::value::Value =
-                        std::sync::Arc::new(FileData::new(op.clone(), child.clone(), virtual_path.clone(), None));
+                    let file: crate::value::Value = std::sync::Arc::new(FileData::new(
+                        op.clone(),
+                        child.clone(),
+                        virtual_path.clone(),
+                        None,
+                    ));
                     match self.mount(file, cx).await {
                         Ok(container) => {
                             let c = container.as_container().expect("mount checks this");
                             let (volume, mount_path) = (c.volume(), c.mount_path().to_owned());
-                            Box::pin(self.expand_in(&volume, &mount_path, "", rest, cx, out)).await?;
+                            Box::pin(self.expand_in(&volume, &mount_path, "", rest, cx, out))
+                                .await?;
                         }
-                        Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. } | ErrorKind::UnknownFormat) => {}
+                        Err(e)
+                            if matches!(
+                                e.kind(),
+                                ErrorKind::NotFound { .. } | ErrorKind::UnknownFormat
+                            ) => {}
                         Err(e) => cx.warn(format!("cannot look inside {virtual_path}: {e}")),
                     }
                 }

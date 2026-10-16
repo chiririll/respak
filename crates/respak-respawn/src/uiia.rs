@@ -35,7 +35,10 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::{Bitmap, BitmapInfo, Dependency, Metadata, PixelFormat};
-use respak_core::{Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, ValueKey, Version};
+use respak_core::{
+    Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
+    ValueKey, Version,
+};
 use respak_formats::decode_rgba8;
 
 use crate::rpak::{RpakAsset, MEM};
@@ -43,11 +46,16 @@ use crate::txtr::read_name;
 use crate::{oodle, rtech, snowflake};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: "uiia".into(), version: version.into() })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: "uiia".into(),
+        version: version.into(),
+    })
 }
 
 const HEADER_LEN: usize = 0x40;
@@ -129,7 +137,11 @@ impl UiiaHeader {
             return Err(unsupported(version.to_string()));
         }
         if header.len() != HEADER_LEN || cpu.len() != CPU_LEN as usize {
-            return Err(corrupt(format!("uiia header is {} bytes and CPU data {}, expected {HEADER_LEN}", header.len(), cpu.len())));
+            return Err(corrupt(format!(
+                "uiia header is {} bytes and CPU data {}, expected {HEADER_LEN}",
+                header.len(),
+                cpu.len()
+            )));
         }
         let le16 = |b: &[u8], at: usize| u32::from(u16::from_le_bytes([b[at], b[at + 1]]));
         let flags = header[0x12];
@@ -137,11 +149,28 @@ impl UiiaHeader {
         let high = Resolution::new(le16(cpu, 0x20), le16(cpu, 0x22), flags);
         for (what, r) in [("low", low), ("high", high)] {
             if r.width == 0 || r.height == 0 || r.tiles() > MAX_TILES {
-                return Err(corrupt(format!("uiia {what} resolution {}x{} is not usable", r.width, r.height)));
+                return Err(corrupt(format!(
+                    "uiia {what} resolution {}x{} is not usable",
+                    r.width, r.height
+                )));
             }
         }
-        let layout = std::array::from_fn(|i| f32::from_le_bytes([header[0x20 + 4 * i], header[0x21 + 4 * i], header[0x22 + 4 * i], header[0x23 + 4 * i]]));
-        Ok(Self { version, flags, streamed_size: u64::from(le16(header, 0x10)) << 12, low, high, layout })
+        let layout = std::array::from_fn(|i| {
+            f32::from_le_bytes([
+                header[0x20 + 4 * i],
+                header[0x21 + 4 * i],
+                header[0x22 + 4 * i],
+                header[0x23 + 4 * i],
+            ])
+        });
+        Ok(Self {
+            version,
+            flags,
+            streamed_size: u64::from(le16(header, 0x10)) << 12,
+            low,
+            high,
+            layout,
+        })
     }
 
     /// The codec of the streamed data: 0 none, 1 RTech, 2 Snowflake, 3 Oodle.
@@ -183,25 +212,40 @@ fn tile_size(opcode: u32) -> usize {
 
 /// The tile table of `quality`. `data` is the pak's data or the decoded stream; the stored table
 /// is at its start.
-fn tiles(header: &UiiaHeader, quality: Quality, res: &Resolution, data: &[u8]) -> Result<Vec<Tile>> {
+fn tiles(
+    header: &UiiaHeader,
+    quality: Quality,
+    res: &Resolution,
+    data: &[u8],
+) -> Result<Vec<Tile>> {
     let count = res.tiles() as usize;
     let mut out = Vec::with_capacity(count);
     if header.has_table(quality) {
-        let table = data.get(..count * 4).ok_or_else(|| corrupt("uiia tile table runs past its data"))?;
+        let table = data
+            .get(..count * 4)
+            .ok_or_else(|| corrupt("uiia tile table runs past its data"))?;
         for c in table.chunks_exact(4) {
             let v = u32::from_le_bytes(c.try_into().expect("4 bytes"));
-            out.push(Tile { offset: v & 0x00FF_FFFF, opcode: v >> 24 });
+            out.push(Tile {
+                offset: v & 0x00FF_FFFF,
+                opcode: v >> 24,
+            });
         }
         // A copy takes the (already resolved) tile it points at.
         for i in 0..count {
             if out[i].opcode == COPY_OP {
-                out[i] = *out.get(out[i].offset as usize).ok_or_else(|| corrupt("uiia tile copies a tile that does not exist"))?;
+                out[i] = *out
+                    .get(out[i].offset as usize)
+                    .ok_or_else(|| corrupt("uiia tile copies a tile that does not exist"))?;
             }
         }
     } else {
         let op = header.implied_op(quality);
         for i in 0..count {
-            out.push(Tile { offset: (i * tile_size(op)) as u32, opcode: op });
+            out.push(Tile {
+                offset: (i * tile_size(op)) as u32,
+                opcode: op,
+            });
         }
     }
     Ok(out)
@@ -209,7 +253,11 @@ fn tiles(header: &UiiaHeader, quality: Quality, res: &Resolution, data: &[u8]) -
 
 /// The bytes of `data` the tiles and the table of `quality` need.
 fn needed_len(header: &UiiaHeader, quality: Quality, res: &Resolution, tiles: &[Tile]) -> u64 {
-    let table = if header.has_table(quality) { u64::from(res.tiles()) * 4 } else { 0 };
+    let table = if header.has_table(quality) {
+        u64::from(res.tiles()) * 4
+    } else {
+        0
+    };
     tiles
         .iter()
         .filter(|t| t.opcode == BC1_OP || t.opcode == BC7_OP)
@@ -254,8 +302,12 @@ fn untile(buf: &[u8], wb: u32, hb: u32, bytes: usize) -> Result<Vec<u8>> {
             mx = (c2 + 4 * (b4 % w4)) % 8 + 8 * (b8 % w8);
 
             let dst = (my * wb + mx) as usize * bytes;
-            let block = buf.get(at..at + bytes).ok_or_else(|| corrupt("uiia tiles are cut short"))?;
-            out.get_mut(dst..dst + bytes).ok_or_else(|| corrupt("uiia swizzle leaves the image"))?.copy_from_slice(block);
+            let block = buf
+                .get(at..at + bytes)
+                .ok_or_else(|| corrupt("uiia tiles are cut short"))?;
+            out.get_mut(dst..dst + bytes)
+                .ok_or_else(|| corrupt("uiia swizzle leaves the image"))?
+                .copy_from_slice(block);
             at += bytes;
         }
     }
@@ -276,7 +328,10 @@ fn decode_kind(res: &Resolution, tiles: &[Tile], data: &[u8], opcode: u32) -> Re
     for t in tiles {
         if t.opcode == opcode {
             let at = t.offset as usize;
-            buf.extend_from_slice(data.get(at..at + size).ok_or_else(|| corrupt("uiia tile runs past its data"))?);
+            buf.extend_from_slice(
+                data.get(at..at + size)
+                    .ok_or_else(|| corrupt("uiia tile runs past its data"))?,
+            );
         } else {
             for _ in 0..size / block.len() {
                 buf.extend_from_slice(block);
@@ -285,14 +340,21 @@ fn decode_kind(res: &Resolution, tiles: &[Tile], data: &[u8], opcode: u32) -> Re
     }
     let (w, h) = (res.tiles_x * TILE_PX, res.tiles_y * TILE_PX);
     let swizzled = untile(&buf, w / 4, h / 4, block.len())?;
-    let format = if opcode == BC7_OP { PixelFormat::Bc7 } else { PixelFormat::Bc1 };
+    let format = if opcode == BC7_OP {
+        PixelFormat::Bc7
+    } else {
+        PixelFormat::Bc1
+    };
     decode_rgba8(format, w, h, &swizzled)
 }
 
 /// The finished RGBA8 image of one resolution (rsx `CreateTextureForImage`).
 fn compose(res: &Resolution, tiles: &[Tile], data: &[u8]) -> Result<Vec<u8>> {
     let has = |op| tiles.iter().any(|t| t.opcode == op);
-    let (bc1, bc7) = (has(BC1_OP).then(|| decode_kind(res, tiles, data, BC1_OP)), has(BC7_OP).then(|| decode_kind(res, tiles, data, BC7_OP)));
+    let (bc1, bc7) = (
+        has(BC1_OP).then(|| decode_kind(res, tiles, data, BC1_OP)),
+        has(BC7_OP).then(|| decode_kind(res, tiles, data, BC7_OP)),
+    );
     let stride = (res.tiles_x * TILE_PX) as usize * 4;
     let shifted = match (bc1, bc7) {
         (None, None) => return Err(corrupt("uiia has no tiles")),
@@ -300,11 +362,17 @@ fn compose(res: &Resolution, tiles: &[Tile], data: &[u8]) -> Result<Vec<u8>> {
         (None, Some(bc7)) => bc7?,
         (Some(bc1), Some(bc7)) => {
             let (mut base, bc7) = (bc1?, bc7?);
-            for i in tiles.iter().enumerate().filter(|(_, t)| t.opcode == BC7_OP).map(|(i, _)| i) {
+            for i in tiles
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.opcode == BC7_OP)
+                .map(|(i, _)| i)
+            {
                 let (x, y) = (i as u32 % res.tiles_x, i as u32 / res.tiles_x);
                 for row in 0..TILE_PX {
                     let at = ((y * TILE_PX + row) as usize) * stride + (x * TILE_PX) as usize * 4;
-                    base[at..at + TILE_PX as usize * 4].copy_from_slice(&bc7[at..at + TILE_PX as usize * 4]);
+                    base[at..at + TILE_PX as usize * 4]
+                        .copy_from_slice(&bc7[at..at + TILE_PX as usize * 4]);
                 }
             }
             base
@@ -313,13 +381,22 @@ fn compose(res: &Resolution, tiles: &[Tile], data: &[u8]) -> Result<Vec<u8>> {
     // Drop the shared border pixel of every tile.
     let mut out = vec![0u8; res.width as usize * res.height as usize * 4];
     for y in 0..res.tiles_y {
-        let size_y = if y * VISIBLE_PX + 30 < res.height { VISIBLE_PX } else { res.height.saturating_sub(y * VISIBLE_PX) };
+        let size_y = if y * VISIBLE_PX + 30 < res.height {
+            VISIBLE_PX
+        } else {
+            res.height.saturating_sub(y * VISIBLE_PX)
+        };
         for x in 0..res.tiles_x {
-            let size_x = if x * VISIBLE_PX + 30 < res.width { VISIBLE_PX } else { res.width.saturating_sub(x * VISIBLE_PX) };
+            let size_x = if x * VISIBLE_PX + 30 < res.width {
+                VISIBLE_PX
+            } else {
+                res.width.saturating_sub(x * VISIBLE_PX)
+            };
             for row in 0..size_y {
                 let src = ((y * TILE_PX + row) as usize) * stride + (x * TILE_PX) as usize * 4;
                 let dst = (((y * VISIBLE_PX + row) * res.width) + x * VISIBLE_PX) as usize * 4;
-                out[dst..dst + size_x as usize * 4].copy_from_slice(&shifted[src..src + size_x as usize * 4]);
+                out[dst..dst + size_x as usize * 4]
+                    .copy_from_slice(&shifted[src..src + size_x as usize * 4]);
             }
         }
     }
@@ -375,18 +452,31 @@ impl UiiaAsset {
         // The table (if any) tells how far the tiles reach; read that much of the pages.
         let mem_len = self.volume.stat(MEM).await?.content_length();
         let available = mem_len.saturating_sub(self.data_offset);
-        let table = if self.header.has_table(Quality::Low) { u64::from(res.tiles()) * 4 } else { 0 };
+        let table = if self.header.has_table(Quality::Low) {
+            u64::from(res.tiles()) * 4
+        } else {
+            0
+        };
         let head = if table == 0 {
             Vec::new()
         } else {
-            self.volume.read_with(MEM).range(self.data_offset..self.data_offset + table.min(available)).await?.to_vec()
+            self.volume
+                .read_with(MEM)
+                .range(self.data_offset..self.data_offset + table.min(available))
+                .await?
+                .to_vec()
         };
         let list = tiles(&self.header, Quality::Low, res, &head)?;
         let len = needed_len(&self.header, Quality::Low, res, &list);
         if len > available {
             return Err(corrupt("uiia tiles run past the end of the pak's pages"));
         }
-        Ok(self.volume.read_with(MEM).range(self.data_offset..self.data_offset + len).await?.to_vec())
+        Ok(self
+            .volume
+            .read_with(MEM)
+            .range(self.data_offset..self.data_offset + len)
+            .await?
+            .to_vec())
     }
 }
 
@@ -398,9 +488,15 @@ impl Bitmap for UiiaAsset {
 
     async fn read_mip(&self, level: u32, layer: u32) -> Result<Bytes> {
         if level != 0 || layer != 0 {
-            return Err(Error::new(ErrorKind::NotFound { path: format!("mip {level} of layer {layer}") }));
+            return Err(Error::new(ErrorKind::NotFound {
+                path: format!("mip {level} of layer {layer}"),
+            }));
         }
-        let res = if self.quality == Quality::High { self.header.high } else { self.header.low };
+        let res = if self.quality == Quality::High {
+            self.header.high
+        } else {
+            self.header.low
+        };
         let data = self.tile_data(&res).await?;
         let list = tiles(&self.header, self.quality, &res, &data)?;
         Ok(Bytes::from(compose(&res, &list, &data)?))
@@ -447,21 +543,33 @@ impl Detect for UiiaRead {
         let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
             return Ok(None);
         };
-        Ok((asset.entry.kind == *b"uiia")
-            .then(|| Detected { score: 10, version: Some(Version::new(asset.entry.version)) }))
+        Ok((asset.entry.kind == *b"uiia").then(|| Detected {
+            score: 10,
+            version: Some(Version::new(asset.entry.version)),
+        }))
     }
 }
 
 #[async_trait]
 impl ReadHandler for UiiaRead {
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source
-            .downcast_ref::<RpakAsset>()
-            .ok_or_else(|| Error::new(ErrorKind::Custom { source: None, message: "uiia must be read from an rpak.asset".into() }))?;
-        let data_offset = asset.data_mem_offset.ok_or_else(|| corrupt("uiia has no CPU data"))?;
+        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+            Error::new(ErrorKind::Custom {
+                source: None,
+                message: "uiia must be read from an rpak.asset".into(),
+            })
+        })?;
+        let data_offset = asset
+            .data_mem_offset
+            .ok_or_else(|| corrupt("uiia has no CPU data"))?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
-        if data_offset.checked_add(CPU_LEN).is_none_or(|end| end > mem_len) {
-            return Err(corrupt("uiia CPU data runs past the end of the pak's pages"));
+        if data_offset
+            .checked_add(CPU_LEN)
+            .is_none_or(|end| end > mem_len)
+        {
+            return Err(corrupt(
+                "uiia CPU data runs past the end of the pak's pages",
+            ));
         }
         let cpu = asset.read_mem(data_offset, CPU_LEN).await?;
         let header = UiiaHeader::parse(asset.entry.version, &asset.read_header().await?, &cpu)?;
@@ -473,18 +581,33 @@ impl ReadHandler for UiiaRead {
             Some(at) => read_name(&asset.volume, at, mem_len).await,
             None => None,
         }
-        .map(|n| if n.starts_with("ui_image/") { n } else { format!("ui_image/{n}") });
+        .map(|n| {
+            if n.starts_with("ui_image/") {
+                n
+            } else {
+                format!("ui_image/{n}")
+            }
+        });
         let label = name.as_deref().unwrap_or("(unnamed)");
 
         // The high resolution lives in the starpak; without it the low one is all there is.
         let mut quality = Quality::Low;
         if let Some(path) = asset.stream.as_deref().filter(|_| header.streamed_size > 0) {
             match asset.volume.stat(path).await {
-                Ok(meta) if meta.content_length() >= header.streamed_size => quality = Quality::High,
-                Ok(_) => return Err(corrupt(format!("uiia {label}: its streamed data does not fit the starpak entry"))),
+                Ok(meta) if meta.content_length() >= header.streamed_size => {
+                    quality = Quality::High
+                }
+                Ok(_) => {
+                    return Err(corrupt(format!(
+                        "uiia {label}: its streamed data does not fit the starpak entry"
+                    )))
+                }
                 Err(e) => {
                     let e = Error::from(e);
-                    if matches!(e.kind(), ErrorKind::NotFound { .. } | ErrorKind::MissingDependency { .. }) {
+                    if matches!(
+                        e.kind(),
+                        ErrorKind::NotFound { .. } | ErrorKind::MissingDependency { .. }
+                    ) {
                         cx.warn(format!("uiia {label}: the high resolution is skipped: {path} is not available ({e})"));
                     } else {
                         return Err(e);
@@ -492,7 +615,11 @@ impl ReadHandler for UiiaRead {
                 }
             }
         }
-        let res = if quality == Quality::High { header.high } else { header.low };
+        let res = if quality == Quality::High {
+            header.high
+        } else {
+            header.low
+        };
         let info = BitmapInfo {
             width: res.width,
             height: res.height,
@@ -536,9 +663,15 @@ mod tests {
         for (wb, hb) in [(8, 8), (16, 8), (32, 16), (16, 24)] {
             let buf: Vec<u8> = (0..wb * hb).flat_map(|i: u32| i.to_le_bytes()).collect();
             let out = untile(&buf, wb, hb, 4).unwrap();
-            let mut seen: Vec<u32> = out.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
+            let mut seen: Vec<u32> = out
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+                .collect();
             seen.sort_unstable();
-            assert!(seen.iter().copied().eq(0..wb * hb), "{wb}x{hb} is not a permutation");
+            assert!(
+                seen.iter().copied().eq(0..wb * hb),
+                "{wb}x{hb} is not a permutation"
+            );
         }
     }
 
@@ -554,9 +687,18 @@ mod tests {
         };
         let res = h.low;
         let t = tiles(&h, Quality::Low, &res, &[]).unwrap();
-        assert_eq!(t, [Tile { offset: 0, opcode: BC7_OP }]);
+        assert_eq!(
+            t,
+            [Tile {
+                offset: 0,
+                opcode: BC7_OP
+            }]
+        );
         h.flags = 0;
-        assert_eq!(tiles(&h, Quality::Low, &res, &[]).unwrap()[0].opcode, BC1_OP);
+        assert_eq!(
+            tiles(&h, Quality::Low, &res, &[]).unwrap()[0].opcode,
+            BC1_OP
+        );
     }
 
     #[test]
@@ -573,14 +715,23 @@ mod tests {
         data.extend_from_slice(&(BC1_OP << 24 | 8).to_le_bytes());
         data.extend_from_slice(&(COPY_OP << 24).to_le_bytes());
         let t = tiles(&h, Quality::Low, &h.low, &data).unwrap();
-        assert_eq!(t[1], Tile { offset: 8, opcode: BC1_OP });
+        assert_eq!(
+            t[1],
+            Tile {
+                offset: 8,
+                opcode: BC1_OP
+            }
+        );
         assert_eq!(needed_len(&h, Quality::Low, &h.low, &t), 8 + 512);
     }
 
     #[test]
     fn transparent_image() {
         let res = Resolution::new(31, 31, 0xC0);
-        let tiles = [Tile { offset: 0, opcode: BC1_OP }];
+        let tiles = [Tile {
+            offset: 0,
+            opcode: BC1_OP,
+        }];
         // A BC1 tile of all-transparent blocks: 512 bytes of the pattern.
         let data: Vec<u8> = [0u8, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF].repeat(64);
         let rgba = compose(&res, &tiles, &data).unwrap();

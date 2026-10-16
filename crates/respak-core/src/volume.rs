@@ -51,7 +51,10 @@ pub trait VolumeSource: Send + Sync + 'static {
 
 /// Wraps a [`VolumeSource`] as a read-only [`Operator`]. `name` shows up in logs and errors.
 pub fn volume_operator(source: impl VolumeSource, name: &str) -> Operator {
-    let service = VolumeService { source: Arc::new(source), info: ServiceInfo::new("respak-volume", "/", name) };
+    let service = VolumeService {
+        source: Arc::new(source),
+        info: ServiceInfo::new("respak-volume", "/", name),
+    };
     Operator::from_parts(OperationContext::default(), Arc::new(service))
 }
 
@@ -77,7 +80,9 @@ struct VolumeService {
 
 impl fmt::Debug for VolumeService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VolumeService").field("name", &self.info.name()).finish()
+        f.debug_struct("VolumeService")
+            .field("name", &self.info.name())
+            .finish()
     }
 }
 
@@ -94,24 +99,50 @@ impl opendal::raw::Service for VolumeService {
     }
 
     fn capability(&self) -> Capability {
-        Capability { read: true, stat: true, list: true, ..Default::default() }
+        Capability {
+            read: true,
+            stat: true,
+            list: true,
+            ..Default::default()
+        }
     }
 
-    async fn create_dir(&self, _: &OperationContext, _: &str, _: opendal::raw::OpCreateDir) -> opendal::Result<opendal::raw::RpCreateDir> {
+    async fn create_dir(
+        &self,
+        _: &OperationContext,
+        _: &str,
+        _: opendal::raw::OpCreateDir,
+    ) -> opendal::Result<opendal::raw::RpCreateDir> {
         Err(unsupported())
     }
 
     async fn stat(&self, _: &OperationContext, path: &str, _: OpStat) -> opendal::Result<RpStat> {
-        let s = self.source.stat(volume_path(path)).await.map_err(to_opendal)?;
-        let metadata = if s.is_dir { MetadataBuilder::dir() } else { MetadataBuilder::file(s.len) };
+        let s = self
+            .source
+            .stat(volume_path(path))
+            .await
+            .map_err(to_opendal)?;
+        let metadata = if s.is_dir {
+            MetadataBuilder::dir()
+        } else {
+            MetadataBuilder::file(s.len)
+        };
         Ok(RpStat::new(metadata.build()))
     }
 
     fn read(&self, _: &OperationContext, path: &str, _: OpRead) -> opendal::Result<Self::Reader> {
-        Ok(oio::StreamReader::new(VolumeReader { source: self.source.clone(), path: volume_path(path).to_owned() }))
+        Ok(oio::StreamReader::new(VolumeReader {
+            source: self.source.clone(),
+            path: volume_path(path).to_owned(),
+        }))
     }
 
-    fn write(&self, _: &OperationContext, _: &str, _: opendal::raw::OpWrite) -> opendal::Result<Self::Writer> {
+    fn write(
+        &self,
+        _: &OperationContext,
+        _: &str,
+        _: opendal::raw::OpWrite,
+    ) -> opendal::Result<Self::Writer> {
         Err(unsupported())
     }
 
@@ -120,18 +151,39 @@ impl opendal::raw::Service for VolumeService {
     }
 
     fn list(&self, _: &OperationContext, path: &str, _: OpList) -> opendal::Result<Self::Lister> {
-        Ok(VolumeLister { source: self.source.clone(), dir: path.to_owned(), entries: None })
+        Ok(VolumeLister {
+            source: self.source.clone(),
+            dir: path.to_owned(),
+            entries: None,
+        })
     }
 
-    fn copy(&self, _: &OperationContext, _: &str, _: &str, _: opendal::raw::OpCopy) -> opendal::Result<Self::Copier> {
+    fn copy(
+        &self,
+        _: &OperationContext,
+        _: &str,
+        _: &str,
+        _: opendal::raw::OpCopy,
+    ) -> opendal::Result<Self::Copier> {
         Err(unsupported())
     }
 
-    async fn rename(&self, _: &OperationContext, _: &str, _: &str, _: opendal::raw::OpRename) -> opendal::Result<opendal::raw::RpRename> {
+    async fn rename(
+        &self,
+        _: &OperationContext,
+        _: &str,
+        _: &str,
+        _: opendal::raw::OpRename,
+    ) -> opendal::Result<opendal::raw::RpRename> {
         Err(unsupported())
     }
 
-    async fn presign(&self, _: &OperationContext, _: &str, _: opendal::raw::OpPresign) -> opendal::Result<opendal::raw::RpPresign> {
+    async fn presign(
+        &self,
+        _: &OperationContext,
+        _: &str,
+        _: opendal::raw::OpPresign,
+    ) -> opendal::Result<opendal::raw::RpPresign> {
         Err(unsupported())
     }
 }
@@ -146,15 +198,28 @@ struct VolumeReader {
 }
 
 impl oio::StreamRead for VolumeReader {
-    async fn open(&self, range: BytesRange) -> opendal::Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+    async fn open(
+        &self,
+        range: BytesRange,
+    ) -> opendal::Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
         let stat = self.source.stat(&self.path).await.map_err(to_opendal)?;
         if stat.is_dir {
-            return Err(opendal::Error::new(opendal::ErrorKind::IsADirectory, "cannot read a directory"));
+            return Err(opendal::Error::new(
+                opendal::ErrorKind::IsADirectory,
+                "cannot read a directory",
+            ));
         }
         let wanted = range.to_content_range(stat.len as usize)?;
         let wanted = wanted.start as u64..wanted.end as u64;
-        let bytes = self.source.read(&self.path, wanted).await.map_err(to_opendal)?;
-        Ok((RpRead::new(MetadataBuilder::file(stat.len).build()), Box::new(Buffer::from(bytes))))
+        let bytes = self
+            .source
+            .read(&self.path, wanted)
+            .await
+            .map_err(to_opendal)?;
+        Ok((
+            RpRead::new(MetadataBuilder::file(stat.len).build()),
+            Box::new(Buffer::from(bytes)),
+        ))
     }
 }
 
@@ -168,17 +233,31 @@ struct VolumeLister {
 impl oio::List for VolumeLister {
     async fn next(&mut self) -> opendal::Result<Option<oio::Entry>> {
         if self.entries.is_none() {
-            let list = self.source.list(volume_path(&self.dir)).await.map_err(to_opendal)?;
+            let list = self
+                .source
+                .list(volume_path(&self.dir))
+                .await
+                .map_err(to_opendal)?;
             self.entries = Some(list.into_iter());
         }
         let Some(e) = self.entries.as_mut().and_then(Iterator::next) else {
             return Ok(None);
         };
-        let prefix = if self.dir == "/" { String::new() } else { self.dir.clone() };
-        Ok(Some(if e.is_dir {
-            oio::Entry::new(&format!("{prefix}{}/", e.name), MetadataBuilder::dir().build())
+        let prefix = if self.dir == "/" {
+            String::new()
         } else {
-            oio::Entry::new(&format!("{prefix}{}", e.name), MetadataBuilder::file(e.len).build())
+            self.dir.clone()
+        };
+        Ok(Some(if e.is_dir {
+            oio::Entry::new(
+                &format!("{prefix}{}/", e.name),
+                MetadataBuilder::dir().build(),
+            )
+        } else {
+            oio::Entry::new(
+                &format!("{prefix}{}", e.name),
+                MetadataBuilder::file(e.len).build(),
+            )
         }))
     }
 }

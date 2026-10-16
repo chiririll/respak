@@ -86,7 +86,12 @@ pub(crate) mod tests {
             let body: Vec<u8> = (0..len).map(|j| (i as u32 * 31 + j) as u8).collect();
             let mut sha = [0u8; 20];
             sha[0] = i as u8;
-            chunks.push(ChunkRef { sha, offset, len, adler: 0 });
+            chunks.push(ChunkRef {
+                sha,
+                offset,
+                len,
+                adler: 0,
+            });
             all.extend_from_slice(&body);
             data.push(Bytes::from(body));
             offset += u64::from(len);
@@ -141,9 +146,13 @@ pub(crate) mod tests {
         let total = all.len() as u64;
         let mut x = 12345u64;
         for _ in 0..500 {
-            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let a = (x >> 33) % (total + 10);
-            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let b = a + (x >> 33) % 300;
             let expect = &all[(a.min(total) as usize)..(b.min(total) as usize)];
             assert_eq!(&read(&chunks, &data, a..b)[..], expect, "{a}..{b}");

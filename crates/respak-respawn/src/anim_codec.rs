@@ -12,7 +12,9 @@ use respak_core::{Error, ErrorKind, Result};
 use crate::rmdl::B;
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// `FIXED_ROT_SCALE`: radians per unit of a rotation track.
@@ -82,9 +84,14 @@ impl RleHeader {
         let v = B(block).u16(at)?;
         let size = v & 0x1FFF;
         if size < 2 {
-            return Err(corrupt(format!("animation bone header at {at:#x} has size {size}")));
+            return Err(corrupt(format!(
+                "animation bone header at {at:#x} has size {size}"
+            )));
         }
-        Ok(Self { size, tracked: (v >> 13) as u8 })
+        Ok(Self {
+            size,
+            tracked: (v >> 13) as u8,
+        })
     }
 }
 
@@ -125,14 +132,17 @@ impl ValuePtr {
 
 /// `s_AnimSeekLUT`: `(base, add, per frame)` per `valid` value 0 to 19.
 const SEEK_LUT: [u8; 60] = [
-    1, 15, 16, 2, 7, 8, 2, 15, 0, 3, 15, 0, 4, 15, 0, 5, 15, 0, 6, 15, 0, 7, 15, 0, 2, 15, 2, 3, 15, 2, 4, 15, 2, 5, 15, 2,
-    6, 15, 2, 7, 15, 2, 2, 15, 4, 3, 15, 4, 4, 15, 4, 5, 15, 4, 6, 15, 4, 7, 15, 4,
+    1, 15, 16, 2, 7, 8, 2, 15, 0, 3, 15, 0, 4, 15, 0, 5, 15, 0, 6, 15, 0, 7, 15, 0, 2, 15, 2, 3,
+    15, 2, 4, 15, 2, 5, 15, 2, 6, 15, 2, 7, 15, 2, 2, 15, 4, 3, 15, 4, 4, 15, 4, 5, 15, 4, 6, 15,
+    4, 7, 15, 4,
 ];
 
 /// Size of one block of a track, in 2-byte units (`GetAnimValueOffset`, `s_AnimSeekLUT`).
 pub(crate) fn block_units(valid: u8, total: u8) -> Result<usize> {
     if valid > 19 {
-        return Err(corrupt(format!("animation track block with valid = {valid}")));
+        return Err(corrupt(format!(
+            "animation track block with valid = {valid}"
+        )));
     }
     let [base, add, per] = [0, 1, 2].map(|i| usize::from(SEEK_LUT[usize::from(valid) * 3 + i]));
     Ok(base + ((add + usize::from(total) * per) >> 4))
@@ -167,7 +177,11 @@ pub(crate) fn decode_track(block: &[u8], at: usize, frame: u32, scale: f32) -> R
             let bit_index = usize::from(valid - 2) / 6;
             let polys = usize::from(valid - 2) % 6;
             let mut v = base()?;
-            let cycle = if total > 1 { f as f32 / f32::from(total - 1) } else { 0.0 };
+            let cycle = if total > 1 {
+                f as f32 / f32::from(total - 1)
+            } else {
+                0.0
+            };
             let mut power = 1.0;
             for i in 0..polys {
                 power *= cycle;
@@ -182,7 +196,11 @@ pub(crate) fn decode_track(block: &[u8], at: usize, frame: u32, scale: f32) -> R
             }
             v
         }
-        _ => return Err(corrupt(format!("animation track block with valid = {valid}"))),
+        _ => {
+            return Err(corrupt(format!(
+                "animation track block with valid = {valid}"
+            )))
+        }
     };
     Ok(value * scale)
 }
@@ -222,15 +240,28 @@ pub(crate) fn euler_to_quat(angles: [f32; 3]) -> [f32; 4] {
     let (sy, cy) = (angles[2] * 0.5).sin_cos();
     let (sr_cp, cr_sp) = (sr * cp, cr * sp);
     let (cr_cp, sr_sp) = (cr * cp, sr * sp);
-    [sr_cp * cy - cr_sp * sy, cr_sp * cy + sr_cp * sy, cr_cp * sy - sr_sp * cy, cr_cp * cy + sr_sp * sy]
+    [
+        sr_cp * cy - cr_sp * sy,
+        cr_sp * cy + sr_cp * sy,
+        cr_cp * sy - sr_sp * cy,
+        cr_cp * cy + sr_sp * sy,
+    ]
 }
 
 /// Euler angles `[roll, pitch, yaw]` in radians of a quaternion `[x, y, z, w]` (`QuaternionAngles`,
 /// the inverse of [`euler_to_quat`]).
 pub(crate) fn quat_to_euler(q: [f32; 4]) -> [f32; 3] {
     let [x, y, z, w] = q;
-    let forward = [1.0 - 2.0 * y * y - 2.0 * z * z, 2.0 * x * y + 2.0 * w * z, 2.0 * x * z - 2.0 * w * y];
-    let left = [2.0 * x * y - 2.0 * w * z, 1.0 - 2.0 * x * x - 2.0 * z * z, 2.0 * y * z + 2.0 * w * x];
+    let forward = [
+        1.0 - 2.0 * y * y - 2.0 * z * z,
+        2.0 * x * y + 2.0 * w * z,
+        2.0 * x * z - 2.0 * w * y,
+    ];
+    let left = [
+        2.0 * x * y - 2.0 * w * z,
+        1.0 - 2.0 * x * x - 2.0 * z * z,
+        2.0 * y * z + 2.0 * w * x,
+    ];
     let up_z = 1.0 - 2.0 * x * x - 2.0 * y * y;
     let xy = (forward[0] * forward[0] + forward[1] * forward[1]).sqrt();
     let pitch = (-forward[2]).atan2(xy);
@@ -279,10 +310,20 @@ pub(crate) struct SectionIndex {
 /// Walks the flag array and the bone headers of a section of `bones` bones. `None` means `block`
 /// ends before the section does (read more and try again); a structure that cannot be right is
 /// `Corrupt`.
-pub(crate) fn index_section(block: &[u8], bones: usize, width: FlagWidth) -> Result<Option<SectionIndex>> {
+pub(crate) fn index_section(
+    block: &[u8],
+    bones: usize,
+    width: FlagWidth,
+) -> Result<Option<SectionIndex>> {
     let flag_len = flag_array_size(bones, width);
-    let Some(array) = block.get(..flag_len) else { return Ok(None) };
-    let (mut flags, mut headers, mut cursor) = (Vec::with_capacity(bones), Vec::with_capacity(bones), flag_len);
+    let Some(array) = block.get(..flag_len) else {
+        return Ok(None);
+    };
+    let (mut flags, mut headers, mut cursor) = (
+        Vec::with_capacity(bones),
+        Vec::with_capacity(bones),
+        flag_len,
+    );
     for bone in 0..bones {
         let f = bone_flags(array, bone, width)?;
         flags.push(f);
@@ -300,7 +341,11 @@ pub(crate) fn index_section(block: &[u8], bones: usize, width: FlagWidth) -> Res
             return Ok(None);
         }
     }
-    Ok(Some(SectionIndex { flags, headers, extent: cursor }))
+    Ok(Some(SectionIndex {
+        flags,
+        headers,
+        extent: cursor,
+    }))
 }
 
 /// Decodes the channels of the bone whose data starts at `at` (right after its [`RleHeader`]) on
@@ -319,7 +364,9 @@ pub(crate) fn decode_bone(
     let mut cursor = at;
     let mut out = BoneFrame::default();
     let track = |ptr: &ValuePtr, axis: usize, scale: f32| -> Result<Option<f32>> {
-        ptr.track(axis).map(|t| decode_track(block, t, frame, scale)).transpose()
+        ptr.track(axis)
+            .map(|t| decode_track(block, t, frame, scale))
+            .transpose()
     };
 
     if flags & BONE_POS != 0 {
@@ -371,7 +418,10 @@ pub(crate) fn decode_bone(
         }
     }
     if cursor > end {
-        return Err(corrupt(format!("animation bone data at {at:#x} is larger than its header says ({} bytes)", header.size)));
+        return Err(corrupt(format!(
+            "animation bone data at {at:#x} is larger than its header says ({} bytes)",
+            header.size
+        )));
     }
     Ok(out)
 }
@@ -416,11 +466,15 @@ mod tests {
 
         // five bones, nibbles low first; the 0x8 bit is kept (masked 0x0F)
         let four = [0x21, 0x43, 0x0F, 0];
-        let got: Vec<_> = (0..5).map(|i| bone_flags(&four, i, FlagWidth::Four).unwrap()).collect();
+        let got: Vec<_> = (0..5)
+            .map(|i| bone_flags(&four, i, FlagWidth::Four).unwrap())
+            .collect();
         assert_eq!(got, [1, 2, 3, 4, 0xF]);
 
         let six = pack6(&[1, 2, 4, 7, 0x3F]);
-        let got: Vec<_> = (0..5).map(|i| bone_flags(&six, i, FlagWidth::Six).unwrap()).collect();
+        let got: Vec<_> = (0..5)
+            .map(|i| bone_flags(&six, i, FlagWidth::Six).unwrap())
+            .collect();
         assert_eq!(got, [1, 2, 4, 7, 0x3F]);
 
         assert!(bone_flags(&four, 8, FlagWidth::Four).is_err());
@@ -431,7 +485,10 @@ mod tests {
     fn rle_header_and_value_pointer() {
         let h = RleHeader::parse(&le(0x123 | (0b101 << 13)), 0).unwrap();
         assert_eq!((h.size, h.tracked), (0x123, 0b101));
-        assert!(RleHeader::parse(&le(1), 0).is_err(), "size below the header itself");
+        assert!(
+            RleHeader::parse(&le(1), 0).is_err(),
+            "size below the header itself"
+        );
         assert!(RleHeader::parse(&[1], 0).is_err());
 
         // offset 12 bytes, X and Z present, second/third axis tracks 3 and 5 units on
@@ -454,9 +511,17 @@ mod tests {
         assert_eq!(block_units(2, 200).unwrap(), 2);
         assert_eq!(block_units(3, 200).unwrap(), 3);
         assert_eq!(block_units(7, 9).unwrap(), 7);
-        assert_eq!(block_units(8, 4).unwrap(), 3, "2-bit residuals: 4 frames in one word");
+        assert_eq!(
+            block_units(8, 4).unwrap(),
+            3,
+            "2-bit residuals: 4 frames in one word"
+        );
         assert_eq!(block_units(8, 16).unwrap(), 4);
-        assert_eq!(block_units(14, 8).unwrap(), 4, "4-bit residuals: 8 frames in two words");
+        assert_eq!(
+            block_units(14, 8).unwrap(),
+            4,
+            "4-bit residuals: 8 frames in two words"
+        );
         assert_eq!(block_units(19, 4).unwrap(), 7 + 1);
         assert!(block_units(20, 1).is_err());
     }
@@ -475,15 +540,29 @@ mod tests {
         block.extend([5u8, 0xFD, 2, 0]); // deltas +5, -3, +2
         assert_eq!(decode_track(&block, 0, 0, 1.0).unwrap(), 10.0);
         assert_eq!(decode_track(&block, 0, 2, 1.0).unwrap(), 30.0);
-        assert_eq!(decode_track(&block, 0, 3, 1.0).unwrap(), 100.0, "first frame of block B");
+        assert_eq!(
+            decode_track(&block, 0, 3, 1.0).unwrap(),
+            100.0,
+            "first frame of block B"
+        );
         assert_eq!(decode_track(&block, 0, 4, 1.0).unwrap(), 105.0);
-        assert_eq!(decode_track(&block, 0, 5, 2.0).unwrap(), 194.0, "(100 - 3) * 2");
+        assert_eq!(
+            decode_track(&block, 0, 5, 2.0).unwrap(),
+            194.0,
+            "(100 - 3) * 2"
+        );
         assert_eq!(decode_track(&block, 0, 6, 1.0).unwrap(), 102.0);
         // past the last block: the walk leaves the data
         assert!(decode_track(&block, 0, 7, 1.0).is_err());
         assert!(decode_track(&block, 0, 100, 1.0).is_err());
-        assert!(decode_track(&block[..3], 0, 0, 1.0).is_err(), "truncated values");
-        assert!(decode_track(&[20, 4, 0, 0], 0, 0, 1.0).is_err(), "valid out of range");
+        assert!(
+            decode_track(&block[..3], 0, 0, 1.0).is_err(),
+            "truncated values"
+        );
+        assert!(
+            decode_track(&[20, 4, 0, 0], 0, 0, 1.0).is_err(),
+            "valid out of range"
+        );
     }
 
     #[test]
@@ -491,13 +570,17 @@ mod tests {
         // valid 8: base 10, no polynomial, 2-bit residuals 0,1,2,3 -> 10 - 3 + 2r
         let mut block = vec![8, 4];
         block.extend(words(&[10, 0b1110_0100]));
-        let got: Vec<_> = (0..4).map(|f| decode_track(&block, 0, f, 1.0).unwrap()).collect();
+        let got: Vec<_> = (0..4)
+            .map(|f| decode_track(&block, 0, f, 1.0).unwrap())
+            .collect();
         assert_eq!(got, [7.0, 9.0, 11.0, 13.0]);
 
         // valid 14: 4-bit residuals, base 20 -> 20 - 15 + 2r; frames 0..2 residuals 15, 0, 7
         let mut block = vec![14, 3];
         block.extend(words(&[20, 0x07_0F]));
-        let got: Vec<_> = (0..3).map(|f| decode_track(&block, 0, f, 1.0).unwrap()).collect();
+        let got: Vec<_> = (0..3)
+            .map(|f| decode_track(&block, 0, f, 1.0).unwrap())
+            .collect();
         assert_eq!(got, [35.0, 5.0, 19.0]);
     }
 
@@ -526,7 +609,10 @@ mod tests {
     #[test]
     fn quaternion64_known_values() {
         let pack = |x: u64, y: u64, z: u64, neg: u64| x | (y << 21) | (z << 42) | (neg << 63);
-        near(&unpack_quaternion64(pack(1_048_576, 1_048_576, 1_048_576, 0)), &[0.0, 0.0, 0.0, 1.0]);
+        near(
+            &unpack_quaternion64(pack(1_048_576, 1_048_576, 1_048_576, 0)),
+            &[0.0, 0.0, 0.0, 1.0],
+        );
         let q = unpack_quaternion64(pack(1_048_576 + 524_288, 1_048_576, 1_048_576, 0));
         near(&q, &[0.499_999_76, 0.0, 0.0, 0.866_025_5]);
         let q = unpack_quaternion64(pack(1_048_576, 1_048_576 - 524_288, 1_048_576, 1));
@@ -540,8 +626,13 @@ mod tests {
     fn half_floats() {
         let bytes = [0x00, 0x3C, 0x00, 0xC0, 0x00, 0x38];
         near(&half_vec3(&bytes), &[1.0, -2.0, 0.5]);
-        near(&half_vec3(&[0, 0, 0x01, 0, 0xFF, 0x7B]), &[0.0, 5.960_464_5e-8, 65504.0]);
-        assert!(half_vec3(&[0, 0x7C, 0, 0xFC, 1, 0x7C]).iter().any(|v| v.is_nan()));
+        near(
+            &half_vec3(&[0, 0, 0x01, 0, 0xFF, 0x7B]),
+            &[0.0, 5.960_464_5e-8, 65504.0],
+        );
+        assert!(half_vec3(&[0, 0x7C, 0, 0xFC, 1, 0x7C])
+            .iter()
+            .any(|v| v.is_nan()));
         assert_eq!(half_vec3(&[0, 0x7C, 0, 0, 0, 0])[0], f32::INFINITY);
     }
 
@@ -549,12 +640,21 @@ mod tests {
     fn euler_quaternion_round_trip() {
         near(&euler_to_quat([0.0; 3]), &[0.0, 0.0, 0.0, 1.0]);
         let s = std::f32::consts::FRAC_1_SQRT_2;
-        near(&euler_to_quat([0.0, 0.0, std::f32::consts::FRAC_PI_2]), &[0.0, 0.0, s, s]);
-        near(&euler_to_quat([std::f32::consts::FRAC_PI_2, 0.0, 0.0]), &[s, 0.0, 0.0, s]);
+        near(
+            &euler_to_quat([0.0, 0.0, std::f32::consts::FRAC_PI_2]),
+            &[0.0, 0.0, s, s],
+        );
+        near(
+            &euler_to_quat([std::f32::consts::FRAC_PI_2, 0.0, 0.0]),
+            &[s, 0.0, 0.0, s],
+        );
         for angles in [[0.3, -0.5, 1.2], [-1.0, 0.7, -2.5], [0.0, 0.0, 3.0]] {
             near(&quat_to_euler(euler_to_quat(angles)), &angles);
         }
-        let q = quat_mul(euler_to_quat([0.0, 0.0, 0.4]), euler_to_quat([0.0, 0.0, 0.5]));
+        let q = quat_mul(
+            euler_to_quat([0.0, 0.0, 0.4]),
+            euler_to_quat([0.0, 0.0, 0.5]),
+        );
         near(&q, &euler_to_quat([0.0, 0.0, 0.9]));
     }
 
@@ -601,7 +701,10 @@ mod tests {
         let f = decode_bone(&block, 2, header, BONE_ROT, 1, [0.0, 0.25, 0.0]).unwrap();
         let (q, constant) = f.rotation.unwrap();
         assert!(!constant);
-        near(&q, &euler_to_quat([200.0 * ROT_SCALE, 0.25, -20.0 * ROT_SCALE]));
+        near(
+            &q,
+            &euler_to_quat([200.0 * ROT_SCALE, 0.25, -20.0 * ROT_SCALE]),
+        );
         assert_eq!(f.translation, None);
     }
 
@@ -644,8 +747,14 @@ mod tests {
         assert_eq!(index.flags, [1, 0, 4]);
         assert_eq!(index.headers, [Some(2), None, Some(10)]);
         assert_eq!(index.extent, block.len());
-        assert_eq!(index_section(&block[..block.len() - 1], 3, FlagWidth::Four).unwrap(), None);
-        assert_eq!(index_section(&block[..1], 3, FlagWidth::Four).unwrap(), None);
+        assert_eq!(
+            index_section(&block[..block.len() - 1], 3, FlagWidth::Four).unwrap(),
+            None
+        );
+        assert_eq!(
+            index_section(&block[..1], 3, FlagWidth::Four).unwrap(),
+            None
+        );
         // a header of size 0 cannot make progress
         let mut bad = vec![0x01, 0x00, 0, 0];
         bad.extend([0; 8]);
@@ -668,7 +777,14 @@ mod tests {
             let _ = index_section(&block, (next() % 12) as usize, FlagWidth::Six);
             let _ = index_section(&block, (next() % 12) as usize, FlagWidth::Four);
             if let Ok(h) = RleHeader::parse(&block, at) {
-                let _ = decode_bone(&block, at + 2, h, (next() % 8) as u8, (next() % 40) as u32, [0.0; 3]);
+                let _ = decode_bone(
+                    &block,
+                    at + 2,
+                    h,
+                    (next() % 8) as u8,
+                    (next() % 40) as u32,
+                    [0.0; 3],
+                );
             }
         }
     }

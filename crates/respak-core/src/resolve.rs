@@ -32,7 +32,10 @@ impl Mounts {
         let containers = self.containers.lock().unwrap();
         containers
             .keys()
-            .filter_map(|k| path.strip_prefix(k.as_str()).and_then(|rest| rest.strip_prefix('/')))
+            .filter_map(|k| {
+                path.strip_prefix(k.as_str())
+                    .and_then(|rest| rest.strip_prefix('/'))
+            })
             .min_by_key(|rest| rest.len())
             .unwrap_or(path)
     }
@@ -57,7 +60,9 @@ fn join(mount: &str, rel: &str) -> String {
 }
 
 fn not_found(path: &str) -> Error {
-    Error::new(ErrorKind::NotFound { path: path.to_owned() })
+    Error::new(ErrorKind::NotFound {
+        path: path.to_owned(),
+    })
 }
 
 impl Mediator {
@@ -87,7 +92,9 @@ impl Mediator {
             match self.identify(file, cx).await {
                 Ok(v) => v,
                 // Something that is not any known format is not a container either.
-                Err(e) if matches!(e.kind(), ErrorKind::UnknownFormat) => return Err(not_found(&key)),
+                Err(e) if matches!(e.kind(), ErrorKind::UnknownFormat) => {
+                    return Err(not_found(&key))
+                }
                 Err(e) => return Err(e),
             }
         };
@@ -96,29 +103,62 @@ impl Mediator {
         }
         cx.mounts.insert(key, value.clone());
         let c = value.as_container().expect("checked above");
-        let entries = crate::engine::list_volume(&c.volume()).await.map_or(0, |files| files.len());
-        cx.mediator.publish(crate::event::Event::InputOpened { path: c.mount_path().to_owned(), entries });
+        let entries = crate::engine::list_volume(&c.volume())
+            .await
+            .map_or(0, |files| files.len());
+        cx.mediator.publish(crate::event::Event::InputOpened {
+            path: c.mount_path().to_owned(),
+            entries,
+        });
         Ok(value)
     }
 
-    async fn resolve(&self, op: Operator, mount: &str, rel: &str, container: Option<Value>, cx: &Cx) -> Result<Value> {
+    async fn resolve(
+        &self,
+        op: Operator,
+        mount: &str,
+        rel: &str,
+        container: Option<Value>,
+        cx: &Cx,
+    ) -> Result<Value> {
         let segments: Vec<&str> = rel.split('/').collect();
         // Inside a container the whole path is the container's own business (`entry`), so only
         // proper prefixes are looked for there (a nested container file).
-        let longest = if container.is_some() { segments.len() - 1 } else { segments.len() };
+        let longest = if container.is_some() {
+            segments.len() - 1
+        } else {
+            segments.len()
+        };
         for n in (1..=longest).rev() {
             let prefix = segments[..n].join("/");
             match op.stat(&prefix).await {
                 Ok(m) if m.is_file() => {
                     if n == segments.len() {
-                        return Ok(std::sync::Arc::new(FileData::new(op, prefix.clone(), join(mount, &prefix), None)));
+                        return Ok(std::sync::Arc::new(FileData::new(
+                            op,
+                            prefix.clone(),
+                            join(mount, &prefix),
+                            None,
+                        )));
                     }
-                    let file: Value = std::sync::Arc::new(FileData::new(op.clone(), prefix.clone(), join(mount, &prefix), None));
+                    let file: Value = std::sync::Arc::new(FileData::new(
+                        op.clone(),
+                        prefix.clone(),
+                        join(mount, &prefix),
+                        None,
+                    ));
                     let inner = self.mount(file, cx).await?;
                     let c = inner.as_container().expect("mount checks this");
                     let rest = segments[n..].join("/");
                     let (volume, mount_path) = (c.volume(), c.mount_path().to_owned());
-                    return Box::pin(self.resolve(volume, &mount_path, &rest, Some(inner.clone()), cx)).await;
+                    return Box::pin(self.resolve(
+                        volume,
+                        &mount_path,
+                        &rest,
+                        Some(inner.clone()),
+                        cx,
+                    ))
+                    .await;
                 }
                 Ok(_) => {}
                 Err(e) if e.kind() == opendal::ErrorKind::NotFound => {}
@@ -126,7 +166,12 @@ impl Mediator {
             }
         }
         match container {
-            Some(c) => c.as_container().expect("a mounted container").entry(rel).await,
+            Some(c) => {
+                c.as_container()
+                    .expect("a mounted container")
+                    .entry(rel)
+                    .await
+            }
             None => Err(not_found(&join(mount, rel))),
         }
     }

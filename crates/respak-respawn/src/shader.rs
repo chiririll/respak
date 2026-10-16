@@ -21,7 +21,9 @@ use respak_core::{Error, ErrorKind, Result};
 use crate::rpak::{RpakAsset, MEM};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// Biggest shader blob accepted; real ones are a few kilobytes.
@@ -46,17 +48,23 @@ pub fn pixel_shader_guid(version: u32, header: &[u8]) -> Result<u64> {
             }))
         }
     };
-    let bytes = header.get(at..at + 8).ok_or_else(|| corrupt("shds header is too short"))?;
+    let bytes = header
+        .get(at..at + 8)
+        .ok_or_else(|| corrupt("shds header is too short"))?;
     Ok(u64::from_le_bytes(bytes.try_into().expect("8 bytes")))
 }
 
 /// The DXBC bytecode of the first variant of a `shdr` asset.
 pub async fn bytecode(asset: &RpakAsset) -> Result<Bytes> {
-    let data = asset.data_mem_offset.ok_or_else(|| corrupt("shdr has no data page"))?;
+    let data = asset
+        .data_mem_offset
+        .ok_or_else(|| corrupt("shdr has no data page"))?;
     let mem_len = asset.volume.stat(MEM).await?.content_length();
 
     let read_entry = |index: u64| async move {
-        let at = data.checked_add(index * ENTRY_SIZE).filter(|at| at + ENTRY_SIZE <= mem_len);
+        let at = data
+            .checked_add(index * ENTRY_SIZE)
+            .filter(|at| at + ENTRY_SIZE <= mem_len);
         let at = at.ok_or_else(|| corrupt("shdr entry is outside the pak's pages"))?;
         let raw = asset.read_mem(at, ENTRY_SIZE).await?;
         let slot: [u8; 8] = raw[..8].try_into().expect("8 bytes");
@@ -76,9 +84,13 @@ pub async fn bytecode(asset: &RpakAsset) -> Result<Bytes> {
         return Err(corrupt("shdr has no bytecode"));
     }
     let len = size as u64;
-    let at = asset.mem_offset_of(slot).ok_or_else(|| corrupt("shdr bytecode pointer is null"))?;
+    let at = asset
+        .mem_offset_of(slot)
+        .ok_or_else(|| corrupt("shdr bytecode pointer is null"))?;
     if len > MAX_BYTECODE || at.checked_add(len).is_none_or(|end| end > mem_len) {
-        return Err(corrupt("shdr bytecode runs past the end of the pak's pages"));
+        return Err(corrupt(
+            "shdr bytecode runs past the end of the pak's pages",
+        ));
     }
     asset.read_mem(at, len).await
 }
@@ -89,10 +101,22 @@ mod tests {
 
     #[test]
     fn the_pixel_shader_guid_is_read_at_the_version_s_offset() {
-        for (version, len, at) in [(8, 88, 0x50), (11, 64, 0x38), (12, 80, 0x48), (13, 112, 0x68), (13, 80, 0x48), (14, 64, 0x38), (15, 80, 0x48)] {
+        for (version, len, at) in [
+            (8, 88, 0x50),
+            (11, 64, 0x38),
+            (12, 80, 0x48),
+            (13, 112, 0x68),
+            (13, 80, 0x48),
+            (14, 64, 0x38),
+            (15, 80, 0x48),
+        ] {
             let mut h = vec![0u8; len];
             h[at..at + 8].copy_from_slice(&0xFEEDu64.to_le_bytes());
-            assert_eq!(pixel_shader_guid(version, &h).unwrap(), 0xFEED, "v{version}");
+            assert_eq!(
+                pixel_shader_guid(version, &h).unwrap(),
+                0xFEED,
+                "v{version}"
+            );
         }
     }
 

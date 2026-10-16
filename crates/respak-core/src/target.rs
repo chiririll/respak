@@ -32,14 +32,19 @@ impl<T: DeserializeOwned + Serialize + Default> TypedTarget<T> {
             Json::Object(m) => m.clone(),
             other => return Err(invalid(format!("options must be an object, not {other}"))),
         };
-        let mut merged = match serde_json::to_value(T::default()).map_err(|e| invalid(e.to_string()))? {
-            Json::Object(m) => m,
-            _ => Map::new(),
-        };
+        let mut merged =
+            match serde_json::to_value(T::default()).map_err(|e| invalid(e.to_string()))? {
+                Json::Object(m) => m,
+                _ => Map::new(),
+            };
         merged.extend(given);
-        let options: T = serde_json::from_value(Json::Object(merged)).map_err(|e| invalid(e.to_string()))?;
+        let options: T =
+            serde_json::from_value(Json::Object(merged)).map_err(|e| invalid(e.to_string()))?;
         let normalized = serde_json::to_value(&options).map_err(|e| invalid(e.to_string()))?;
-        Ok(Self { options, normalized })
+        Ok(Self {
+            options,
+            normalized,
+        })
     }
 }
 

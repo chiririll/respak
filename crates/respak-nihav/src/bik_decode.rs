@@ -20,11 +20,16 @@ use respak_core::capability::{AudioChunk, AudioTrackInfo, FrameFormat, VideoFram
 use respak_core::{Error, ErrorKind, Result};
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: "bik".into(), version: version.into() })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: "bik".into(),
+        version: version.into(),
+    })
 }
 
 /// What the container says about its streams.
@@ -38,15 +43,21 @@ pub(crate) struct Probed {
 
 /// Builds the reader and demuxer on `file` and runs `f` with them. Panics inside NihAV become
 /// `Corrupt`.
-fn with_demuxer<T>(file: &[u8], f: impl FnOnce(&mut Demuxer<'_>, &RegisteredDecoders) -> Result<T>) -> Result<T> {
+fn with_demuxer<T>(
+    file: &[u8],
+    f: impl FnOnce(&mut Demuxer<'_>, &RegisteredDecoders) -> Result<T>,
+) -> Result<T> {
     catch_unwind(AssertUnwindSafe(|| {
         let mut demuxers = RegisteredDemuxers::new();
         nihav_rad::rad_register_all_demuxers(&mut demuxers);
         let mut decoders = RegisteredDecoders::new();
         nihav_rad::rad_register_all_decoders(&mut decoders);
-        let creator = demuxers.find_demuxer("bink").ok_or_else(|| corrupt("bik: the Bink demuxer is missing"))?;
+        let creator = demuxers
+            .find_demuxer("bink")
+            .ok_or_else(|| corrupt("bik: the Bink demuxer is missing"))?;
         let mut reader = MemoryReader::new_read(file);
-        let mut demuxer = create_demuxer(creator, &mut reader).map_err(|e| corrupt(format!("bik: container: {e:?}")))?;
+        let mut demuxer = create_demuxer(creator, &mut reader)
+            .map_err(|e| corrupt(format!("bik: container: {e:?}")))?;
         f(&mut demuxer, &decoders)
     }))
     .unwrap_or_else(|_| Err(corrupt("bik: the decoder panicked")))
@@ -58,12 +69,17 @@ pub(crate) fn probe(file: &[u8]) -> Result<Probed> {
         let mut size = None;
         let mut audio = Vec::new();
         for i in 0..dmx.get_num_streams() {
-            let Some(stream) = dmx.get_stream(i) else { continue };
+            let Some(stream) = dmx.get_stream(i) else {
+                continue;
+            };
             match stream.get_info().get_properties() {
-                NACodecTypeInfo::Video(v) if size.is_none() => size = Some((v.get_width() as u32, v.get_height() as u32)),
-                NACodecTypeInfo::Audio(a) => {
-                    audio.push(AudioTrackInfo { channels: u16::from(a.get_channels()), sample_rate: a.get_sample_rate() })
+                NACodecTypeInfo::Video(v) if size.is_none() => {
+                    size = Some((v.get_width() as u32, v.get_height() as u32))
                 }
+                NACodecTypeInfo::Audio(a) => audio.push(AudioTrackInfo {
+                    channels: u16::from(a.get_channels()),
+                    sample_rate: a.get_sample_rate(),
+                }),
                 _ => {}
             }
         }
@@ -74,7 +90,11 @@ pub(crate) fn probe(file: &[u8]) -> Result<Probed> {
 
 /// Decodes the first video stream, handing each frame (converted to `format`) to `sink`. A
 /// failure (damage, truncation, an unsupported layout) is handed to `sink` as the last item.
-pub(crate) fn decode_video(file: &[u8], format: FrameFormat, sink: &mut dyn FnMut(Result<VideoFrame>) -> bool) {
+pub(crate) fn decode_video(
+    file: &[u8],
+    format: FrameFormat,
+    sink: &mut dyn FnMut(Result<VideoFrame>) -> bool,
+) {
     let done = with_demuxer(file, |dmx, decoders| {
         let mut found = None;
         for i in 0..dmx.get_num_streams() {
@@ -84,10 +104,14 @@ pub(crate) fn decode_video(file: &[u8], format: FrameFormat, sink: &mut dyn FnMu
             }
         }
         let (stream, info) = found.ok_or_else(|| corrupt("bik: no video stream"))?;
-        let create = decoders.find_decoder(info.get_name()).ok_or_else(|| unsupported(info.get_name()))?;
+        let create = decoders
+            .find_decoder(info.get_name())
+            .ok_or_else(|| unsupported(info.get_name()))?;
         let mut decoder = create();
         let mut support = Box::new(NADecoderSupport::new());
-        decoder.init(&mut support, info).map_err(|e| corrupt(format!("bik: video decoder: {e:?}")))?;
+        decoder
+            .init(&mut support, info)
+            .map_err(|e| corrupt(format!("bik: video decoder: {e:?}")))?;
 
         let mut index = 0u32;
         loop {
@@ -102,7 +126,10 @@ pub(crate) fn decode_video(file: &[u8], format: FrameFormat, sink: &mut dyn FnMu
             let frame = decoder
                 .decode(&mut support, &packet)
                 .map_err(|e| corrupt(format!("bik: frame {index}: {e:?}")))?;
-            let buffer = frame.get_buffer().get_vbuf().ok_or_else(|| unsupported("video that is not 8 bit"))?;
+            let buffer = frame
+                .get_buffer()
+                .get_vbuf()
+                .ok_or_else(|| unsupported("video that is not 8 bit"))?;
             let out = convert(&buffer, index, format)?;
             index += 1;
             if !sink(Ok(out)) {
@@ -133,16 +160,29 @@ fn convert(buffer: &NAVideoBufferRef<u8>, index: u32, format: FrameFormat) -> Re
         let mut out = Vec::with_capacity(w * h);
         for row in 0..h {
             let start = offset + row * stride;
-            out.extend_from_slice(data.get(start..start + w).ok_or_else(|| corrupt("bik: frame buffer is too short"))?);
+            out.extend_from_slice(
+                data.get(start..start + w)
+                    .ok_or_else(|| corrupt("bik: frame buffer is too short"))?,
+            );
         }
         planes.push(Bytes::from(out));
     }
     let strides = vec![width, chroma.0, chroma.0];
     match format {
-        FrameFormat::Yuv420 => Ok(VideoFrame { index, format, planes, strides }),
+        FrameFormat::Yuv420 => Ok(VideoFrame {
+            index,
+            format,
+            planes,
+            strides,
+        }),
         FrameFormat::Rgba8 => {
             let rgba = yuv420_to_rgba8(&planes, &strides, width as u32, height as u32);
-            Ok(VideoFrame { index, format, planes: vec![Bytes::from(rgba)], strides: vec![width * 4] })
+            Ok(VideoFrame {
+                index,
+                format,
+                planes: vec![Bytes::from(rgba)],
+                strides: vec![width * 4],
+            })
         }
         _ => Err(unsupported("this frame format")),
     }
@@ -150,7 +190,11 @@ fn convert(buffer: &NAVideoBufferRef<u8>, index: u32, format: FrameFormat) -> Re
 
 /// Decodes audio track `track` (counting audio streams from 0), handing the samples of each
 /// packet to `sink`. A failure is handed to `sink` as the last item.
-pub(crate) fn decode_audio(file: &[u8], track: u32, sink: &mut dyn FnMut(Result<AudioChunk>) -> bool) {
+pub(crate) fn decode_audio(
+    file: &[u8],
+    track: u32,
+    sink: &mut dyn FnMut(Result<AudioChunk>) -> bool,
+) {
     let done = with_demuxer(file, |dmx, decoders| {
         let mut found = None;
         let mut seen = 0;
@@ -163,11 +207,16 @@ pub(crate) fn decode_audio(file: &[u8], track: u32, sink: &mut dyn FnMut(Result<
                 seen += 1;
             }
         }
-        let (stream, info) = found.ok_or_else(|| corrupt(format!("bik: no audio track {track}")))?;
-        let create = decoders.find_decoder(info.get_name()).ok_or_else(|| unsupported(info.get_name()))?;
+        let (stream, info) =
+            found.ok_or_else(|| corrupt(format!("bik: no audio track {track}")))?;
+        let create = decoders
+            .find_decoder(info.get_name())
+            .ok_or_else(|| unsupported(info.get_name()))?;
         let mut decoder = create();
         let mut support = Box::new(NADecoderSupport::new());
-        decoder.init(&mut support, info).map_err(|e| corrupt(format!("bik: audio decoder: {e:?}")))?;
+        decoder
+            .init(&mut support, info)
+            .map_err(|e| corrupt(format!("bik: audio decoder: {e:?}")))?;
 
         let mut packets = 0u32;
         loop {
@@ -191,7 +240,11 @@ pub(crate) fn decode_audio(file: &[u8], track: u32, sink: &mut dyn FnMut(Result<
                 for i in 0..a.get_length() {
                     for c in 0..channels {
                         let at = a.get_offset(c) + i;
-                        samples.push(*data.get(at).ok_or_else(|| corrupt("bik: audio buffer is too short"))?);
+                        samples.push(
+                            *data
+                                .get(at)
+                                .ok_or_else(|| corrupt("bik: audio buffer is too short"))?,
+                        );
                     }
                 }
                 AudioChunk { samples }
@@ -210,7 +263,12 @@ pub(crate) fn decode_audio(file: &[u8], track: u32, sink: &mut dyn FnMut(Result<
 
 /// Full-range BT.601 YUV 4:2:0 to tightly packed RGBA8 (alpha 255). `planes` are Y, U, V with
 /// the given row `strides`; U and V cover 2x2 pixels each (rounded up for odd sizes).
-pub(crate) fn yuv420_to_rgba8(planes: &[Bytes], strides: &[usize], width: u32, height: u32) -> Vec<u8> {
+pub(crate) fn yuv420_to_rgba8(
+    planes: &[Bytes],
+    strides: &[usize],
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
     let (width, height) = (width as usize, height as usize);
     let mut out = Vec::with_capacity(width * height * 4);
     for y in 0..height {
@@ -225,7 +283,12 @@ pub(crate) fn yuv420_to_rgba8(planes: &[Bytes], strides: &[usize], width: u32, h
             let r = luma + ((91_881 * v + 32_768) >> 16);
             let g = luma - ((22_554 * u + 46_802 * v + 32_768) >> 16);
             let b = luma + ((116_130 * u + 32_768) >> 16);
-            out.extend_from_slice(&[r.clamp(0, 255) as u8, g.clamp(0, 255) as u8, b.clamp(0, 255) as u8, 255]);
+            out.extend_from_slice(&[
+                r.clamp(0, 255) as u8,
+                g.clamp(0, 255) as u8,
+                b.clamp(0, 255) as u8,
+                255,
+            ]);
         }
     }
     out
@@ -237,7 +300,11 @@ mod tests {
 
     /// One flat-colour 2x2 frame in YUV 4:2:0 -> its four RGBA pixels.
     fn flat(y: u8, u: u8, v: u8) -> Vec<u8> {
-        let planes = [Bytes::from(vec![y; 4]), Bytes::from(vec![u]), Bytes::from(vec![v])];
+        let planes = [
+            Bytes::from(vec![y; 4]),
+            Bytes::from(vec![u]),
+            Bytes::from(vec![v]),
+        ];
         yuv420_to_rgba8(&planes, &[2, 1, 1], 2, 2)
     }
 
@@ -279,7 +346,12 @@ mod tests {
         }
         let u = vec![128u8; 4 * 2];
         let v = vec![128u8; 4 * 2];
-        let rgba = yuv420_to_rgba8(&[Bytes::from(y), Bytes::from(u), Bytes::from(v)], &[5, 4, 4], 3, 3);
+        let rgba = yuv420_to_rgba8(
+            &[Bytes::from(y), Bytes::from(u), Bytes::from(v)],
+            &[5, 4, 4],
+            3,
+            3,
+        );
         assert_eq!(rgba.len(), 3 * 3 * 4);
         near(&rgba, [128, 128, 128]);
     }

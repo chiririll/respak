@@ -10,8 +10,13 @@ async fn stored_token_logs_on() {
     if std::env::var_os("RESPAK_STEAM_LIVE").is_none() {
         return;
     }
-    let store = respak_steam::AccountStore::new(std::env::var("RESPAK_STATE_DIR").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../.respak").into()));
-    let (_client, account) = respak_steam::logon(&store).await.expect("logon with the stored token");
+    let store = respak_steam::AccountStore::new(
+        std::env::var("RESPAK_STATE_DIR")
+            .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../.respak").into()),
+    );
+    let (_client, account) = respak_steam::logon(&store)
+        .await
+        .expect("logon with the stored token");
     assert_ne!(account.steam_id, 0);
 }
 
@@ -24,17 +29,33 @@ async fn depot_stat_and_ranged_read() {
         return;
     }
     let state = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.respak"));
-    let manifest = std::env::var("RESPAK_STEAM_MANIFEST").ok().and_then(|m| m.parse().ok());
-    let depots = vec![respak_steam::DepotSpec { depot: 1172471, manifest }];
+    let manifest = std::env::var("RESPAK_STEAM_MANIFEST")
+        .ok()
+        .and_then(|m| m.parse().ok());
+    let depots = vec![respak_steam::DepotSpec {
+        depot: 1172471,
+        manifest,
+    }];
     let input = respak_steam::open(
         respak_steam::SteamOptions::new(1172470, depots, state),
         &respak_core::CancellationToken::new(),
         &respak_core::Events::new(16),
     )
-    .await.expect("open the depot");
-    let stat = input.operator.stat("Paks/Win64/common.rpak").await.expect("stat");
+    .await
+    .expect("open the depot");
+    let stat = input
+        .operator
+        .stat("Paks/Win64/common.rpak")
+        .await
+        .expect("stat");
     assert!(stat.content_length() > 1 << 20);
-    let head = input.operator.read_with("paks/win64/COMMON.RPAK").range(0..4).await.expect("read").to_vec();
+    let head = input
+        .operator
+        .read_with("paks/win64/COMMON.RPAK")
+        .range(0..4)
+        .await
+        .expect("read")
+        .to_vec();
     assert_eq!(&head, b"RPak");
     let stats = input.stats();
     assert!(stats.chunks_downloaded + stats.cache_hits <= 1, "{stats:?}");

@@ -53,7 +53,10 @@ impl Bcf1Header {
         }
         let version = header[4];
         if !(1..=2).contains(&version) {
-            return Err(Error::new(ErrorKind::UnsupportedVersion { format: "bcf1".into(), version: version.to_string() }));
+            return Err(Error::new(ErrorKind::UnsupportedVersion {
+                format: "bcf1".into(),
+                version: version.to_string(),
+            }));
         }
         let channels = header[5];
         if channels == 0 || channels > MAX_CHANNELS {
@@ -137,10 +140,21 @@ impl<'a> Bcf1Frame<'a> {
             (usize::from(short), None, 4)
         };
         if size > header.max_payload() {
-            return Err(corrupt(format!("bcf1: frame of {size} bytes, the header allows {}", header.max_payload())));
+            return Err(corrupt(format!(
+                "bcf1: frame of {size} bytes, the header allows {}",
+                header.max_payload()
+            )));
         }
-        let payload = buf.get(start..start + size).ok_or_else(|| corrupt("bcf1: truncated frame"))?;
-        Ok(Some((Self { payload, valid_samples }, start + size)))
+        let payload = buf
+            .get(start..start + size)
+            .ok_or_else(|| corrupt("bcf1: truncated frame"))?;
+        Ok(Some((
+            Self {
+                payload,
+                valid_samples,
+            },
+            start + size,
+        )))
     }
 }
 
@@ -155,7 +169,11 @@ pub(crate) fn decode_channel(
     sink: &mut dyn FnMut(Result<AudioChunk>) -> bool,
 ) {
     let backend = |e: &dyn std::fmt::Debug| corrupt(format!("bcf1: {e:?}"));
-    let mut decoder = match BinkAudioBlocks::new(u32::from(header.sample_rate), usize::from(header.channels), header.is_bink_audio_2()) {
+    let mut decoder = match BinkAudioBlocks::new(
+        u32::from(header.sample_rate),
+        usize::from(header.channels),
+        header.is_bink_audio_2(),
+    ) {
         Ok(d) => d,
         Err(e) => {
             sink(Err(backend(&e)));
@@ -173,7 +191,9 @@ pub(crate) fn decode_channel(
             }
         };
         pos += used;
-        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decoder.decode(frame.payload)));
+        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            decoder.decode(frame.payload)
+        }));
         let planes = match decoded {
             Ok(Ok(planes)) => planes,
             Ok(Err(e)) => {
@@ -186,9 +206,14 @@ pub(crate) fn decode_channel(
             }
         };
         let keep = frame.valid_samples.map_or(usize::MAX, usize::from);
-        let n = planes[channel].len().min(keep).min((total - emitted) as usize);
+        let n = planes[channel]
+            .len()
+            .min(keep)
+            .min((total - emitted) as usize);
         emitted += n as u64;
-        if !sink(Ok(AudioChunk { samples: planes[channel][..n].to_vec() })) {
+        if !sink(Ok(AudioChunk {
+            samples: planes[channel][..n].to_vec(),
+        })) {
             return;
         }
     }
@@ -213,12 +238,39 @@ mod tests {
     #[test]
     fn parses_the_header_and_derives_sizes() {
         let h = Bcf1Header::parse(&header_bytes(2, 2, 48000, 0x400, 3)).unwrap();
-        assert_eq!((h.version, h.channels, h.sample_rate, h.sample_count, h.file_size, h.seek_entries), (2, 2, 48000, 1000, 9999, 3));
-        assert_eq!((h.max_payload(), h.frames_offset(), h.stream_count(), h.samples_per_block()), (0x400, 24 + 6, 1, 1920));
+        assert_eq!(
+            (
+                h.version,
+                h.channels,
+                h.sample_rate,
+                h.sample_count,
+                h.file_size,
+                h.seek_entries
+            ),
+            (2, 2, 48000, 1000, 9999, 3)
+        );
+        assert_eq!(
+            (
+                h.max_payload(),
+                h.frames_offset(),
+                h.stream_count(),
+                h.samples_per_block()
+            ),
+            (0x400, 24 + 6, 1, 1920)
+        );
         assert!(!h.is_bink_audio_2());
-        let rate = |r| Bcf1Header::parse(&header_bytes(1, 1, r, 1, 0)).unwrap().samples_per_block();
+        let rate = |r| {
+            Bcf1Header::parse(&header_bytes(1, 1, r, 1, 0))
+                .unwrap()
+                .samples_per_block()
+        };
         assert_eq!((rate(44100), rate(22050), rate(16000)), (1920, 960, 480));
-        assert_eq!(Bcf1Header::parse(&header_bytes(1, 3, 48000, 1, 0)).unwrap().stream_count(), 2);
+        assert_eq!(
+            Bcf1Header::parse(&header_bytes(1, 3, 48000, 1, 0))
+                .unwrap()
+                .stream_count(),
+            2
+        );
     }
 
     #[test]
@@ -232,8 +284,16 @@ mod tests {
     #[test]
     fn bad_headers() {
         let e = Bcf1Header::parse(&header_bytes(3, 2, 48000, 1, 0)).unwrap_err();
-        assert!(matches!(e.kind(), ErrorKind::UnsupportedVersion { .. }), "{e}");
-        assert!(matches!(Bcf1Header::parse(&header_bytes(0, 2, 48000, 1, 0)).unwrap_err().kind(), ErrorKind::UnsupportedVersion { .. }));
+        assert!(
+            matches!(e.kind(), ErrorKind::UnsupportedVersion { .. }),
+            "{e}"
+        );
+        assert!(matches!(
+            Bcf1Header::parse(&header_bytes(0, 2, 48000, 1, 0))
+                .unwrap_err()
+                .kind(),
+            ErrorKind::UnsupportedVersion { .. }
+        ));
         assert!(Bcf1Header::parse(&header_bytes(1, 0, 48000, 1, 0)).is_err());
         assert!(Bcf1Header::parse(&header_bytes(1, 9, 48000, 1, 0)).is_err());
         assert!(Bcf1Header::parse(&header_bytes(1, 2, 48000, 1, 70_000)).is_err());
@@ -253,19 +313,37 @@ mod tests {
         let mut buf = vec![0x99, 0x99, 3, 0, 1, 2, 3];
         buf.extend([0x99, 0x99, 0xFF, 0xFF, 2, 0, 100, 0, 7, 8]);
         let (a, used) = Bcf1Frame::parse(&buf, &header()).unwrap().unwrap();
-        assert_eq!((a.payload, a.valid_samples, used), (&[1u8, 2, 3][..], None, 7));
+        assert_eq!(
+            (a.payload, a.valid_samples, used),
+            (&[1u8, 2, 3][..], None, 7)
+        );
         let (b, used2) = Bcf1Frame::parse(&buf[used..], &header()).unwrap().unwrap();
-        assert_eq!((b.payload, b.valid_samples, used2), (&[7u8, 8][..], Some(100), 10));
+        assert_eq!(
+            (b.payload, b.valid_samples, used2),
+            (&[7u8, 8][..], Some(100), 10)
+        );
         assert!(Bcf1Frame::parse(&[], &header()).unwrap().is_none());
     }
 
     #[test]
     fn damaged_frames_are_corrupt() {
         let h = header();
-        assert!(Bcf1Frame::parse(&[0x12, 0x34, 1, 0, 0], &h).is_err(), "no sync");
-        assert!(Bcf1Frame::parse(&[0x99, 0x99, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &h).is_err(), "over max_comp");
-        assert!(Bcf1Frame::parse(&[0x99, 0x99, 5, 0, 1, 2], &h).is_err(), "truncated payload");
-        assert!(Bcf1Frame::parse(&[0x99, 0x99, 0xFF, 0xFF, 1], &h).is_err(), "truncated header");
+        assert!(
+            Bcf1Frame::parse(&[0x12, 0x34, 1, 0, 0], &h).is_err(),
+            "no sync"
+        );
+        assert!(
+            Bcf1Frame::parse(&[0x99, 0x99, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &h).is_err(),
+            "over max_comp"
+        );
+        assert!(
+            Bcf1Frame::parse(&[0x99, 0x99, 5, 0, 1, 2], &h).is_err(),
+            "truncated payload"
+        );
+        assert!(
+            Bcf1Frame::parse(&[0x99, 0x99, 0xFF, 0xFF, 1], &h).is_err(),
+            "truncated header"
+        );
         assert!(Bcf1Frame::parse(&[0x99], &h).is_err());
     }
 }

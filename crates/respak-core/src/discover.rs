@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use crate::capability::Dependency;
 use crate::graph::TargetInfo;
 
 /// One line of [`Engine::list`](crate::Engine::list).
@@ -11,6 +12,23 @@ pub struct ListedEntry {
     pub path: String,
     /// Readable path of the same entry (`texture/foo.txtr`), when the container knows one.
     pub name: Option<String>,
+}
+
+/// One entry of a container, read as far as its format is known: [`Engine::inspect`](crate::Engine::inspect).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EntryInfo {
+    /// Path inside the container (for an rpak asset: `0x<GUID>.<kind>`).
+    pub path: String,
+    /// The name the asset stores, as stored (without the extension `list` adds).
+    pub name: Option<String>,
+    /// The asset's kind (e.g. `txtr`), if known.
+    pub kind: Option<String>,
+    /// The asset's guid, if it has one.
+    pub guid: Option<u64>,
+    /// Assets it refers to.
+    pub dependencies: Vec<Dependency>,
+    /// Strings in its data that may be names of other assets (see `NameSource`).
+    pub name_candidates: Vec<String>,
 }
 
 /// Options for [`Engine::discover`](crate::Engine::discover).

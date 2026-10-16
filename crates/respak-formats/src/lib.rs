@@ -16,13 +16,15 @@ use respak_core::{
 
 pub use bc::decode_rgba8;
 pub use cast::{
-    AllBlends, AllLods, BlendSelect, CastAnimationEncode, CastEncode, CastOptions, CastWriter, LodSelect, RootFixup,
+    AllBlends, AllLods, BlendSelect, CastAnimationEncode, CastEncode, CastOptions, CastWriter,
+    LodSelect, RootFixup,
 };
 pub use dds::{DdsEncode, DdsImage, DdsOptions, DdsRead};
 pub use frames::{FramesEncode, FramesOptions};
 pub use png::{Mips, PngEncode, PngImage, PngOptions, PngRead};
 pub use videofile::{
-    Codec, CodecSetup, Container, FrameEncoder, MuxSetup, Packet, PacketSink, VideoFileEncode, VideoFileOptions,
+    Codec, CodecSetup, Container, FrameEncoder, MuxSetup, Packet, PacketSink, VideoFileEncode,
+    VideoFileOptions,
 };
 pub use wav::{WavEncode, WavOptions};
 
@@ -47,7 +49,9 @@ impl Plugin for FormatsPlugin {
             .provides::<dyn Bitmap>()
             .from_cap::<dyn Bitmap>(DdsEncode);
         // Written only: a folder of `frame_00001.png ...` from any video.
-        r.format("png.frames").label("PNG frames").from_cap::<dyn Video>(FramesEncode);
+        r.format("png.frames")
+            .label("PNG frames")
+            .from_cap::<dyn Video>(FramesEncode);
         // Written only: a Cast model (skeleton, materials, meshes) from any mesh, or Cast animations
         // (skeleton, curves) from any animation.
         r.format("cast")
@@ -56,13 +60,19 @@ impl Plugin for FormatsPlugin {
             .from_cap::<dyn Mesh>(CastEncode)
             .from_cap::<dyn Animation>(CastAnimationEncode);
         // Written only: 16-bit PCM from any audio.
-        r.format("wav").label("WAV audio").extensions(["wav"]).from_cap::<dyn Audio>(WavEncode);
+        r.format("wav")
+            .label("WAV audio")
+            .extensions(["wav"])
+            .from_cap::<dyn Audio>(WavEncode);
     }
 }
 
 fn file_of(source: &Value) -> Result<&FileData> {
     source.downcast_ref::<FileData>().ok_or_else(|| {
-        Error::new(ErrorKind::Custom { source: None, message: format!("expected a file, got `{}`", source.format()) })
+        Error::new(ErrorKind::Custom {
+            source: None,
+            message: format!("expected a file, got `{}`", source.format()),
+        })
     })
 }
 
@@ -94,11 +104,16 @@ fn audio_of(source: &Value) -> Result<&dyn Audio> {
 }
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 fn unsupported(format: &str, what: &str) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion { format: format.to_owned(), version: what.to_owned() })
+    Error::new(ErrorKind::UnsupportedVersion {
+        format: format.to_owned(),
+        version: what.to_owned(),
+    })
 }
 
 /// The whole file (PNG is a single deflate stream and cannot be read in parts).

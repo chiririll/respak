@@ -184,24 +184,41 @@ const MAX_OUTPUT: u64 = 1 << 32;
 
 #[inline]
 fn shr(x: u64, n: u64) -> u64 {
-    if n >= 64 { 0 } else { x >> n }
+    if n >= 64 {
+        0
+    } else {
+        x >> n
+    }
 }
 
 #[inline]
 fn shl(x: u64, n: u64) -> u64 {
-    if n >= 64 { 0 } else { x << n }
+    if n >= 64 {
+        0
+    } else {
+        x << n
+    }
 }
 
 #[inline]
 fn low_mask(bits: u64) -> u64 {
-    if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 }
+    if bits >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << bits) - 1
+    }
 }
 
 /// Reads the extended-length / base table entry for a 3-bit selector (non-zero).
 #[inline]
 fn ext16_base(i: usize) -> u64 {
     let o = EXT_BASE16_OFF + i * 4;
-    u64::from(u32::from_le_bytes([LUT[o], LUT[o + 1], LUT[o + 2], LUT[o + 3]]))
+    u64::from(u32::from_le_bytes([
+        LUT[o],
+        LUT[o + 1],
+        LUT[o + 2],
+        LUT[o + 3],
+    ]))
 }
 
 /// Copies `n` bytes within `out` from `dst - dist` to `dst` with LZ77 overlap semantics.
@@ -258,7 +275,9 @@ impl Decoder<'_> {
     fn load64(&self, pos: u64) -> Result<u64, RtechError> {
         let len = self.data.len() as u64;
         if self.partial && pos.saturating_add(8) > len {
-            return Err(RtechError::NeedInput { at_least: pos.saturating_add(8) });
+            return Err(RtechError::NeedInput {
+                at_least: pos.saturating_add(8),
+            });
         }
         if pos > len.saturating_add(16) {
             return Err(RtechError::Truncated("read past end of input"));
@@ -283,7 +302,9 @@ impl Decoder<'_> {
 
     fn short_error(&self) -> RtechError {
         if self.partial {
-            RtechError::NeedInput { at_least: self.buffer_needed.saturating_add(16) }
+            RtechError::NeedInput {
+                at_least: self.buffer_needed.saturating_add(16),
+            }
         } else {
             RtechError::Truncated("compressed chunk")
         }
@@ -308,7 +329,11 @@ impl Decoder<'_> {
                 // The original tops the bit buffer up with one byte here.
                 let byte = match self.data.get(self.rd as usize) {
                     Some(b) => u64::from(*b),
-                    None if self.partial => return Err(RtechError::NeedInput { at_least: self.rd + 1 }),
+                    None if self.partial => {
+                        return Err(RtechError::NeedInput {
+                            at_least: self.rd + 1,
+                        })
+                    }
                     None if self.rd <= self.data.len() as u64 + 16 => 0,
                     None => return Err(RtechError::Truncated("read past end of input")),
                 };
@@ -382,7 +407,11 @@ impl Decoder<'_> {
             } else {
                 state = 0;
                 let v21 = self.bits & 0xF;
-                let (t, u) = if v21 == 15 { (6, (self.bits >> 4) & 3) } else { (4, 0) };
+                let (t, u) = if v21 == 15 {
+                    (6, (self.bits >> 4) & 3)
+                } else {
+                    (4, 0)
+                };
                 let e = v21 + u;
                 let v22 = ((self.bits >> t) & 0x3F) as usize;
                 let dlen = u64::from(LUT[DIST_LEN_OFF + v22]);
@@ -394,7 +423,11 @@ impl Decoder<'_> {
 
                 let len = if op == 17 {
                     let ext = self.ext_length(true)?;
-                    if dist < 8 { ext + 4 } else { ext + 17 }
+                    if dist < 8 {
+                        ext + 4
+                    } else {
+                        ext + 17
+                    }
                 } else {
                     u64::from(op as u8)
                 };
@@ -404,7 +437,12 @@ impl Decoder<'_> {
                 if self.pos + len > size {
                     return Err(RtechError::Corrupt("match past end of output"));
                 }
-                lz_copy(&mut self.out, self.pos as usize, dist as usize, len as usize);
+                lz_copy(
+                    &mut self.out,
+                    self.pos as usize,
+                    dist as usize,
+                    len as usize,
+                );
                 self.pos += len;
             }
 
@@ -468,7 +506,11 @@ impl Decoder<'_> {
 ///
 /// Returns an error if the stream is truncated or corrupt, or if its decompressed size does
 /// not match `expected_len`. Never panics on malformed input.
-pub fn decompress(file: &[u8], header_len: usize, expected_len: Option<u64>) -> Result<Vec<u8>, RtechError> {
+pub fn decompress(
+    file: &[u8],
+    header_len: usize,
+    expected_len: Option<u64>,
+) -> Result<Vec<u8>, RtechError> {
     decompress_prefix(file, true, header_len, expected_len, u64::MAX).map(|p| p.body)
 }
 
@@ -502,7 +544,9 @@ pub fn decompress_prefix(
     want: u64,
 ) -> Result<Prefix, RtechError> {
     decode(file, !input_complete, header_len, expected_len, want).map_err(|e| match e {
-        RtechError::Truncated(_) if !input_complete => RtechError::NeedInput { at_least: file.len() as u64 + 1 },
+        RtechError::Truncated(_) if !input_complete => RtechError::NeedInput {
+            at_least: file.len() as u64 + 1,
+        },
         e => e,
     })
 }
@@ -515,8 +559,12 @@ fn decode(
     want: u64,
 ) -> Result<Prefix, RtechError> {
     // --- InitPakDecoder ---
-    let hdr_end = header_len.checked_add(16).ok_or(RtechError::Truncated("stream header"))?;
-    let hdr = file.get(header_len..hdr_end.min(file.len())).ok_or(RtechError::Truncated("stream header"))?;
+    let hdr_end = header_len
+        .checked_add(16)
+        .ok_or(RtechError::Truncated("stream header"))?;
+    let hdr = file
+        .get(header_len..hdr_end.min(file.len()))
+        .ok_or(RtechError::Truncated("stream header"))?;
     if file.len() < header_len + 8 {
         return Err(RtechError::Truncated("stream header"));
     }
@@ -543,7 +591,10 @@ fn decode(
     let body_len = size - hl;
     if let Some(exp) = expected_len {
         if exp != body_len {
-            return Err(RtechError::SizeMismatch { expected: exp, actual: body_len });
+            return Err(RtechError::SizeMismatch {
+                expected: exp,
+                actual: body_len,
+            });
         }
     } else if size > MAX_OUTPUT {
         return Err(RtechError::TooLarge(size));
@@ -601,9 +652,15 @@ fn decode(
     // Only as much output as the wanted prefix needs, up to the end of the chunk it ends in.
     let chunk = inv_out.wrapping_add(1);
     let cuttable = inv_in != u64::MAX && chunk != 0 && size - 1 > inv_out;
-    let alloc = if want >= body_len || !cuttable { size } else { dec.stop_at.div_ceil(chunk).saturating_mul(chunk).min(size) };
+    let alloc = if want >= body_len || !cuttable {
+        size
+    } else {
+        dec.stop_at.div_ceil(chunk).saturating_mul(chunk).min(size)
+    };
     let total = usize::try_from(alloc).map_err(|_| RtechError::TooLarge(size))?;
-    dec.out.try_reserve_exact(total).map_err(|_| RtechError::TooLarge(size))?;
+    dec.out
+        .try_reserve_exact(total)
+        .map_err(|_| RtechError::TooLarge(size))?;
     dec.out.resize(total, 0);
 
     dec.run()?;
@@ -612,15 +669,17 @@ fn decode(
     let mut out = dec.out;
     out.truncate(dec.pos as usize);
     out.drain(..header_len);
-    Ok(Prefix { body: out, complete })
+    Ok(Prefix {
+        body: out,
+        complete,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const UI_RPAK: &str =
-        r"C:\Users\chiririll\Projects\rsx\rsx_steam_cache\rpak\1172471_6197768190074397522\paks\win64\ui.rpak";
+    const UI_RPAK: &str = r"C:\Users\chiririll\Projects\rsx\rsx_steam_cache\rpak\1172471_6197768190074397522\paks\win64\ui.rpak";
 
     /// Hand-made stream: size 4, one literal run of 4 bytes.
     fn tiny() -> Vec<u8> {
@@ -633,7 +692,10 @@ mod tests {
     fn tiny_stream_roundtrip() {
         let out = decompress(&tiny(), 0, Some(4)).unwrap();
         assert_eq!(out, b"ABCD");
-        assert!(matches!(decompress(&tiny(), 0, Some(5)), Err(RtechError::SizeMismatch { .. })));
+        assert!(matches!(
+            decompress(&tiny(), 0, Some(5)),
+            Err(RtechError::SizeMismatch { .. })
+        ));
     }
 
     #[test]
@@ -693,7 +755,10 @@ mod tests {
         for s in 0..num_segments {
             let o = s * 16;
             let (align, size) = (le32(&out, o + 4), le64(&out, o + 8));
-            assert!(align.is_power_of_two() && align <= 0x1000, "segment {s} align {align}");
+            assert!(
+                align.is_power_of_two() && align <= 0x1000,
+                "segment {s} align {align}"
+            );
             assert!(size > 0 && size < dcmp, "segment {s} size {size}");
             seg_sizes.push(size);
         }
@@ -710,10 +775,16 @@ mod tests {
         eprintln!("segment sizes {seg_sizes:x?}, page sums {per_seg:x?}");
         for (s, (&seg, &pg)) in seg_sizes.iter().zip(&per_seg).enumerate() {
             // Segment size is the page sizes plus alignment padding.
-            assert!(seg >= pg && seg - pg < pg / 8 + 4096 * 64, "segment {s}: {seg:#x} vs pages {pg:#x}");
+            assert!(
+                seg >= pg && seg - pg < pg / 8 + 4096 * 64,
+                "segment {s}: {seg:#x} vs pages {pg:#x}"
+            );
         }
         let tables = (num_segments * 16 + num_pages * 12) as u64;
-        eprintln!("tables {tables:#x}, pages {pages_total:#x}, out {:#x}", out.len());
+        eprintln!(
+            "tables {tables:#x}, pages {pages_total:#x}, out {:#x}",
+            out.len()
+        );
         assert!(tables + pages_total <= out.len() as u64);
         assert!(out.len() as u64 - tables - pages_total < out.len() as u64 / 4);
     }
@@ -723,12 +794,17 @@ mod tests {
         let t = tiny();
         for len in 0..t.len() {
             match decompress_prefix(&t[..len], false, 0, Some(4), u64::MAX) {
-                Err(RtechError::NeedInput { at_least }) => assert!(at_least > len as u64, "{len}: {at_least}"),
+                Err(RtechError::NeedInput { at_least }) => {
+                    assert!(at_least > len as u64, "{len}: {at_least}")
+                }
                 other => panic!("{len} bytes of input: {other:?}"),
             }
         }
         let whole = decompress_prefix(&t, true, 0, Some(4), u64::MAX).unwrap();
-        assert_eq!((whole.body.as_slice(), whole.complete), (&b"ABCD"[..], true));
+        assert_eq!(
+            (whole.body.as_slice(), whole.complete),
+            (&b"ABCD"[..], true)
+        );
     }
 
     /// Prefixes of a real v8 pak: equal to the start of the whole body, and a small prefix needs only
@@ -749,16 +825,30 @@ mod tests {
                 let part = &file[..input.min(file.len())];
                 match decompress_prefix(part, part.len() == file.len(), 0x80, Some(len), want) {
                     Ok(p) => break p,
-                    Err(RtechError::NeedInput { at_least }) => input = (at_least as usize).max(input * 2),
+                    Err(RtechError::NeedInput { at_least }) => {
+                        input = (at_least as usize).max(input * 2)
+                    }
                     Err(e) => panic!("want {want}: {e}"),
                 }
             };
-            assert!(prefix.body.len() as u64 >= want.min(len), "want {want}, got {}", prefix.body.len());
+            assert!(
+                prefix.body.len() as u64 >= want.min(len),
+                "want {want}, got {}",
+                prefix.body.len()
+            );
             assert_eq!(prefix.body, whole[..prefix.body.len()], "want {want}");
             assert_eq!(prefix.complete, prefix.body.len() as u64 == len);
-            eprintln!("want {want}: {} bytes decoded from {} of {} input bytes", prefix.body.len(), input.min(file.len()), file.len());
+            eprintln!(
+                "want {want}: {} bytes decoded from {} of {} input bytes",
+                prefix.body.len(),
+                input.min(file.len()),
+                file.len()
+            );
             if want <= 1 << 20 {
-                assert!(input < file.len() / 4, "a small prefix should not need most of the file");
+                assert!(
+                    input < file.len() / 4,
+                    "a small prefix should not need most of the file"
+                );
             }
         }
     }

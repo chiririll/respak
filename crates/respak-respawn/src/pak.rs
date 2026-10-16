@@ -51,7 +51,9 @@ const PATCH_DATA_HDR_LEN: u64 = 8;
 const PATCH_FILE_HDR_LEN: u64 = 16;
 
 fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt { context: context.into() })
+    Error::new(ErrorKind::Corrupt {
+        context: context.into(),
+    })
 }
 
 /// A reader over a byte slice that fails with `Corrupt` instead of panicking.
@@ -70,7 +72,9 @@ impl<'a> Cursor<'a> {
     }
 
     fn u32(&mut self) -> Result<u32> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().expect("4 bytes")))
+        Ok(u32::from_le_bytes(
+            self.take(4)?.try_into().expect("4 bytes"),
+        ))
     }
 
     fn i32(&mut self) -> Result<i32> {
@@ -78,7 +82,9 @@ impl<'a> Cursor<'a> {
     }
 
     fn u64(&mut self) -> Result<u64> {
-        Ok(u64::from_le_bytes(self.take(8)?.try_into().expect("8 bytes")))
+        Ok(u64::from_le_bytes(
+            self.take(8)?.try_into().expect("8 bytes"),
+        ))
     }
 
     fn i64(&mut self) -> Result<i64> {
@@ -174,7 +180,10 @@ impl PakHeader {
         }
         let version = le_u16(data, 4);
         let unsupported = |what: String| {
-            Error::new(ErrorKind::UnsupportedVersion { format: "rpak".into(), version: what })
+            Error::new(ErrorKind::UnsupportedVersion {
+                format: "rpak".into(),
+                version: what,
+            })
         };
         let header_len = Self::len_for(version).ok_or_else(|| unsupported(version.to_string()))?;
         if data.len() < header_len {
@@ -234,7 +243,10 @@ impl PakHeader {
                 compressed_size: count(le_i64(data, 0x18), "compressed size")?,
                 decompressed_size: count(le_i64(data, 0x30), "decompressed size")?,
                 starpak_buf: c(i32::from(le_i16(data, 0x48)), "starpak buffer size")?,
-                opt_starpak_buf: c(i32::from(le_i16(data, 0x4A)), "optional starpak buffer size")?,
+                opt_starpak_buf: c(
+                    i32::from(le_i16(data, 0x4A)),
+                    "optional starpak buffer size",
+                )?,
                 num_segments: u64::from(le_u16(data, 0x4C)),
                 num_pages: u64::from(le_u16(data, 0x4E)),
                 patch_count: c(i32::from(le_i16(data, 0x50)), "patch count")?,
@@ -244,7 +256,8 @@ impl PakHeader {
                 num_dependencies: c(le_i32(data, 0x60), "dependency count")?,
                 num_external_refs: c(le_i32(data, 0x64), "external ref count")?,
                 external_refs_size: c(le_i32(data, 0x68), "external refs size")?,
-                unknown_data: u64::from(le_i32(data, 0x74) as u32) + u64::from(le_i32(data, 0x78) as u32),
+                unknown_data: u64::from(le_i32(data, 0x74) as u32)
+                    + u64::from(le_i32(data, 0x78) as u32),
                 created_time: le_i64(data, 0x08) as u64,
             },
         };
@@ -256,7 +269,9 @@ impl PakHeader {
             h.flags &= !(FLAG_RTECH | FLAG_OODLE);
         }
         if h.decompressed_size < h.header_len as u64 {
-            return Err(corrupt("rpak: decompressed size is smaller than the header"));
+            return Err(corrupt(
+                "rpak: decompressed size is smaller than the header",
+            ));
         }
         let tables = h.tables_len();
         if tables > h.body_len() {
@@ -295,7 +310,8 @@ impl PakHeader {
         if self.patch_count == 0 {
             0
         } else {
-            PATCH_DATA_HDR_LEN.saturating_add(self.patch_count.saturating_mul(PATCH_FILE_HDR_LEN + 2))
+            PATCH_DATA_HDR_LEN
+                .saturating_add(self.patch_count.saturating_mul(PATCH_FILE_HDR_LEN + 2))
         }
     }
 
@@ -440,26 +456,46 @@ pub struct Tables {
 
 fn strings(buf: &[u8]) -> Vec<String> {
     // Entries are NUL-terminated and the list is padded with NULs; an empty string is padding.
-    buf.split(|&b| b == 0).filter(|s| !s.is_empty()).map(|s| String::from_utf8_lossy(s).into_owned()).collect()
+    buf.split(|&b| b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect()
 }
 
 impl Tables {
     /// Parses the tables from the start of the body (`body` must hold at least
     /// `header.tables_len()` bytes).
     pub fn parse(header: &PakHeader, body: &[u8]) -> Result<Self> {
-        let len = usize::try_from(header.tables_len()).map_err(|_| corrupt("rpak tables are too large"))?;
-        let mut r = Cursor { buf: body.get(..len).ok_or_else(|| corrupt("rpak tables run past the data"))?, pos: 0 };
+        let len = usize::try_from(header.tables_len())
+            .map_err(|_| corrupt("rpak tables are too large"))?;
+        let mut r = Cursor {
+            buf: body
+                .get(..len)
+                .ok_or_else(|| corrupt("rpak tables run past the data"))?,
+            pos: 0,
+        };
         let patch = if header.patch_count > 0 {
             let (stream_size, patch_pages) = (r.i32()?, r.i32()?);
             let stream_size = count(i64::from(stream_size), "patch stream size")?;
             let patch_pages = count(i64::from(patch_pages), "patch page count")?;
             let n = header.patch_count as usize;
-            let files = (0..n).map(|_| Ok((r.i64()?, r.i64()?))).collect::<Result<Vec<_>>>()?;
-            let indices = (0..n).map(|_| Ok(u16::from_le_bytes(r.take(2)?.try_into().expect("2 bytes")))).collect::<Result<Vec<_>>>()?;
+            let files = (0..n)
+                .map(|_| Ok((r.i64()?, r.i64()?)))
+                .collect::<Result<Vec<_>>>()?;
+            let indices = (0..n)
+                .map(|_| Ok(u16::from_le_bytes(r.take(2)?.try_into().expect("2 bytes"))))
+                .collect::<Result<Vec<_>>>()?;
             if patch_pages > header.num_pages {
-                return Err(corrupt("rpak: the patch block claims more patched pages than the pak has"));
+                return Err(corrupt(
+                    "rpak: the patch block claims more patched pages than the pak has",
+                ));
             }
-            Some(PatchBlock { stream_size, patch_pages, files, indices })
+            Some(PatchBlock {
+                stream_size,
+                patch_pages,
+                files,
+                indices,
+            })
         } else {
             None
         };
@@ -468,13 +504,26 @@ impl Tables {
 
         let mut segments = Vec::with_capacity(header.num_segments as usize);
         for _ in 0..header.num_segments {
-            segments.push(Segment { flags: r.i32()?, align: r.u32()?, size: r.i64()? });
+            segments.push(Segment {
+                flags: r.i32()?,
+                align: r.u32()?,
+                size: r.i64()?,
+            });
         }
         let mut pages = Vec::with_capacity(header.num_pages as usize);
         for _ in 0..header.num_pages {
-            pages.push(Page { segment: r.i32()?, align: r.i32()?, size: r.u32()? });
+            pages.push(Page {
+                segment: r.i32()?,
+                align: r.i32()?,
+                size: r.u32()?,
+            });
         }
-        let page_ptr = |r: &mut Cursor<'_>| -> Result<PagePtr> { Ok(PagePtr { page: r.u32()?, offset: r.u32()? }) };
+        let page_ptr = |r: &mut Cursor<'_>| -> Result<PagePtr> {
+            Ok(PagePtr {
+                page: r.u32()?,
+                offset: r.u32()?,
+            })
+        };
         let mut pointers = Vec::with_capacity(header.num_pointers as usize);
         for _ in 0..header.num_pointers {
             pointers.push(page_ptr(&mut r)?);
@@ -503,14 +552,22 @@ impl Tables {
         }
         // Only the pages from `patch_pages` on are stored in the file.
         let stored_pages = patch.as_ref().map_or(0, |p| p.patch_pages as usize);
-        let stored: u64 = pages[stored_pages..].iter().map(|p| u64::from(p.size)).sum();
-        let page_data_offset = header.tables_len().saturating_add(patch.as_ref().map_or(0, |p| p.stream_size));
+        let stored: u64 = pages[stored_pages..]
+            .iter()
+            .map(|p| u64::from(p.size))
+            .sum();
+        let page_data_offset = header
+            .tables_len()
+            .saturating_add(patch.as_ref().map_or(0, |p| p.stream_size));
         if page_data_offset.saturating_add(stored) > header.body_len() {
             return Err(corrupt("rpak pages run past the end of the data"));
         }
         for a in &assets {
             if !a.head.is_null() && a.head.page as usize >= pages.len() {
-                return Err(corrupt(format!("asset {:#018x}: header page {} does not exist", a.guid, a.head.page)));
+                return Err(corrupt(format!(
+                    "asset {:#018x}: header page {} does not exist",
+                    a.guid, a.head.page
+                )));
             }
         }
         let mut sorted_pointers = pointers.clone();
@@ -533,7 +590,10 @@ impl Tables {
     /// Reads one asset entry. `e` is exactly the entry size of `version`.
     fn asset(version: u16, e: &[u8]) -> AssetEntry {
         let u32_at = |at: usize| u32::from_le_bytes(e[at..at + 4].try_into().expect("4 bytes"));
-        let ptr_at = |at: usize| PagePtr { page: u32_at(at), offset: u32_at(at + 4) };
+        let ptr_at = |at: usize| PagePtr {
+            page: u32_at(at),
+            offset: u32_at(at + 4),
+        };
         let kind = |at: usize| [e[at], e[at + 1], e[at + 2], e[at + 3]];
         if version >= 8 {
             AssetEntry {
@@ -573,7 +633,8 @@ impl Tables {
     /// The end of a page is a valid location (a pointer just past the data).
     pub fn mem_offset(&self, ptr: PagePtr) -> Option<u64> {
         let page = self.pages.get(ptr.page as usize)?;
-        (ptr.offset <= page.size).then(|| self.page_bases[ptr.page as usize] + u64::from(ptr.offset))
+        (ptr.offset <= page.size)
+            .then(|| self.page_bases[ptr.page as usize] + u64::from(ptr.offset))
     }
 
     /// Rewrites every pointer slot inside an asset header into a `.mem` offset (little-endian
@@ -586,7 +647,9 @@ impl Tables {
         }
         let (page, base) = (asset.head.page, asset.head.offset);
         let end = u64::from(base) + raw.len() as u64;
-        let first = self.sorted_pointers.partition_point(|p| (p.page, p.offset) < (page, base));
+        let first = self
+            .sorted_pointers
+            .partition_point(|p| (p.page, p.offset) < (page, base));
         for slot in &self.sorted_pointers[first..] {
             if slot.page != page || u64::from(slot.offset) + 8 > end {
                 break;

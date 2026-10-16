@@ -4,14 +4,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use bytes::Bytes;
 use respak_core::capability::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 use respak_core::value::{BlobData, BundleData};
 use respak_core::{
-    magic, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, Event, FormatId, Probe, ReadHandler, Result, Target,
-    TypedTarget, Value, ValueKey,
+    magic, ConvertHandler, Cx, Data, Detect, Detected, Error, ErrorKind, Event, FormatId, Probe,
+    ReadHandler, Result, Target, TypedTarget, Value, ValueKey,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::bc::decode_rgba8;
 use crate::{bitmap_of, corrupt, file_of, read_all, unsupported};
@@ -57,7 +57,10 @@ impl Detect for PngRead {
         }
         let ihdr = u32::from(magic(input.header, 12, b"IHDR")) * 2;
         let ext = u32::from(input.extension == Some("png"));
-        Ok(Some(Detected { score: 10 + ihdr + ext, version: None }))
+        Ok(Some(Detected {
+            score: 10 + ihdr + ext,
+            version: None,
+        }))
     }
 
     fn header_len(&self) -> usize {
@@ -70,7 +73,11 @@ impl ReadHandler for PngRead {
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
         let bytes = read_all(file_of(&source)?).await?;
         let bitmap = decode(&bytes)?;
-        Ok(Arc::new(PngImage { bitmap, format: FormatId::new("png"), key: source.key().clone() }))
+        Ok(Arc::new(PngImage {
+            bitmap,
+            format: FormatId::new("png"),
+            key: source.key().clone(),
+        }))
     }
 }
 
@@ -79,15 +86,26 @@ fn decode(bytes: &[u8]) -> Result<BitmapBuf> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().map_err(bad)?;
-    let mut buf = vec![0; reader.output_buffer_size().ok_or_else(|| corrupt("png: image too large"))?];
+    let mut buf = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .ok_or_else(|| corrupt("png: image too large"))?
+    ];
     let frame = reader.next_frame(&mut buf).map_err(bad)?;
     buf.truncate(frame.buffer_size());
 
     let rgba: Vec<u8> = match frame.color_type {
         png::ColorType::Rgba => buf,
-        png::ColorType::Rgb => buf.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::Rgb => buf
+            .chunks_exact(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
         png::ColorType::Grayscale => buf.iter().flat_map(|&g| [g, g, g, 255]).collect(),
-        png::ColorType::GrayscaleAlpha => buf.chunks_exact(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::GrayscaleAlpha => buf
+            .chunks_exact(2)
+            .flat_map(|p| [p[0], p[0], p[0], p[1]])
+            .collect(),
         // Palettes are expanded by the decoder.
         png::ColorType::Indexed => return Err(corrupt("png: palette was not expanded")),
     };
@@ -142,9 +160,9 @@ impl PngOptions {
             Mips::Level(n) => Ok(Selection::One(*n)),
             Mips::Keyword(k) if k == "first" => Ok(Selection::One(0)),
             Mips::Keyword(k) if k == "all" => Ok(Selection::All),
-            Mips::Keyword(k) => {
-                Err(invalid(format!("mips must be \"first\", \"all\" or a mip level number, not \"{k}\"")))
-            }
+            Mips::Keyword(k) => Err(invalid(format!(
+                "mips must be \"first\", \"all\" or a mip level number, not \"{k}\""
+            ))),
         }
     }
 }
@@ -168,9 +186,15 @@ pub(crate) fn encode_rgba8(pixels: &[u8], width: u32, height: u32) -> Result<Vec
     let mut encoder = png::Encoder::new(&mut out, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().map_err(|e| Error::custom("png encode", e))?;
-    writer.write_image_data(pixels).map_err(|e| Error::custom("png encode", e))?;
-    writer.finish().map_err(|e| Error::custom("png encode", e))?;
+    let mut writer = encoder
+        .write_header()
+        .map_err(|e| Error::custom("png encode", e))?;
+    writer
+        .write_image_data(pixels)
+        .map_err(|e| Error::custom("png encode", e))?;
+    writer
+        .finish()
+        .map_err(|e| Error::custom("png encode", e))?;
     Ok(out)
 }
 
@@ -187,7 +211,11 @@ impl ConvertHandler for PngEncode {
         if info.depth != 1 {
             return Err(unsupported("png", "volume textures"));
         }
-        let key = ValueKey::converted(Arc::new(source.key().clone()), target.format.unversioned(), options.normalized());
+        let key = ValueKey::converted(
+            Arc::new(source.key().clone()),
+            target.format.unversioned(),
+            options.normalized(),
+        );
         let png = FormatId::new("png");
         let blob = |bytes: Vec<u8>, key: ValueKey| -> Value {
             Arc::new(BlobData::with_format(png.clone(), Bytes::from(bytes), key))
@@ -201,7 +229,10 @@ impl ConvertHandler for PngEncode {
                     }));
                 }
                 if info.layer_count() > 1 {
-                    cx.warn(format!("png: the bitmap has {} layers, writing layer 0 only", info.layer_count()));
+                    cx.warn(format!(
+                        "png: the bitmap has {} layers, writing layer 0 only",
+                        info.layer_count()
+                    ));
                 }
                 Ok(blob(encode_mip(bitmap, level, 0, cx).await?, key))
             }
@@ -227,7 +258,10 @@ impl ConvertHandler for PngEncode {
                             FormatId::new("png"),
                             &serde_json::json!({ "layer": layer, "mip": level }),
                         );
-                        items.push((name, blob(encode_mip(bitmap, level, layer, cx).await?, item_key)));
+                        items.push((
+                            name,
+                            blob(encode_mip(bitmap, level, layer, cx).await?, item_key),
+                        ));
                     }
                 }
                 Ok(Arc::new(BundleData::named(items, key)))
