@@ -26,6 +26,8 @@ mod starpak;
 mod txtr;
 mod uiia;
 mod uiia_json;
+mod uimg;
+mod uimg_json;
 #[cfg(feature = "testing")]
 pub mod testing;
 
@@ -55,6 +57,8 @@ pub use starpak::{Starpak, StarpakData, StarpakEntry, StarpakRead};
 pub use txtr::{pixel_format, TxtrAsset, TxtrHeader, TxtrRead};
 pub use uiia::{Quality, Resolution, UiiaAsset, UiiaHeader, UiiaRead};
 pub use uiia_json::{UiiaJsonEncode, UiiaJsonOptions};
+pub use uimg::{Rect, Sprite, UimgAsset, UimgHeader, UimgRead};
+pub use uimg_json::{UimgJsonEncode, UimgJsonOptions};
 
 /// Registers the Respawn formats.
 #[derive(Debug, Default)]
@@ -160,6 +164,16 @@ impl Plugin for RespawnPlugin {
             .provides::<dyn Metadata>()
             .to("uiia.json", UiiaJsonEncode);
         r.format("uiia.json").label("UI image (JSON)").extensions(["json"]);
+        r.format("uimg")
+            .label("Respawn UI image atlas")
+            .from("rpak.asset", UimgRead)
+            .extensions(["uimg"])
+            .provides::<dyn Bitmap>()
+            .provides::<dyn Metadata>()
+            .to("uimg.json", UimgJsonEncode);
+        r.format("uimg.json").label("UI image atlas (JSON)").extensions(["json"]);
+        // One sprite cut out of an atlas, made by `uimg.json`.
+        r.format("uimg.sprite").label("UI image sprite").provides::<dyn Bitmap>();
         r.format("aseq")
             .label("Respawn animation")
             .from("rpak.asset", AseqRead::new(self.rig.clone()))

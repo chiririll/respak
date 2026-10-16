@@ -15,6 +15,7 @@ Conversion is read-only: writing Respawn formats is not supported.
 | `txtr` | textures, asset versions 8-10 |
 | `matl` | materials, converted to JSON plus textures |
 | `uiia` | single tiled UI images (not atlases) |
+| `uimg` | UI image atlases, asset versions 10-11: the atlas texture and every sprite cut out |
 | `rmdl` | models (`mdl_`), asset versions 16-20 (current Apex): skeleton, meshes per LOD, materials; converted to Cast |
 | `aseq`, `asqd`, `arig` | animations: sequences (`aseq`, asset versions 12.1-14, RLE data) with their data (`asqd`) and the rig (`arig`) that gives the skeleton; converted to Cast animations, one file per blend |
 | `bik` / `bk2` | Bink 2 video and audio only |
@@ -24,7 +25,7 @@ Other asset kinds (older models, older or datapoint-compressed animations, ...) 
 
 ## What it writes
 
-`png`, `dds`, `png.frames` (video to a folder of PNGs), `wav`, `avi`, `mov`, `y4m`, `matl.json`, `uiia.json`, `cast` (models and animations), `rmdl.json` (model metadata), and `file` (unchanged copy).
+`png`, `dds`, `png.frames` (video to a folder of PNGs), `wav`, `avi`, `mov`, `y4m`, `matl.json`, `uiia.json`, `uimg.json`, `cast` (models and animations), `rmdl.json` (model metadata), and `file` (unchanged copy).
 
 ## Quick start
 
@@ -57,7 +58,7 @@ respak --steam 1172470 --depot 1172471 --out out convert "paks/Win64/common.rpak
 | Crate | Purpose |
 |---|---|
 | `respak-core` | engine: format graph, containers, caching, events |
-| `respak-respawn` | Respawn formats (rpak, starpak, txtr, matl, uiia) |
+| `respak-respawn` | Respawn formats (rpak, starpak, txtr, matl, uiia, uimg) |
 | `respak-formats` | PNG, DDS, WAV and frame output |
 | `respak-nihav` | Bink 2 decoding and AVI/MOV/Y4M encoding |
 | `respak-steam` | Steam login and depot access |

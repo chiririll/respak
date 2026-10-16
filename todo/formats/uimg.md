@@ -186,7 +186,15 @@ Notes:
 - A synthetic RGBA8 `txtr` (guid matching `atlasGUID`) in the same test pak, with checks on the cropped pixels. A missing atlas → JSON with `file: null` and a warning.
 - Real files (no Steam runs without permission): Apex `common.rpak` / `ui*.rpak` atlases; compare with rsx "Metadata (JSON)" and "PNG (Textures)" output, allowing for the reordering.
 
+## Decisions (user, 2026-10-16)
+- Sprite slicing is **off by default**, enabled by an option (`sprites: true`).
+- `uimg` **provides `Bitmap` for the atlas directly**, so `uimg -> png` works without slicing. This replaces the "no `Bitmap`" proposal in Output. The atlas `txtr` is resolved through its guid when the `Bitmap` is requested; how to keep that out of the plain read (lazy resolve) is settled in the slice.
+- The name stays `None` at read time; the cache names it.
+- The unknown fields (`unk`, `unk_4`, `unk_8`) are skipped in the JSON; guess their meaning during implementation.
+- Header vs. texture size (question 4): no answer yet. Default: use the header values for the rectangles, scale by the texture size and warn when they differ.
+
 ## Open questions
+(Questions 4 to 8 are answered above; 1 to 3 need real data.)
 1. Which Apex seasons use v10 and which use v11? Does R2/Titanfall have `uimg`? (Not visible in rsx.)
 2. Is `headerSize` always 0x40 for both versions? rsx has no validation entry for `uimg`.
 3. How is `pathHash` computed? Can it be checked against the stored path (and used for name recovery)?

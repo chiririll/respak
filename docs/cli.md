@@ -98,6 +98,7 @@ A pak is addressed like a folder: `paks/Win64/common.rpak/0x8A3F12C4D5E6F701.txt
 | `y4m` | video | codec `rawvideo`; no sound | one file |
 | `matl.json` | material | `textures`: a target (`{"type":"png"}`) | folder with `material.json` and `textures/` |
 | `uiia.json` | UI image | `image`: a target (`{"type":"png"}`) | folder with the image and JSON layout |
+| `uimg.json` | UI image atlas | `image`: a target (`{"type":"png"}`); `sprites`: cut every sprite out as its own image (false) | folder with `atlas.<ext>`, `uimg.json` (sprites in stored order) and, with `sprites`, `sprites/<path>.<ext>` |
 | `cast` | model | `lods`: `0`, `"all"` or a list (0); `skin` (0); `textures` (true); `image`: texture format (`"png"`) | folder with one `<bodypart>_<n>_LOD<m>.cast` per LOD and model, and `textures/` |
 | `cast` | animation | `root_fixup`: `"rsx"` (turn bone 0 by -90 degrees of yaw, position `(x, y)` to `(y, -x)`, as rsx does) or `"none"`; `blend`: `"all"` or one blend index (all) | folder with one `<name>_<blend>.cast` per blend: the skeleton and, per bone, position, rotation (and scale) curves with a key on every frame |
 | `rmdl.json` | model | none | one JSON file: header, bones, body parts, materials, skins, LODs, hitboxes, attachments |
