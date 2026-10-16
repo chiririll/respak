@@ -24,6 +24,10 @@ mod rtech;
 mod shader;
 mod snowflake;
 mod starpak;
+mod stgs;
+mod stgs_json;
+mod stlt;
+mod stlt_json;
 #[cfg(feature = "testing")]
 pub mod testing;
 mod txtr;
@@ -60,6 +64,10 @@ pub use rmdl::{variant as rmdl_variant, RmdlAsset, RmdlHeader, RmdlRead, Studio,
 pub use rmdl_json::{RmdlJsonEncode, RmdlJsonOptions};
 pub use rpak::{RpakAsset, RpakData, RpakRead, MEM};
 pub use starpak::{Starpak, StarpakData, StarpakEntry, StarpakRead};
+pub use stgs::{ModType, StgsAsset, StgsHeader, StgsMod, StgsRead};
+pub use stgs_json::StgsJsonEncode;
+pub use stlt::{Field, FieldType, Layout, StltAsset, StltRead};
+pub use stlt_json::StltJsonEncode;
 pub use txtr::{pixel_format, TxtrAsset, TxtrHeader, TxtrRead};
 pub use uiia::{Quality, Resolution, UiiaAsset, UiiaHeader, UiiaRead};
 pub use uiia_json::{UiiaJsonEncode, UiiaJsonOptions};
@@ -220,6 +228,24 @@ impl Plugin for RespawnPlugin {
             .provides::<dyn Metadata>()
             .to("dtbl.csv", DtblCsvEncode)
             .to("dtbl.json", DtblJsonEncode);
+        r.format("stgs")
+            .label("Respawn settings")
+            .from("rpak.asset", StgsRead)
+            .extensions(["stgs"])
+            .provides::<dyn Metadata>()
+            .to("stgs.json", StgsJsonEncode);
+        r.format("stgs.json")
+            .label("Settings (JSON)")
+            .extensions(["json"]);
+        r.format("stlt")
+            .label("Respawn settings layout")
+            .from("rpak.asset", StltRead)
+            .extensions(["stlt"])
+            .provides::<dyn Metadata>()
+            .to("stlt.json", StltJsonEncode);
+        r.format("stlt.json")
+            .label("Settings layout (JSON)")
+            .extensions(["json"]);
         r.format("dtbl.csv")
             .label("Datatable (CSV)")
             .extensions(["csv"]);
