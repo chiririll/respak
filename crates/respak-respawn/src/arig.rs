@@ -11,6 +11,7 @@
 //! sequences is `Corrupt` instead of an assert; the studio variant is told by the `studio` option
 //! (see [`StudioSelect`]).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -21,6 +22,7 @@ use respak_core::{
     ValueKey, Version,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::OnceCell;
 
 use crate::guid::string_to_guid;
 use crate::matl_json::{hex, locate, pak_of};
@@ -233,12 +235,17 @@ impl Data for ArigAsset {
 /// Read edge `rpak.asset -> arig`.
 pub struct ArigRead {
     studio: StudioSelect,
+    /// The first `mdl_` of each pak (by virtual path of the pak), looked up once.
+    first_models: std::sync::Mutex<HashMap<String, Arc<OnceCell<Option<String>>>>>,
 }
 
 impl ArigRead {
     /// A reader that finds the studiohdr variant as `studio` says.
     pub fn new(studio: StudioSelect) -> Self {
-        Self { studio }
+        Self {
+            studio,
+            first_models: Default::default(),
+        }
     }
 }
 
@@ -287,7 +294,28 @@ impl ReadHandler for ArigRead {
             )
             .await?;
         let sibling = match self.studio {
-            StudioSelect::Auto => sibling_model(asset, &pak_of(source.key()), cx).await,
+            StudioSelect::Auto => {
+                let origin = pak_of(source.key());
+                let cell = self
+                    .first_models
+                    .lock()
+                    .expect("the model map is not poisoned")
+                    .entry(origin.clone())
+                    .or_default()
+                    .clone();
+                let first = cell
+                    .get_or_init(|| async {
+                        list_assets(&asset.volume, ".mdl_")
+                            .await
+                            .ok()
+                            .and_then(|names| names.into_iter().next())
+                    })
+                    .await;
+                match first {
+                    Some(name) => sibling_model(name, &origin, cx).await,
+                    None => None,
+                }
+            }
             StudioSelect::Layout(_) => None,
         };
         let (major, layout) = studio_variant(&self.studio, sibling, &studio)?;
@@ -320,22 +348,28 @@ impl ReadHandler for ArigRead {
 /// The skeleton owner of the `aseq` `aseq_guid` of the pak at `origin` (a virtual path): the first
 /// `arig` that lists it, else the first `mdl_` (rsx order; the `arig` of a pak wins over its
 /// models). Both values have the `Skeleton` capability. Scans only the assets of the pak and
-/// `common.rpak` next to it; none found is `MissingDependency`. The answer is remembered in the
-/// plugin cache (and checked again before it is used).
-pub(crate) async fn owner_of(aseq_guid: u64, origin: &str, cx: &Cx) -> Result<Value> {
-    let cache = cx.cache("respawn");
-    let cache_key = format!("aseq-owner/{aseq_guid:016x}");
-    if let Some(cache) = &cache {
-        if let Some(path) = cache.get_json::<String>(&cache_key).await {
-            if let Ok(asset) = cx.mediator.open(&path, cx).await {
-                if let Some(kind) = lists_sequence(&asset, aseq_guid).await {
-                    return as_rig(asset, kind, cx).await;
-                }
-            }
-            cx.warn(format!("the cached rig of {} is stale", hex(aseq_guid)));
-            cache.remove(&cache_key).await;
-        }
-    }
+/// `common.rpak` next to it, once per pak; none found is `MissingDependency`.
+pub(crate) async fn owner_of(
+    aseq_guid: u64,
+    origin: &str,
+    owners: &Owners,
+    cx: &Cx,
+) -> Result<Value> {
+    let index = owners.index(origin, cx).await?;
+    let Some((path, kind)) = index.get(&aseq_guid) else {
+        return Err(Error::new(ErrorKind::MissingDependency {
+            item: format!("the rig of aseq {}", hex(aseq_guid)),
+            file: format!(
+                "no arig or mdl_ in {} lists it (set `rig` to name one)",
+                rig_paks(origin).join(" or ")
+            ),
+        }));
+    };
+    owners.rig(path, kind, cx).await
+}
+
+/// The pak at `origin` and the `common.rpak` next to it, the paks whose rigs are looked at.
+fn rig_paks(origin: &str) -> Vec<String> {
     let dir = origin
         .rsplit_once('/')
         .map_or(String::new(), |(d, _)| format!("{d}/"));
@@ -344,7 +378,58 @@ pub(crate) async fn owner_of(aseq_guid: u64, origin: &str, cx: &Cx) -> Result<Va
     if common != origin {
         paks.push(common);
     }
-    for pak in &paks {
+    paks
+}
+
+/// For each `aseq` guid, the path and the kind (`arig` or `rmdl`) of the rig that owns it.
+type OwnerIndex = HashMap<u64, (String, &'static str)>;
+
+/// The rigs of the paks, by the sequences they list. A pak is indexed once, on the first sequence
+/// whose rig is not in the plugin cache, instead of being searched again for every sequence.
+#[derive(Default)]
+pub(crate) struct Owners {
+    indexes: std::sync::Mutex<HashMap<String, Arc<OnceCell<Arc<OwnerIndex>>>>>,
+    /// The rigs already read, by path: reading one parses its bones and looks at its sibling models.
+    rigs: std::sync::Mutex<HashMap<String, Arc<OnceCell<Value>>>>,
+}
+
+impl Owners {
+    /// The index for the sequences of the pak at `origin`: the first `arig` that lists a sequence,
+    /// else the first `mdl_` (the `arig` of a pak wins over its models, the pak over `common.rpak`).
+    async fn index(&self, origin: &str, cx: &Cx) -> Result<Arc<OwnerIndex>> {
+        let cell = self
+            .indexes
+            .lock()
+            .expect("the index map is not poisoned")
+            .entry(origin.to_owned())
+            .or_default()
+            .clone();
+        let index = cell.get_or_try_init(|| build_index(origin, cx)).await?;
+        Ok(index.clone())
+    }
+
+    /// The rig at `path`, opened and read once.
+    async fn rig(&self, path: &str, kind: &'static str, cx: &Cx) -> Result<Value> {
+        let cell = self
+            .rigs
+            .lock()
+            .expect("the rig map is not poisoned")
+            .entry(path.to_owned())
+            .or_default()
+            .clone();
+        let rig = cell
+            .get_or_try_init(|| async {
+                let asset = cx.mediator.open(path, cx).await?;
+                as_rig(asset, kind, cx).await
+            })
+            .await?;
+        Ok(rig.clone())
+    }
+}
+
+async fn build_index(origin: &str, cx: &Cx) -> Result<Arc<OwnerIndex>> {
+    let mut index = OwnerIndex::new();
+    for pak in &rig_paks(origin) {
         let file = match cx.mediator.open(pak, cx).await {
             Ok(f) => f,
             Err(e) if matches!(e.kind(), ErrorKind::NotFound { .. }) => continue,
@@ -354,26 +439,20 @@ pub(crate) async fn owner_of(aseq_guid: u64, origin: &str, cx: &Cx) -> Result<Va
         let Some(c) = container.as_container() else {
             continue;
         };
-        for (suffix, kind) in [(".arig", "arig"), (".mdl_", "rmdl")] {
+        for suffix in [".arig", ".mdl_"] {
             for name in list_assets(&c.volume(), suffix).await? {
                 cx.check_cancelled()?;
                 let asset = c.entry(&name).await?;
-                if lists_sequence(&asset, aseq_guid).await.is_some() {
-                    if let Some(cache) = &cache {
-                        cache.put_json(&cache_key, &asset.key().to_string()).await;
+                if let Some((kind, guids)) = sequences_of(&asset).await {
+                    let path = asset.key().to_string();
+                    for guid in guids {
+                        index.entry(guid).or_insert_with(|| (path.clone(), kind));
                     }
-                    return as_rig(asset, kind, cx).await;
                 }
             }
         }
     }
-    Err(Error::new(ErrorKind::MissingDependency {
-        item: format!("the rig of aseq {}", hex(aseq_guid)),
-        file: format!(
-            "no arig or mdl_ in {} lists it (set `rig` to name one)",
-            paks.join(" or ")
-        ),
-    }))
+    Ok(Arc::new(index))
 }
 
 /// Reads an `arig` / `mdl_` asset (`kind` `arig` or `rmdl`) as a value with a skeleton.
@@ -427,9 +506,9 @@ async fn list_assets(volume: &Operator, suffix: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-/// Whether `asset` (a pak asset) is an `arig` / `mdl_` that lists the sequence `guid`; the format
-/// to read it as (`arig` or `rmdl`) if so. Reads only the asset header and its guid list.
-async fn lists_sequence(asset: &Value, guid: u64) -> Option<&'static str> {
+/// The kind to read `asset` as (`arig` or `rmdl`) and the `aseq` guids it lists, if it is an
+/// `arig` / `mdl_` pak asset. Reads only the asset header and its guid list.
+async fn sequences_of(asset: &Value) -> Option<(&'static str, Vec<u64>)> {
     let asset = asset.downcast_ref::<RpakAsset>()?;
     let header = asset.read_header().await.ok()?;
     let (kind, list) = match &asset.entry.kind {
@@ -452,18 +531,12 @@ async fn lists_sequence(asset: &Value, guid: u64) -> Option<&'static str> {
         }
         _ => return None,
     };
-    let guids = read_guids(asset, list.0, list.1).await.ok()?;
-    guids.contains(&guid).then_some(kind)
+    Some((kind, read_guids(asset, list.0, list.1).await.ok()?))
 }
 
-/// The version of the first model in the same pak as `rig`, if there is one of a supported kind:
+/// The version of the model `name` (the first in the pak at `origin`), if it is of a supported kind:
 /// the studiohdr layout the rig is expected to share (rsx behaviour).
-async fn sibling_model(rig: &RpakAsset, origin: &str, cx: &Cx) -> Option<Version> {
-    let name = list_assets(&rig.volume, ".mdl_")
-        .await
-        .ok()?
-        .into_iter()
-        .next()?;
+async fn sibling_model(name: &str, origin: &str, cx: &Cx) -> Option<Version> {
     let model = cx
         .mediator
         .open(&format!("{origin}/{name}"), cx)

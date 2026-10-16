@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 use crate::anim_codec::{
     self, BoneFrame, FlagWidth, RleHeader, SectionIndex, BONE_POS, BONE_ROT, BONE_SCALE,
 };
-use crate::arig::{explicit_rig, owner_of};
+use crate::arig::{explicit_rig, owner_of, Owners};
 use crate::asqd::AsqdAsset;
 use crate::matl_json::{hex, locate, pak_of};
 use crate::rmdl::{fix_offset, read_guids, B};
@@ -876,13 +876,17 @@ impl Data for AseqAsset {
 /// Read edge `rpak.asset -> aseq`.
 pub struct AseqRead {
     rig: RigSelect,
+    owners: Owners,
 }
 
 impl AseqRead {
     /// A reader that binds sequences to the skeleton `rig` says. An `arig` it finds is read by the
     /// registered `arig` edge, with its `studio` setting.
     pub fn new(rig: RigSelect) -> Self {
-        Self { rig }
+        Self {
+            rig,
+            owners: Owners::default(),
+        }
     }
 }
 
@@ -927,7 +931,7 @@ impl ReadHandler for AseqRead {
         let origin = pak_of(source.key());
 
         let rig = match &self.rig {
-            RigSelect::Auto => owner_of(asset.entry.guid, &origin, cx).await?,
+            RigSelect::Auto => owner_of(asset.entry.guid, &origin, &self.owners, cx).await?,
             RigSelect::Explicit(name) => explicit_rig(name, &origin, cx).await?,
         };
         let skeleton = rig.as_skeleton().ok_or_else(|| {

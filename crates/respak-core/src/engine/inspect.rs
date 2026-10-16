@@ -1,6 +1,6 @@
 //! Looking at the input without converting it: `discover`, `list` and `inspect`.
 
-use super::{Engine, INSPECT_PROGRESS, NAME_CONCURRENCY};
+use super::{Engine, INSPECT_PROGRESS, NAME_CONCURRENCY, WORKER_CONCURRENCY};
 use crate::capability::Container;
 use crate::discover::{
     Alternative, DiscoverOptions, Discovery, DiscoveryEntry, EntryInfo, ListedEntry,
@@ -81,33 +81,74 @@ impl Engine {
     /// Reads every entry of the container at `path` and reports what each one is made of: its
     /// `Metadata` (name, kind, guid, dependencies) and the strings it offers as possible names of
     /// other assets (`NameSource`). Entries are read like `list` with names does, several at a
-    /// time. An entry that cannot be read is reported with its path only. `NotFound` if `path` is
-    /// not a container. Publishes `Progress` every [`INSPECT_PROGRESS`] entries.
+    /// time, on as many threads as there are cores (on one, in a single-threaded runtime). An entry
+    /// that cannot be read is reported with its path only, and the entries come in the container's
+    /// order. `NotFound` if `path` is not a container. Publishes `Progress` every
+    /// [`INSPECT_PROGRESS`] entries.
     pub async fn inspect(&self, path: &str, cancel: &CancellationToken) -> Result<Vec<EntryInfo>> {
         use futures::StreamExt;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         let cx = self.cx(cancel);
         let value = self.mediator.open(path, &cx).await?;
         let container = self.mediator.mount(value, &cx).await?;
         let c = container.as_container().expect("mount checks this");
         let files = list_volume(&c.volume()).await?;
-        let total = files.len() as u64;
-        let (cx, c) = (&cx, c);
-        let mut entries = futures::stream::iter(files)
-            .map(|path| self.entry_info(c, path, cx))
-            .buffered(NAME_CONCURRENCY);
-        let mut infos = Vec::with_capacity(total as usize);
-        while let Some(info) = entries.next().await {
-            cx.check_cancelled()?;
-            infos.push(info);
-            if infos.len() % INSPECT_PROGRESS == 0 {
-                cx.mediator.publish(Event::Progress {
-                    task: format!("read {path}"),
-                    done: infos.len() as u64,
-                    total,
-                });
+        let total = files.len();
+        let handle = tokio::runtime::Handle::current();
+        let workers = match handle.runtime_flavor() {
+            tokio::runtime::RuntimeFlavor::MultiThread => std::thread::available_parallelism()
+                .map_or(1, |n| n.get())
+                .min(total.max(1)),
+            _ => 1,
+        };
+        let (cx, c, files) = (&cx, c, &files);
+        let (next, done) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        // Each worker takes the next unread entry until there are none, so a slow entry does not
+        // hold up the others.
+        let worker = || async {
+            let mut read = Vec::new();
+            let mut entries = futures::stream::iter(std::iter::from_fn(|| {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                (i < total).then_some(i)
+            }))
+            .map(|i| async move { (i, self.entry_info(c, files[i].clone(), cx).await) })
+            .buffer_unordered(WORKER_CONCURRENCY);
+            while let Some(entry) = entries.next().await {
+                cx.check_cancelled()?;
+                read.push(entry);
+                let n = done.fetch_add(1, Ordering::Relaxed) + 1;
+                if n % INSPECT_PROGRESS == 0 {
+                    cx.mediator.publish(Event::Progress {
+                        task: format!("read {path}"),
+                        done: n as u64,
+                        total: total as u64,
+                    });
+                }
             }
-        }
-        Ok(infos)
+            Ok::<_, crate::error::Error>(read)
+        };
+        let mut read: Vec<(usize, EntryInfo)> = if workers == 1 {
+            worker().await?
+        } else {
+            let results = tokio::task::block_in_place(|| {
+                std::thread::scope(|scope| {
+                    let threads: Vec<_> = (0..workers)
+                        .map(|_| scope.spawn(|| handle.block_on(worker())))
+                        .collect();
+                    threads
+                        .into_iter()
+                        .map(|t| t.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
+                        .collect::<Vec<_>>()
+                })
+            });
+            let mut all = Vec::with_capacity(total);
+            for result in results {
+                all.extend(result?);
+            }
+            all
+        };
+        read.sort_unstable_by_key(|(i, _)| *i);
+        Ok(read.into_iter().map(|(_, info)| info).collect())
     }
 
     /// Reads the entry `path` of `c` as far as its format is known. Whatever cannot be read is

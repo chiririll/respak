@@ -27,6 +27,9 @@ pub(crate) use inspect::list_volume;
 /// Entries read at once by `list` with names.
 const NAME_CONCURRENCY: usize = 32;
 
+/// Entries read at once by each thread of `inspect`.
+const WORKER_CONCURRENCY: usize = 8;
+
 /// `inspect` reports progress every this many entries.
 const INSPECT_PROGRESS: usize = 500;
 
