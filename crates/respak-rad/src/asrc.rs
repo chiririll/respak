@@ -10,9 +10,10 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::stream::{BoxStream, StreamExt};
+use futures::stream::BoxStream;
 use opendal::Operator;
 use respak_core::capability::{Audio, AudioChunk, AudioTrackInfo, Dependency, Metadata};
+use respak_core::stream::blocking_stream;
 use respak_core::{Cx, Data, Error, ErrorKind, FormatId, Result, ValueKey, Version};
 use tokio::sync::OnceCell;
 
@@ -20,9 +21,6 @@ use crate::bcf1::{self, Bcf1Header};
 use crate::mbnk::{Bank, SourceEntry};
 use crate::mstr::{MstrHeader, MSTR_HEADER_LEN};
 use crate::rada::RadaHeader;
-
-/// Decoded chunks buffered between the decoder and the consumer.
-const STREAM_BUFFER: usize = 4;
 
 /// Codec header of a source, from the first four bytes of its stream header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,38 +223,6 @@ impl AsrcData {
     }
 }
 
-/// Runs `decode` on the blocking pool and streams what it hands to its sink. The decoder stops
-/// when the stream is dropped or the request is cancelled (the last item is then `Cancelled`).
-fn spawn_stream<T: Send + 'static>(
-    cx: &Cx,
-    decode: impl FnOnce(&mut dyn FnMut(Result<T>) -> bool) + Send + 'static,
-) -> BoxStream<'static, Result<T>> {
-    let (tx, rx) = tokio::sync::mpsc::channel(STREAM_BUFFER);
-    let cx = cx.clone();
-    tokio::spawn(async move {
-        let sender = tx.clone();
-        let cancel = cx.cancel.clone();
-        let ran = cx
-            .blocking(move || {
-                decode(&mut |item| {
-                    if cancel.is_cancelled() {
-                        let _ = sender.blocking_send(Err(Error::new(ErrorKind::Cancelled)));
-                        return false;
-                    }
-                    sender.blocking_send(item).is_ok()
-                })
-            })
-            .await;
-        if let Err(e) = ran {
-            let _ = tx.send(Err(e)).await;
-        }
-    });
-    futures::stream::unfold(rx, |mut rx| async move {
-        rx.recv().await.map(|item| (item, rx))
-    })
-    .boxed()
-}
-
 #[async_trait]
 impl Audio for AsrcData {
     /// One mono track per channel. With the `.mstr` missing (the channel count is in it) one
@@ -311,7 +277,7 @@ impl Audio for AsrcData {
             &self.entry.name,
         )
         .await?;
-        Ok(spawn_stream(cx, move |sink| {
+        Ok(blocking_stream(cx, move |sink| {
             bcf1::decode_channel(&header, &data, channel, sink)
         }))
     }

@@ -12,6 +12,7 @@ pub mod mediator;
 pub mod middleware;
 pub mod plugin;
 pub mod reader;
+pub mod stream;
 pub mod target;
 pub mod value;
 pub mod volume;

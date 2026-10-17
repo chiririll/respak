@@ -1,7 +1,7 @@
 # R5 · Riskier work
 **Status:** todo · **Risk:** medium · **Depends on:** R2, R4
 
-## R5.1 Shared blocking-stream helper (M)
+## R5.1 Shared blocking-stream helper (M) · done: `respak_core::stream::blocking_stream`
 `miles/asrc.rs` and `nihav/bik.rs` hand-roll the same blocking-pool decode → `mpsc` → `blocking_send` → cancel check → `Err(Cancelled)` last item. Extract e.g. `respak_core::stream::blocking_stream(cancel, |emit| ..)`. Concurrency code: run the `bik.rs` cancel tests and `formats/tests/cancel.rs` first.
 
 ## R5.2 Codec splits (M each, only with the vector tests green)
