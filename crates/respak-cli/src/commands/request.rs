@@ -10,6 +10,7 @@ use super::output::report;
 
 /// Arguments of `run`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct RunArgs {
     /// Path of the request JSON, or `-`.
     request: String,

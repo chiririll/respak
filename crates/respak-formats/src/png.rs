@@ -14,7 +14,7 @@ use respak_core::{
 use serde::{Deserialize, Serialize};
 
 use crate::bc::decode_rgba8;
-use crate::{bitmap_of, corrupt, file_of, read_all, unsupported};
+use crate::{bitmap_of, file_of, read_all};
 
 const MAGIC: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -82,7 +82,7 @@ impl ReadHandler for PngRead {
 }
 
 fn decode(bytes: &[u8]) -> Result<BitmapBuf> {
-    let bad = |e: png::DecodingError| corrupt(format!("png: {e}"));
+    let bad = |e: png::DecodingError| Error::corrupt(format!("png: {e}"));
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().map_err(bad)?;
@@ -90,7 +90,7 @@ fn decode(bytes: &[u8]) -> Result<BitmapBuf> {
         0;
         reader
             .output_buffer_size()
-            .ok_or_else(|| corrupt("png: image too large"))?
+            .ok_or_else(|| Error::corrupt("png: image too large"))?
     ];
     let frame = reader.next_frame(&mut buf).map_err(bad)?;
     buf.truncate(frame.buffer_size());
@@ -107,7 +107,7 @@ fn decode(bytes: &[u8]) -> Result<BitmapBuf> {
             .flat_map(|p| [p[0], p[0], p[0], p[1]])
             .collect(),
         // Palettes are expanded by the decoder.
-        png::ColorType::Indexed => return Err(corrupt("png: palette was not expanded")),
+        png::ColorType::Indexed => return Err(Error::corrupt("png: palette was not expanded")),
     };
     let info = BitmapInfo {
         width: frame.width,
@@ -209,7 +209,7 @@ impl ConvertHandler for PngEncode {
         let bitmap = bitmap_of(&source)?;
         let info = bitmap.info();
         if info.depth != 1 {
-            return Err(unsupported("png", "volume textures"));
+            return Err(Error::unsupported("png", "volume textures"));
         }
         let key = ValueKey::converted(
             Arc::new(source.key().clone()),

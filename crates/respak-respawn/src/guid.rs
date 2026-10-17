@@ -45,6 +45,11 @@ pub fn string_to_guid(s: &str) -> u64 {
     }
 }
 
+/// A guid as `0x` and 16 upper-case hex digits.
+pub(crate) fn hex(guid: u64) -> String {
+    format!("0x{guid:016X}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

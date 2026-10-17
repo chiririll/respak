@@ -1,0 +1,10 @@
+[package]
+name = "respak-respawn-testing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+# Test-support builders: public fields and helpers are self-describing.
+missing_docs = "allow"

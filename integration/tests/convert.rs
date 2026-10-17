@@ -249,7 +249,7 @@ fn rpak_env() -> Env {
 
 #[tokio::test]
 async fn an_rpak_texture_converts_to_dds_inside_the_container_path() {
-    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    use respak_respawn_testing::{build_tex_pak, TexSpec};
     // 8x8 BC1 with 2 permanent mips: 32 bytes + 8 bytes (padded to 16 each), smallest first.
     let mut data = vec![2u8; 16];
     data.extend(vec![1u8; 32]);
@@ -304,7 +304,7 @@ async fn an_rpak_texture_converts_to_dds_inside_the_container_path() {
 
 #[tokio::test]
 async fn discover_in_an_rpak_lists_textures_as_convertible() {
-    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    use respak_respawn_testing::{build_tex_pak, TexSpec};
     let env = rpak_env();
     let t = TexSpec::new(0x42, 10, 4, 4, 31, 1, vec![9u8; 64]);
     env.input
@@ -330,7 +330,7 @@ async fn discover_in_an_rpak_lists_textures_as_convertible() {
 
 #[tokio::test]
 async fn discover_names_reads_the_asset_names() {
-    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    use respak_respawn_testing::{build_tex_pak, TexSpec};
     let env = rpak_env();
     let mut t = TexSpec::new(0x42, 10, 4, 4, 31, 1, vec![9u8; 64]);
     t.name = Some("texture/ui/icon");
@@ -351,7 +351,7 @@ async fn discover_names_reads_the_asset_names() {
 
 #[tokio::test]
 async fn an_rpak_bc1_texture_converts_to_png_and_honours_mips() {
-    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    use respak_respawn_testing::{build_tex_pak, TexSpec};
     // 8x8 BC1, 2 permanent mips (smallest first in the file): mip 0 is solid colour 0xF800 (red).
     let block = |c0: u16| {
         let mut b = c0.to_le_bytes().to_vec();
@@ -491,21 +491,32 @@ async fn events_are_printed_to_their_own_stream() {
         r#"{"type":"dds"}"#,
     ])
     .unwrap();
-    let (mut out, mut err, mut events) = (Vec::new(), Vec::new(), Vec::new());
+    #[derive(Clone, Default)]
+    struct Shared(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Shared {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let (mut out, mut err, events) = (Vec::new(), Vec::new(), Shared::default());
     let code = respak_cli::run_with_events(
         cli,
         &env.engine,
         &CancellationToken::new(),
         &mut out,
         &mut err,
-        &mut events,
+        events.clone(),
     )
     .await
     .unwrap();
 
     assert_eq!(code, ExitCode::SUCCESS);
     assert!(err.is_empty());
-    let lines = String::from_utf8(events).unwrap();
+    let lines = String::from_utf8(events.0.lock().unwrap().clone()).unwrap();
     for expected in ["wrote a.dds", "wrote b.dds", "[2/2] convert"] {
         assert!(
             lines.lines().any(|l| l == expected),

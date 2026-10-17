@@ -4,8 +4,8 @@ use opendal::{services::Memory, Operator};
 use respak_core::capability::PixelFormat;
 use respak_core::{CancellationToken, ConvertRequest, Engine, Event, OutputResult};
 use respak_formats::FormatsPlugin;
-use respak_respawn::testing::{build_tex_pak, dxbc_blob, PakBuilder, TexSpec};
 use respak_respawn::RespawnPlugin;
+use respak_respawn_testing::{build_tex_pak, dxbc_blob, PakBuilder, TexSpec};
 use serde_json::{json, Value};
 
 const BC1: u16 = 0;

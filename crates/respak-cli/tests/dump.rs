@@ -2,7 +2,7 @@
 
 use std::process::Command;
 
-use respak_respawn::testing::{build_pak, TestAsset};
+use respak_respawn_testing::{build_pak, TestAsset};
 
 #[test]
 fn dumps_the_header_of_an_asset_of_an_unknown_kind() {

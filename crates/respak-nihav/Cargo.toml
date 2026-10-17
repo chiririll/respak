@@ -12,7 +12,6 @@ workspace = true
 respak-core.workspace = true
 respak-formats.workspace = true
 nihav_core.workspace = true
-nihav_rad.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 futures.workspace = true

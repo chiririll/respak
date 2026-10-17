@@ -22,10 +22,6 @@ tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-[features]
-# Synthetic pak builders for tests (also used by the CLI's tests).
-testing = []
-
 [dev-dependencies]
-respak-respawn = { path = ".", features = ["testing"] }
+respak-respawn-testing.workspace = true
 tokio = { workspace = true, features = ["time"] }

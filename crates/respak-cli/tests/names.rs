@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 
 use respak_respawn::string_to_guid;
-use respak_respawn::testing::{DtblCell, PakBuilder};
+use respak_respawn_testing::{DtblCell, PakBuilder};
 
 fn write(root: &Path, path: &str, bytes: Vec<u8>) {
     let full = root.join(path);
@@ -109,9 +109,6 @@ fn without_a_hash_file_the_unnamed_assets_of_the_sources_are_looked_for() {
         "{}",
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(
-        String::from_utf8(run.stdout).unwrap(),
-        format!("{name}\n")
-    );
+    assert_eq!(String::from_utf8(run.stdout).unwrap(), format!("{name}\n"));
     assert!(String::from_utf8_lossy(&run.stderr).contains("1 of 1 guids named"));
 }

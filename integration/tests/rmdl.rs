@@ -3,9 +3,9 @@
 use opendal::{services::Memory, Operator};
 use respak_core::{CancellationToken, ConvertRequest, Engine, ErrorKind, Event, OutputResult};
 use respak_formats::FormatsPlugin;
-use respak_respawn::testing::rmdl::{blend_vertex, flags, normal_z, studio, vg, VgMeshSpec};
-use respak_respawn::testing::PakBuilder;
 use respak_respawn::RespawnPlugin;
+use respak_respawn_testing::rmdl::{blend_vertex, flags, normal_z, studio, vg, VgMeshSpec};
+use respak_respawn_testing::PakBuilder;
 use serde_json::{json, Value};
 
 const WALL: u64 = 0xAAAA;

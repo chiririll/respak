@@ -450,3 +450,63 @@ async fn mounting_a_container_publishes_input_opened() {
     }
     assert_eq!(opened, [("outer.pak".to_owned(), 3)]);
 }
+
+#[tokio::test]
+async fn list_gives_sorted_entries_and_names_only_on_request() {
+    let env = fixture().await;
+    let token = respak_core::CancellationToken::new();
+
+    let plain = env.engine.list("outer.pak", false, &token).await.unwrap();
+    let paths: Vec<_> = plain.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(paths, ["inner.pak", "other.txt", "z.dat"]);
+    assert!(plain.iter().all(|e| e.name.is_none()));
+
+    let named = env.engine.list("outer.pak", true, &token).await.unwrap();
+    let paths: Vec<_> = named.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(paths, ["inner.pak", "other.txt", "z.dat"], "order is kept");
+    // A name equal to the path is not reported.
+    assert!(named.iter().all(|e| e.name.is_none()));
+
+    let err = env
+        .engine
+        .list("plain.txt", false, &token)
+        .await
+        .unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::NotFound { .. }), "{err}");
+}
+
+async fn inspected_paths(env: &Env) -> Vec<String> {
+    let token = respak_core::CancellationToken::new();
+    let infos = env.engine.inspect("outer.pak", &token).await.unwrap();
+    let z = infos.iter().find(|i| i.path == "z.dat").unwrap();
+    assert_eq!(z.name.as_deref(), Some("z.dat"));
+    assert_eq!(z.kind.as_deref(), Some("dat"));
+    infos.into_iter().map(|i| i.path).collect()
+}
+
+#[tokio::test]
+async fn inspect_keeps_the_container_order_on_one_thread() {
+    let env = fixture().await;
+    assert_eq!(
+        inspected_paths(&env).await,
+        ["inner.pak", "other.txt", "z.dat"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn inspect_keeps_the_container_order_across_worker_threads() {
+    let env = fixture().await;
+    assert_eq!(
+        inspected_paths(&env).await,
+        ["inner.pak", "other.txt", "z.dat"]
+    );
+}
+
+#[tokio::test]
+async fn inspect_stops_when_cancelled() {
+    let env = fixture().await;
+    let token = respak_core::CancellationToken::new();
+    token.cancel();
+    let err = env.engine.inspect("outer.pak", &token).await.unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::Cancelled), "{err}");
+}

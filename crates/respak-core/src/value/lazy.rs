@@ -100,10 +100,7 @@ impl Data for LazyBlob {
 }
 
 fn failed(message: &str) -> Error {
-    Error::new(ErrorKind::Custom {
-        source: None,
-        message: format!("the conversion failed earlier: {message}"),
-    })
+    Error::msg(format!("the conversion failed earlier: {message}"))
 }
 
 #[async_trait]
@@ -122,7 +119,7 @@ impl Blob for LazyBlob {
         }
         if let Err(e) = self.produce(&mut state, range.end, cx).await {
             // A cancelled read says nothing about the data: a later read may start over.
-            if !matches!(e.kind(), ErrorKind::Cancelled) {
+            if !e.is_cancelled() {
                 state.failed = Some(e.to_string());
             }
             return Err(e);

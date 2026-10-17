@@ -81,6 +81,8 @@ impl Engine {
                                 .await
                         }
                     };
+                    let skip = job.out.skip_unsupported
+                        && matches!(&result, Err(e) if matches!(e.kind(), ErrorKind::NoPath { .. }));
                     let result = match result {
                         Ok(files) => OutputResult::Ok {
                             files,
@@ -93,13 +95,17 @@ impl Engine {
                         done: done.fetch_add(1, Ordering::SeqCst) + 1,
                         total,
                     });
-                    OutputReport {
-                        from: job.from,
-                        result,
-                    }
+                    (
+                        skip,
+                        OutputReport {
+                            from: job.from,
+                            result,
+                        },
+                    )
                 }
             })
             .buffered(self.max_concurrency)
+            .filter_map(|(skip, report)| futures::future::ready((!skip).then_some(report)))
             .collect()
             .await;
         Ok(ConvertReport { outputs })
@@ -130,10 +136,10 @@ impl Engine {
         let result = self.mediator.convert(source, target, cx).await?;
 
         let cannot_write = || {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: format!("a `{}` value cannot be written to a file", result.format()),
-            })
+            Error::msg(format!(
+                "a `{}` value cannot be written to a file",
+                result.format()
+            ))
         };
         // The source's path inside its innermost container (or on the input).
         let inner = cx.mounts.path_in_container(from.trim_matches('/'));
