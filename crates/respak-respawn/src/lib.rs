@@ -232,6 +232,7 @@ impl Plugin for RespawnPlugin {
             .label("Respawn settings")
             .from("rpak.asset", StgsRead)
             .extensions(["stgs"])
+            .provides::<dyn NameSource>()
             .provides::<dyn Metadata>()
             .to("stgs.json", StgsJsonEncode);
         r.format("stgs.json")

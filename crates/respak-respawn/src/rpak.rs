@@ -499,11 +499,15 @@ impl Inner {
             }
             _ => string_to_guid(stem),
         };
-        let index = *self.by_guid.get(&guid)?;
-        (self.tables.assets[index]
-            .kind_string()
-            .eq_ignore_ascii_case(kind))
-        .then_some((index, part))
+        if let Some(&index) = self.by_guid.get(&guid) {
+            if self.tables.assets[index].kind_string().eq_ignore_ascii_case(kind) {
+                return Some((index, part));
+            }
+        }
+        // The guid is the hash of the whole asset name, extension included
+        // (`mdl/fx/spark_blast.rmdl`), whose kind (`mdl_`) differs from that extension.
+        let index = *self.by_guid.get(&string_to_guid(path))?;
+        Some((index, part))
     }
 
     /// Opens starpak number `index` of the mandatory (or optional) list. A starpak file that is

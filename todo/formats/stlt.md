@@ -48,5 +48,5 @@ Fields are `fieldData[fieldMap[i].fieldBucketIndex]` for `i < fieldCount`, sorte
 Unit: stride rounding, name cut at NUL (done). Missing: a synthetic pak with a `stlt` (plain, with a static array, with a nested sub layout), an out-of-range bucket or sub layout → `Corrupt`. Real (ask first): compare `stlt.json` with the rsx CSV for an item flavor layout.
 
 ## Open questions
-1. Whether sub-header pointers are really `{page, offset}` in `.mem` (inferred from the pak model, not from rsx).
+1. ~~Whether sub-header pointers are `{page, offset}` in `.mem`~~ confirmed on `settings_itemtype_weapon_skin_layout.rpak` (0x5A7B54F5DE8F71BB). A null one is all zeros, which is page 0 offset 0 and must be checked before resolving.
 2. Whether the field table can hold a name at offset 0 (rsx treats it as empty).

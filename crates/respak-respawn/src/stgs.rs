@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use respak_core::capability::{Dependency, Metadata};
+use respak_core::capability::{Dependency, Metadata, NameSource};
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
     ValueKey, Version,
@@ -234,6 +234,34 @@ impl Metadata for StgsAsset {
     }
 }
 
+/// Appends every non-empty string of `v`, at any depth, to `out`.
+fn collect_strings(v: &Json, out: &mut Vec<String>) {
+    match v {
+        Json::String(s) if !s.is_empty() => out.push(s.clone()),
+        Json::Array(items) => items.iter().for_each(|i| collect_strings(i, out)),
+        Json::Object(map) => map.values().for_each(|i| collect_strings(i, out)),
+        _ => {}
+    }
+}
+
+/// The text values of the settings (string, asset and asset_noprecache fields, at any depth) and
+/// of the string mods; the ones that are paths of other assets are the names.
+impl NameSource for StgsAsset {
+    fn name_candidates(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(settings) = &self.settings {
+            collect_strings(settings, &mut out);
+        }
+        out.extend(
+            self.mods
+                .iter()
+                .filter_map(|m| m.string.clone())
+                .filter(|s| !s.is_empty()),
+        );
+        out
+    }
+}
+
 impl Data for StgsAsset {
     fn format(&self) -> &FormatId {
         &self.format
@@ -242,6 +270,9 @@ impl Data for StgsAsset {
         &self.key
     }
     fn as_metadata(&self) -> Option<&dyn Metadata> {
+        Some(self)
+    }
+    fn as_name_source(&self) -> Option<&dyn NameSource> {
         Some(self)
     }
 }
@@ -537,6 +568,15 @@ mod tests {
             alignment,
             subs,
         }
+    }
+
+    #[test]
+    fn collects_strings_at_any_depth() {
+        let v = json!({"a": "x/y.rpak", "n": 3, "e": "", "l": [{"s": "z"}, null]});
+        let mut out = Vec::new();
+        collect_strings(&v, &mut out);
+        out.sort();
+        assert_eq!(out, ["x/y.rpak", "z"]);
     }
 
     #[test]
