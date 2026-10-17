@@ -49,7 +49,7 @@ pub struct Mediator {
 
 impl Mediator {
     /// A mediator over a checked registry.
-    pub fn new(registry: Registry) -> Self {
+    pub(crate) fn new(registry: Registry) -> Self {
         Self {
             registry: Arc::new(registry),
             events: Events::new(DEFAULT_EVENT_CAPACITY),
@@ -58,13 +58,13 @@ impl Mediator {
     }
 
     /// Replaces the event channel (the builder's `event_capacity`).
-    pub fn with_events(mut self, events: Events) -> Self {
+    pub(crate) fn with_events(mut self, events: Events) -> Self {
         self.events = events;
         self
     }
 
     /// Sets host middleware, run after the built-ins.
-    pub fn with_middleware(mut self, middleware: Vec<Arc<dyn Middleware>>) -> Self {
+    pub(crate) fn with_middleware(mut self, middleware: Vec<Arc<dyn Middleware>>) -> Self {
         let mut chain = crate::middleware::builtins();
         chain.extend(middleware);
         self.middleware = chain.into();

@@ -5,7 +5,7 @@ mod common;
 
 use common::*;
 use respak_core::capability::Track;
-use respak_core::{Cx, ErrorKind, Mediator, Registry, Value, Version};
+use respak_core::{Cx, ErrorKind, Registry, Value, Version};
 use respak_respawn::{
     aseq_variant, studio_variant, AnimDesc, ArigHeader, AseqAsset, AseqHeader, AsqdAsset,
     AsqdHeader, RespawnPlugin, RigSelect, SectionData, SeqDesc, StudioLayout, StudioSelect,
@@ -56,7 +56,7 @@ fn pak_with(
 fn context(env: &Env, plugin: &RespawnPlugin) -> Cx {
     let mut r = Registry::new();
     r.add(plugin);
-    Cx::new(Mediator::new(r), env.input.clone(), env.input.clone())
+    respak_core::testing::cx(r, env.input.clone(), env.input.clone())
 }
 
 /// Reads asset `guid` of `kind` in `pak` through the mediator.

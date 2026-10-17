@@ -12,7 +12,7 @@ use respak_core::capability::{
 };
 use respak_core::value::BundleData;
 use respak_core::{
-    CancellationToken, Cx, Data, Error, ErrorKind, Event, FormatId, Mediator, Plugin, Registry,
+    CancellationToken, Cx, Data, Error, ErrorKind, Event, FormatId, Plugin, Registry,
     Target, Value, ValueKey,
 };
 use respak_formats::FormatsPlugin;
@@ -185,7 +185,7 @@ fn cx() -> Cx {
     r.add(&StubPlugin);
     r.check().unwrap();
     let mem = || Operator::new(Memory::default()).unwrap();
-    Cx::new(Mediator::new(r), mem(), mem())
+    respak_core::testing::cx(r, mem(), mem())
 }
 
 fn value(stub: Stub) -> (Arc<Stub>, Value) {

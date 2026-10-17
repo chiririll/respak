@@ -4,7 +4,7 @@ mod common;
 
 use common::*;
 use respak_core::capability::{read_all, Cell, ColumnType};
-use respak_core::{Cx, ErrorKind, FormatId, Mediator, Registry, Target, Value};
+use respak_core::{Cx, ErrorKind, FormatId, Registry, Target, Value};
 use respak_respawn::{RespawnPlugin, DATA_EXCLUDED};
 
 /// A pak date inside the V1.1 window (2022).
@@ -15,7 +15,7 @@ const PATH: &str = "c.rpak/0x000000000000D7B1.dtbl";
 fn cx(env: &Env) -> Cx {
     let mut r = Registry::new();
     r.add(&RespawnPlugin::new());
-    Cx::new(Mediator::new(r), env.input.clone(), env.input.clone())
+    respak_core::testing::cx(r, env.input.clone(), env.input.clone())
 }
 
 async fn write(env: &Env, pak: PakBuilder, created: u64) {

@@ -116,7 +116,7 @@ pub(super) async fn build_index(origin: &str, cx: &Cx) -> Result<Arc<OwnerIndex>
 pub(super) async fn as_rig(asset: Value, kind: &'static str, cx: &Cx) -> Result<Value> {
     let rig = cx
         .mediator
-        .identify_as(asset, &FormatId::new(kind), cx)
+        .read_as(asset, &FormatId::new(kind), cx)
         .await?;
     if rig.as_skeleton().is_none() {
         return Err(Error::new(ErrorKind::Custom {

@@ -2,7 +2,7 @@
 //! No game files: the real decoder is checked by hand (task 15 demo).
 
 use opendal::{services::Memory, Operator};
-use respak_core::{CancellationToken, Cx, Engine, ErrorKind, Mediator, Registry};
+use respak_core::{CancellationToken, Cx, Engine, ErrorKind, Registry};
 use respak_formats::FormatsPlugin;
 use respak_rad::RadPlugin;
 
@@ -165,7 +165,7 @@ async fn bink_1_is_unsupported_not_unknown() {
     let mut r = Registry::new();
     r.add(&FormatsPlugin);
     r.add(&RadPlugin);
-    let cx = Cx::new(Mediator::new(r), env.input.clone(), env.input.clone());
+    let cx = respak_core::testing::cx(r, env.input.clone(), env.input.clone());
     let file = cx.mediator.open("old.bik", &cx).await.unwrap();
     let err = cx.mediator.identify(file, &cx).await.unwrap_err();
     assert!(
@@ -178,7 +178,7 @@ fn cx_on(env: &Env) -> Cx {
     let mut r = Registry::new();
     r.add(&FormatsPlugin);
     r.add(&RadPlugin);
-    Cx::new(Mediator::new(r), env.input.clone(), env.input.clone())
+    respak_core::testing::cx(r, env.input.clone(), env.input.clone())
 }
 
 async fn identify(env: &Env, path: &str) -> respak_core::Result<respak_core::Value> {

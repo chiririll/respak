@@ -14,6 +14,7 @@ pub mod plugin;
 pub mod reader;
 pub mod stream;
 pub mod target;
+pub mod testing;
 pub mod value;
 pub mod volume;
 

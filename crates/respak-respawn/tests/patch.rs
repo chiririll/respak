@@ -4,7 +4,7 @@ mod common;
 
 use common::*;
 use opendal::{services::Memory, Operator};
-use respak_core::{CancellationToken, Cx, DiscoverOptions, Engine, ErrorKind, Mediator, Registry};
+use respak_core::{CancellationToken, Cx, DiscoverOptions, Engine, ErrorKind, Registry};
 use respak_respawn::RespawnPlugin;
 
 const BASE_PAGE: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -78,7 +78,7 @@ fn expected_mem() -> Vec<u8> {
 fn cx(input: &Operator, plugin: RespawnPlugin) -> Cx {
     let mut r = Registry::new();
     r.add(&plugin);
-    Cx::new(Mediator::new(r), input.clone(), input.clone())
+    respak_core::testing::cx(r, input.clone(), input.clone())
 }
 
 async fn volume(

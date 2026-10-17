@@ -6,7 +6,7 @@ use bytes::Bytes;
 use common::*;
 use respak_core::capability::{read_all, PixelFormat};
 use respak_core::value::BundleData;
-use respak_core::{Cx, ErrorKind, Event, FormatId, Mediator, Registry, Target, Value};
+use respak_core::{Cx, ErrorKind, Event, FormatId, Registry, Target, Value};
 use respak_respawn::RespawnPlugin;
 use serde_json::{json, Value as Json};
 
@@ -19,7 +19,7 @@ fn cx(env: &Env) -> Cx {
     let mut r = Registry::new();
     r.add(&respak_formats::FormatsPlugin);
     r.add(&RespawnPlugin::new());
-    Cx::new(Mediator::new(r), env.input.clone(), env.input.clone())
+    respak_core::testing::cx(r, env.input.clone(), env.input.clone())
 }
 
 /// An 8x4 atlas whose pixel (x, y) is `[x, y, 7, 255]`.

@@ -3,7 +3,7 @@
 
 use opendal::{services::Memory, Operator};
 use respak_core::{
-    CancellationToken, Cx, Engine, ErrorKind, FormatId, Mediator, Registry, Target, Value,
+    CancellationToken, Cx, Engine, ErrorKind, FormatId, Registry, Target, Value,
 };
 use respak_formats::FormatsPlugin;
 
@@ -22,7 +22,7 @@ fn cx_on(op: &Operator) -> Cx {
     let mut r = Registry::new();
     r.add(&FormatsPlugin);
     r.add(&RadPlugin);
-    Cx::new(Mediator::new(r), op.clone(), op.clone())
+    respak_core::testing::cx(r, op.clone(), op.clone())
 }
 
 fn mem() -> Operator {

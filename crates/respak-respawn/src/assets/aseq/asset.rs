@@ -132,7 +132,7 @@ impl AseqAsset {
         let asset = locate(guid, "asqd", &self.origin, cx).await?;
         let value = cx
             .mediator
-            .identify_as(asset, &FormatId::new("asqd"), cx)
+            .read_as(asset, &FormatId::new("asqd"), cx)
             .await?;
         self.asqds.lock().expect("lock").insert(guid, value.clone());
         Ok(value)

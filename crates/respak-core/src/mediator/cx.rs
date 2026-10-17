@@ -56,7 +56,7 @@ struct Limits {
 
 impl Cx {
     /// A context with nothing mounted yet. One context serves one `Engine` call.
-    pub fn new(mediator: Mediator, input: Operator, output: Operator) -> Self {
+    pub(crate) fn new(mediator: Mediator, input: Operator, output: Operator) -> Self {
         Self {
             mediator,
             input,
@@ -96,7 +96,7 @@ impl Cx {
     }
 
     /// Uses `op` as the plugin cache.
-    pub fn with_cache(mut self, op: Operator) -> Self {
+    pub(crate) fn with_cache(mut self, op: Operator) -> Self {
         self.cache = Some(op);
         self
     }
@@ -126,13 +126,13 @@ impl Cx {
     }
 
     /// Uses `cancel` as this call's token.
-    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+    pub(crate) fn with_cancel(mut self, cancel: CancellationToken) -> Self {
         self.cancel = cancel;
         self
     }
 
     /// Bounds `blocking` and `io` to the given numbers of concurrent tasks.
-    pub fn with_limits(mut self, blocking: usize, io: usize) -> Self {
+    pub(crate) fn with_limits(mut self, blocking: usize, io: usize) -> Self {
         let clamp = |n: usize| n.clamp(1, Semaphore::MAX_PERMITS);
         self.limits = Arc::new(Limits {
             blocking: Semaphore::new(clamp(blocking)),

@@ -210,8 +210,8 @@ fn cx(env: &Env) -> Cx {
     // A fresh context, as one `Engine` call would have.
     let mut r = Registry::new();
     r.add(&TestPlugin { id: "t", register });
-    Cx::new(
-        respak_core::Mediator::new(r),
+    respak_core::testing::cx(
+        r,
         env.input.clone(),
         env.output.clone(),
     )
@@ -378,7 +378,7 @@ async fn discover_accepts_a_path_inside_a_container() {
 async fn globbed(env: &Env, pattern: &str) -> Result<Vec<String>> {
     Ok(env
         .engine
-        .open(pattern, &respak_core::CancellationToken::new())
+        .open_matches(pattern, &respak_core::CancellationToken::new())
         .await?
         .iter()
         .map(|v| v.key().to_string())

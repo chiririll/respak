@@ -342,7 +342,7 @@ impl RmdlAsset {
         };
         let matl_value = match cx
             .mediator
-            .identify_as(asset, &FormatId::new("matl"), cx)
+            .read_as(asset, &FormatId::new("matl"), cx)
             .await
         {
             Ok(v) => v,

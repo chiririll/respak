@@ -45,7 +45,7 @@ pub(super) async fn find_layout(guid: u64, source: &Value, cx: &Cx) -> Result<Op
         Err(e) => return Err(e),
     };
     cx.mediator
-        .identify_as(found, &FormatId::new("stlt"), cx)
+        .read_as(found, &FormatId::new("stlt"), cx)
         .await
         .map(Some)
 }

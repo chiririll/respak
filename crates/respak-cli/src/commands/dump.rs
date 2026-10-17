@@ -27,7 +27,7 @@ pub(crate) async fn run(
 ) -> anyhow::Result<ExitCode> {
     let mut failures = Failures::default();
     for path in engine.expand(&args.path, cancel).await? {
-        let value = match engine.open(&path, cancel).await {
+        let value = match engine.open_matches(&path, cancel).await {
             Ok(mut values) if values.len() == 1 => values.remove(0),
             Ok(values) => {
                 failures.report(

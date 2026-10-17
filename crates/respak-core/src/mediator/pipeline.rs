@@ -1,4 +1,11 @@
 //! Detection, identification and conversion along the cheapest path.
+//!
+//! Reading a value as a format comes in three forms, all over the read edges of the source's format:
+//! - [`identify`](Mediator::identify) scores the edges and reads with the winner;
+//! - [`read_as`](Mediator::read_as) names the format and skips scoring the alternatives;
+//! - [`detect`](Mediator::detect) only scores, and reads nothing.
+//!
+//! `scan` is the shared scoring step behind `identify` and `detect`.
 
 use crate::detect::{Detected, Probe};
 use crate::error::{Error, ErrorKind, Result};
@@ -107,7 +114,7 @@ impl Mediator {
     /// override, for assets that are not in a container). The edge's own score function still
     /// runs, to fill in the layout variant; a version in `format` overrides the detected one.
     /// `NoPath` if there is no read edge from the source's format to `format`.
-    pub async fn identify_as(&self, source: Value, format: &FormatId, cx: &Cx) -> Result<Value> {
+    pub async fn read_as(&self, source: Value, format: &FormatId, cx: &Cx) -> Result<Value> {
         let (_, edge) = self
             .candidates(source.format().name())
             .into_iter()

@@ -116,11 +116,11 @@ async fn an_asset_path_resolves_and_its_header_is_served_with_ranged_reads() {
     assert_eq!(d.entries[0].version.as_deref(), Some("10"));
 
     // The volume itself: header bytes of the asset, whole and in a range.
-    let cx = respak_core::Cx::new(
+    let cx = respak_core::testing::cx(
         {
             let mut r = respak_core::Registry::new();
             r.add(&respak_respawn::RespawnPlugin::new());
-            respak_core::Mediator::new(r)
+            r
         },
         env.input.clone(),
         env.input.clone(),
@@ -177,15 +177,15 @@ async fn oodle_paks_list_their_assets_and_serve_them() {
             .await
             .unwrap();
         assert_eq!(d.entries.len(), 3, "v{version}/{restart_blocks}");
-        let cx = respak_core::Cx::new(
-            {
-                let mut r = respak_core::Registry::new();
-                r.add(&respak_respawn::RespawnPlugin::new());
-                respak_core::Mediator::new(r)
-            },
-            env.input.clone(),
-            env.input.clone(),
-        );
+        let cx = respak_core::testing::cx(
+        {
+            let mut r = respak_core::Registry::new();
+            r.add(&respak_respawn::RespawnPlugin::new());
+            r
+        },
+        env.input.clone(),
+        env.input.clone(),
+    );
         let pak = cx.mediator.open("p/common.rpak", &cx).await.unwrap();
         let pak = cx.mediator.mount(pak, &cx).await.unwrap();
         let volume = pak.as_container().unwrap().volume();
@@ -410,11 +410,11 @@ async fn a_header_that_does_not_fit_its_page_is_corrupt_when_read() {
         },
     );
     env.input.write("c.rpak", bad).await.unwrap();
-    let cx = respak_core::Cx::new(
+    let cx = respak_core::testing::cx(
         {
             let mut r = respak_core::Registry::new();
             r.add(&respak_respawn::RespawnPlugin::new());
-            respak_core::Mediator::new(r)
+            r
         },
         env.input.clone(),
         env.input.clone(),
@@ -513,8 +513,8 @@ mod real {
             .unwrap();
         let mut r = respak_core::Registry::new();
         r.add(&respak_respawn::RespawnPlugin::new());
-        let cx = respak_core::Cx::new(
-            respak_core::Mediator::new(r),
+        let cx = respak_core::testing::cx(
+            r,
             env.input.clone(),
             env.input.clone(),
         );
@@ -569,7 +569,7 @@ mod real {
             opendal::Operator::new(opendal::services::Fs::default().root(PATCHED_DIR)).unwrap();
         let mut r = respak_core::Registry::new();
         r.add(&respak_respawn::RespawnPlugin::new());
-        let cx = respak_core::Cx::new(respak_core::Mediator::new(r), input.clone(), input.clone());
+        let cx = respak_core::testing::cx(r, input.clone(), input.clone());
         let pak = cx
             .mediator
             .open("paks/Win64/common.rpak", &cx)

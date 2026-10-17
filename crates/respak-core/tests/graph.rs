@@ -45,7 +45,7 @@ fn mediator(register: impl FnOnce(&mut Registry)) -> Mediator {
     let mut r = Registry::new();
     register(&mut r);
     r.check().unwrap();
-    Mediator::new(r)
+    respak_core::testing::mediator(r)
 }
 
 fn route(m: &Mediator, to: &str, via: &[&str]) -> Result<String> {

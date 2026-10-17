@@ -5,7 +5,7 @@ mod common;
 use bytes::Bytes;
 use common::*;
 use respak_core::capability::PixelFormat;
-use respak_core::{Cx, ErrorKind, Mediator, Registry, Value};
+use respak_core::{Cx, ErrorKind, Registry, Value};
 use respak_respawn::RespawnPlugin;
 
 const BC1: u16 = 0;
@@ -15,7 +15,7 @@ const RGBA8: u16 = 31;
 fn cx(env: &Env) -> Cx {
     let mut r = Registry::new();
     r.add(&RespawnPlugin::new());
-    Cx::new(Mediator::new(r), env.input.clone(), env.input.clone())
+    respak_core::testing::cx(r, env.input.clone(), env.input.clone())
 }
 
 /// Opens `path` and reads it as a texture.

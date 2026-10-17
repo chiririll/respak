@@ -121,7 +121,7 @@ impl Engine {
         cx.check_cancelled()?;
         let mut source = self.mediator.open(from, cx).await?;
         if let Some(format) = format {
-            source = self.mediator.identify_as(source, format, cx).await?;
+            source = self.mediator.read_as(source, format, cx).await?;
         }
         let options = if out.to.options.is_empty() {
             serde_json::Value::Null

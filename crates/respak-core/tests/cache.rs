@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use respak_core::{Cx, Event, Mediator, Plugin, Registry};
+use respak_core::{Cx, Event, Plugin, Registry};
 
 struct Versioned(&'static str, u32);
 
@@ -22,12 +22,12 @@ fn cx_with_cache(plugins: &[&dyn Plugin], cache: Option<opendal::Operator>) -> C
     for p in plugins {
         r.add(*p);
     }
-    let mediator = Mediator::new(r);
-    let cx = Cx::new(mediator, mem(), mem());
+    let builder = respak_core::testing::CxBuilder::new(r, mem(), mem());
     match cache {
-        Some(op) => cx.with_cache(op),
-        None => cx,
+        Some(op) => builder.cache(op),
+        None => builder,
     }
+    .build()
 }
 
 #[tokio::test]

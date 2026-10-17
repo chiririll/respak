@@ -8,9 +8,10 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use common::*;
 use respak_core::broadcast::error::{RecvError, TryRecvError};
+use respak_core::testing::CxBuilder;
 use respak_core::middleware::{Convert, Middleware, Next};
 use respak_core::{
-    Cx, ErrorKind, Event, Events, FormatId, Mediator, Registry, Result, Target, Value,
+    Cx, ErrorKind, Event, Events, FormatId, Registry, Result, Target, Value,
 };
 
 fn register(r: &mut Registry) {
@@ -34,10 +35,14 @@ fn registry(register: fn(&mut Registry)) -> Registry {
     r
 }
 
-async fn cx_with(mediator: Mediator) -> Cx {
+async fn input() -> opendal::Operator {
     let input = mem();
     input.write("x.ss", "SSSS").await.unwrap();
-    Cx::new(mediator, input, mem())
+    input
+}
+
+async fn cx_with(registry: Registry) -> Cx {
+    respak_core::testing::cx(registry, input().await, mem())
 }
 
 fn to(format: &'static str) -> Target {
@@ -124,10 +129,11 @@ async fn host_middleware_runs_after_the_built_ins_and_can_short_circuit() {
             rx: Mutex::new(events.subscribe()),
             short_circuit: short,
         });
-        let mediator = Mediator::new(registry(register))
-            .with_events(events)
-            .with_middleware(vec![spy]);
-        let cx = cx_with(mediator.clone()).await;
+        let cx = CxBuilder::new(registry(register), input().await, mem())
+            .events(events)
+            .middleware(vec![spy])
+            .build();
+        let mediator = cx.mediator.clone();
         let source = mediator.open("x.ss", &cx).await.unwrap();
         let result = mediator.convert(source, to("dst"), &cx).await.unwrap();
         assert_eq!(
@@ -140,9 +146,9 @@ async fn host_middleware_runs_after_the_built_ins_and_can_short_circuit() {
 
 #[tokio::test]
 async fn a_triggered_token_cancels_before_any_handler_runs() {
-    let mediator = Mediator::new(registry(register));
+    let cx = cx_with(registry(register)).await;
+    let mediator = cx.mediator.clone();
     let mut rx = mediator.subscribe();
-    let cx = cx_with(mediator.clone()).await;
     let source = mediator.open("x.ss", &cx).await.unwrap();
     cx.cancel.cancel();
     let err = mediator.convert(source, to("dst"), &cx).await.unwrap_err();
@@ -155,9 +161,9 @@ async fn a_triggered_token_cancels_before_any_handler_runs() {
 
 #[tokio::test]
 async fn requests_publish_started_then_finished_or_failed() {
-    let mediator = Mediator::new(registry(register));
+    let cx = cx_with(registry(register)).await;
+    let mediator = cx.mediator.clone();
     let mut rx = mediator.subscribe();
-    let cx = cx_with(mediator.clone()).await;
     let source = mediator.open("x.ss", &cx).await.unwrap();
 
     let kinds = |events: Vec<Event>| {
@@ -188,7 +194,9 @@ fn enter(current: &AtomicUsize, max: &AtomicUsize) {
 
 #[tokio::test]
 async fn blocking_and_io_respect_their_limits() {
-    let cx = Cx::new(Mediator::new(registry(register)), mem(), mem()).with_limits(2, 3);
+    let cx = CxBuilder::new(registry(register), mem(), mem())
+        .limits(2, 3)
+        .build();
 
     let (current, max) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
     futures::future::join_all((0..12).map(|_| {
@@ -248,9 +256,9 @@ fn register_tie(r: &mut Registry) {
 
 #[tokio::test]
 async fn the_tie_break_is_a_warning_event() {
-    let mediator = Mediator::new(registry(register_tie));
+    let cx = cx_with(registry(register_tie)).await;
+    let mediator = cx.mediator.clone();
     let mut rx = mediator.subscribe();
-    let cx = cx_with(mediator.clone()).await;
 
     mediator.plan(&FormatId::new("src"), "dst", &[]).unwrap();
     let source = mediator.open("x.ss", &cx).await.unwrap();
