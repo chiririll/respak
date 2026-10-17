@@ -7,15 +7,9 @@
 //! `CalcBonePosition/Quaternion/Scale`) and `src/core/math/compressedvector.h`. Layouts and the
 //! lookup table are in `docs/formats/aseq.md`. Datapoint compression is not decoded (`aseq` rejects it).
 
-use respak_core::{Error, ErrorKind, Result};
+use respak_core::{Error, Result};
 
 use crate::rmdl::B;
-
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
 
 /// `FIXED_ROT_SCALE`: radians per unit of a rotation track.
 pub(crate) const ROT_SCALE: f32 = 0.000_191_753_45;
@@ -84,7 +78,7 @@ impl RleHeader {
         let v = B(block).u16(at)?;
         let size = v & 0x1FFF;
         if size < 2 {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "animation bone header at {at:#x} has size {size}"
             )));
         }
@@ -140,7 +134,7 @@ const SEEK_LUT: [u8; 60] = [
 /// Size of one block of a track, in 2-byte units (`GetAnimValueOffset`, `s_AnimSeekLUT`).
 pub(crate) fn block_units(valid: u8, total: u8) -> Result<usize> {
     if valid > 19 {
-        return Err(corrupt(format!(
+        return Err(Error::corrupt(format!(
             "animation track block with valid = {valid}"
         )));
     }
@@ -197,7 +191,7 @@ pub(crate) fn decode_track(block: &[u8], at: usize, frame: u32, scale: f32) -> R
             v
         }
         _ => {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "animation track block with valid = {valid}"
             )))
         }
@@ -418,7 +412,7 @@ pub(crate) fn decode_bone(
         }
     }
     if cursor > end {
-        return Err(corrupt(format!(
+        return Err(Error::corrupt(format!(
             "animation bone data at {at:#x} is larger than its header says ({} bytes)",
             header.size
         )));

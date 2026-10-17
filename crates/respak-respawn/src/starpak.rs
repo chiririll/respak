@@ -34,12 +34,6 @@ use respak_core::{
     ValueKey,
 };
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// Bytes of one table-of-contents entry.
 const ENTRY_LEN: u64 = 16;
 /// Bytes of the trailing entry count.
@@ -87,7 +81,7 @@ impl Starpak {
             None => (0, op.stat(&path).await?.content_length()),
         };
         if len < TRAILER_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "starpak {path}: {len} bytes is too short for a table of contents"
             )));
         }
@@ -102,7 +96,7 @@ impl Starpak {
             .checked_mul(ENTRY_LEN)
             .filter(|t| t + TRAILER_LEN <= len);
         let toc_len = toc_len.ok_or_else(|| {
-            corrupt(format!(
+            Error::corrupt(format!(
                 "starpak {path}: table of contents ({count} entries) does not fit"
             ))
         })?;
@@ -154,7 +148,7 @@ impl Starpak {
     /// The bytes `range` of the file (ranged read; `Corrupt` past the end).
     pub async fn read(&self, range: Range<u64>) -> Result<Bytes> {
         if range.start > range.end || range.end > self.len {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "starpak {}: read {}..{} past the end ({} bytes)",
                 self.path, range.start, range.end, self.len
             )));

@@ -45,17 +45,8 @@ use crate::rpak::{RpakAsset, MEM};
 use crate::txtr::read_name;
 use crate::{oodle, rtech, snowflake};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion {
-        format: "uiia".into(),
-        version: version.into(),
-    })
+    Error::unsupported("uiia", version)
 }
 
 const HEADER_LEN: usize = 0x40;
@@ -137,7 +128,7 @@ impl UiiaHeader {
             return Err(unsupported(version.to_string()));
         }
         if header.len() != HEADER_LEN || cpu.len() != CPU_LEN as usize {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "uiia header is {} bytes and CPU data {}, expected {HEADER_LEN}",
                 header.len(),
                 cpu.len()
@@ -149,7 +140,7 @@ impl UiiaHeader {
         let high = Resolution::new(le16(cpu, 0x20), le16(cpu, 0x22), flags);
         for (what, r) in [("low", low), ("high", high)] {
             if r.width == 0 || r.height == 0 || r.tiles() > MAX_TILES {
-                return Err(corrupt(format!(
+                return Err(Error::corrupt(format!(
                     "uiia {what} resolution {}x{} is not usable",
                     r.width, r.height
                 )));
@@ -223,7 +214,7 @@ fn tiles(
     if header.has_table(quality) {
         let table = data
             .get(..count * 4)
-            .ok_or_else(|| corrupt("uiia tile table runs past its data"))?;
+            .ok_or_else(|| Error::corrupt("uiia tile table runs past its data"))?;
         for c in table.chunks_exact(4) {
             let v = u32::from_le_bytes(c.try_into().expect("4 bytes"));
             out.push(Tile {
@@ -236,7 +227,7 @@ fn tiles(
             if out[i].opcode == COPY_OP {
                 out[i] = *out
                     .get(out[i].offset as usize)
-                    .ok_or_else(|| corrupt("uiia tile copies a tile that does not exist"))?;
+                    .ok_or_else(|| Error::corrupt("uiia tile copies a tile that does not exist"))?;
             }
         }
     } else {
@@ -272,7 +263,7 @@ fn needed_len(header: &UiiaHeader, quality: Quality, res: &Resolution, tiles: &[
 fn untile(buf: &[u8], wb: u32, hb: u32, bytes: usize) -> Result<Vec<u8>> {
     let (wb, hb) = (i64::from(wb), i64::from(hb));
     if wb % 8 != 0 || buf.len() as i64 != wb * hb * bytes as i64 {
-        return Err(corrupt("uiia tiles do not fill a whole image"));
+        return Err(Error::corrupt("uiia tiles do not fill a whole image"));
     }
     // One step of the swizzle: where block `t` of rows of `w` goes (rsx `b_N`).
     let step = |t: i64, w: i64| (t % (2 * w)) / 2 + w * ((t % (2 * w)) % 2) + 2 * w * (t / (2 * w));
@@ -304,9 +295,9 @@ fn untile(buf: &[u8], wb: u32, hb: u32, bytes: usize) -> Result<Vec<u8>> {
             let dst = (my * wb + mx) as usize * bytes;
             let block = buf
                 .get(at..at + bytes)
-                .ok_or_else(|| corrupt("uiia tiles are cut short"))?;
+                .ok_or_else(|| Error::corrupt("uiia tiles are cut short"))?;
             out.get_mut(dst..dst + bytes)
-                .ok_or_else(|| corrupt("uiia swizzle leaves the image"))?
+                .ok_or_else(|| Error::corrupt("uiia swizzle leaves the image"))?
                 .copy_from_slice(block);
             at += bytes;
         }
@@ -330,7 +321,7 @@ fn decode_kind(res: &Resolution, tiles: &[Tile], data: &[u8], opcode: u32) -> Re
             let at = t.offset as usize;
             buf.extend_from_slice(
                 data.get(at..at + size)
-                    .ok_or_else(|| corrupt("uiia tile runs past its data"))?,
+                    .ok_or_else(|| Error::corrupt("uiia tile runs past its data"))?,
             );
         } else {
             for _ in 0..size / block.len() {
@@ -357,7 +348,7 @@ fn compose(res: &Resolution, tiles: &[Tile], data: &[u8]) -> Result<Vec<u8>> {
     );
     let stride = (res.tiles_x * TILE_PX) as usize * 4;
     let shifted = match (bc1, bc7) {
-        (None, None) => return Err(corrupt("uiia has no tiles")),
+        (None, None) => return Err(Error::corrupt("uiia has no tiles")),
         (Some(bc1), None) => bc1?,
         (None, Some(bc7)) => bc7?,
         (Some(bc1), Some(bc7)) => {
@@ -469,7 +460,9 @@ impl UiiaAsset {
         let list = tiles(&self.header, Quality::Low, res, &head)?;
         let len = needed_len(&self.header, Quality::Low, res, &list);
         if len > available {
-            return Err(corrupt("uiia tiles run past the end of the pak's pages"));
+            return Err(Error::corrupt(
+                "uiia tiles run past the end of the pak's pages",
+            ));
         }
         Ok(self
             .volume
@@ -561,13 +554,13 @@ impl ReadHandler for UiiaRead {
         })?;
         let data_offset = asset
             .data_mem_offset
-            .ok_or_else(|| corrupt("uiia has no CPU data"))?;
+            .ok_or_else(|| Error::corrupt("uiia has no CPU data"))?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
         if data_offset
             .checked_add(CPU_LEN)
             .is_none_or(|end| end > mem_len)
         {
-            return Err(corrupt(
+            return Err(Error::corrupt(
                 "uiia CPU data runs past the end of the pak's pages",
             ));
         }
@@ -576,7 +569,7 @@ impl ReadHandler for UiiaRead {
 
         // Pointers inside page data are still `{page, offset}` pairs.
         let slot = |at: usize| asset.mem_offset_of(cpu[at..at + 8].try_into().expect("8 bytes"));
-        let pixels = slot(0x28).ok_or_else(|| corrupt("uiia has no image data"))?;
+        let pixels = slot(0x28).ok_or_else(|| Error::corrupt("uiia has no image data"))?;
         let name = match slot(0x30) {
             Some(at) => read_name(&asset.volume, at, mem_len).await,
             None => None,
@@ -598,7 +591,7 @@ impl ReadHandler for UiiaRead {
                     quality = Quality::High
                 }
                 Ok(_) => {
-                    return Err(corrupt(format!(
+                    return Err(Error::corrupt(format!(
                         "uiia {label}: its streamed data does not fit the starpak entry"
                     )))
                 }

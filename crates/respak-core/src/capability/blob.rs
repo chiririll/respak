@@ -18,6 +18,7 @@ pub const CHUNK: u64 = 4 << 20;
 /// [`LazyBlob`](crate::value::LazyBlob)); a consumer cannot tell and must not care. Writing a
 /// `Blob` value to the output is done by core itself, in chunks.
 #[async_trait]
+#[allow(clippy::len_without_is_empty)] // the length is optional, so "empty" is not well defined
 pub trait Blob: Send + Sync {
     /// The total length, if known. A computed blob does not know it until it has been produced.
     fn len(&self) -> Option<u64>;

@@ -130,10 +130,10 @@ impl Engine {
         let result = self.mediator.convert(source, target, cx).await?;
 
         let cannot_write = || {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: format!("a `{}` value cannot be written to a file", result.format()),
-            })
+            Error::msg(format!(
+                "a `{}` value cannot be written to a file",
+                result.format()
+            ))
         };
         // The source's path inside its innermost container (or on the input).
         let inner = cx.mounts.path_in_container(from.trim_matches('/'));

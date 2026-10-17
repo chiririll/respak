@@ -8,8 +8,6 @@ use respak_core::capability::AudioChunk;
 use respak_core::detect::{magic, u16le, u32le};
 use respak_core::{Error, ErrorKind, Result};
 
-use crate::corrupt;
-
 /// Most channels accepted. rsx sizes its per-stream arrays for 8 sub-streams but its decoder
 /// holds 4, so more than 8 channels cannot be verified.
 const MAX_CHANNELS: u8 = 8;
@@ -49,7 +47,7 @@ impl Bcf1Header {
     /// version 0 or above 2 → `UnsupportedVersion`.
     pub fn parse(header: &[u8]) -> Result<Self> {
         if header.len() < BCF1_HEADER_LEN || !Self::has_magic(header) {
-            return Err(corrupt("bcf1: not a BCF1 header"));
+            return Err(Error::corrupt("bcf1: not a BCF1 header"));
         }
         let version = header[4];
         if !(1..=2).contains(&version) {
@@ -60,12 +58,13 @@ impl Bcf1Header {
         }
         let channels = header[5];
         if channels == 0 || channels > MAX_CHANNELS {
-            return Err(corrupt(format!("bcf1: {channels} channels")));
+            return Err(Error::corrupt(format!("bcf1: {channels} channels")));
         }
         let entries = u32le(header, 0x14).expect("length checked");
         // v1: the whole word is the count; v2: the low half (the high half is unknown).
         let seek_entries = if version == 1 {
-            u16::try_from(entries).map_err(|_| corrupt(format!("bcf1: {entries} seek entries")))?
+            u16::try_from(entries)
+                .map_err(|_| Error::corrupt(format!("bcf1: {entries} seek entries")))?
         } else {
             entries as u16
         };
@@ -128,9 +127,9 @@ impl<'a> Bcf1Frame<'a> {
             return Ok(None);
         }
         if u16le(buf, 0) != Some(SYNC) {
-            return Err(corrupt("bcf1: frame without sync word"));
+            return Err(Error::corrupt("bcf1: frame without sync word"));
         }
-        let truncated = || corrupt("bcf1: truncated frame header");
+        let truncated = || Error::corrupt("bcf1: truncated frame header");
         let short = u16le(buf, 2).ok_or_else(truncated)?;
         let (size, valid_samples, start) = if short == 0xFFFF {
             let size = u16le(buf, 4).ok_or_else(truncated)?;
@@ -140,14 +139,14 @@ impl<'a> Bcf1Frame<'a> {
             (usize::from(short), None, 4)
         };
         if size > header.max_payload() {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "bcf1: frame of {size} bytes, the header allows {}",
                 header.max_payload()
             )));
         }
         let payload = buf
             .get(start..start + size)
-            .ok_or_else(|| corrupt("bcf1: truncated frame"))?;
+            .ok_or_else(|| Error::corrupt("bcf1: truncated frame"))?;
         Ok(Some((
             Self {
                 payload,
@@ -168,7 +167,7 @@ pub(crate) fn decode_channel(
     channel: usize,
     sink: &mut dyn FnMut(Result<AudioChunk>) -> bool,
 ) {
-    let backend = |e: &dyn std::fmt::Debug| corrupt(format!("bcf1: {e:?}"));
+    let backend = |e: &dyn std::fmt::Debug| Error::corrupt(format!("bcf1: {e:?}"));
     let mut decoder = match BinkAudioBlocks::new(
         u32::from(header.sample_rate),
         usize::from(header.channels),
@@ -201,7 +200,7 @@ pub(crate) fn decode_channel(
                 return;
             }
             Err(_) => {
-                sink(Err(corrupt("bcf1: the decoder panicked")));
+                sink(Err(Error::corrupt("bcf1: the decoder panicked")));
                 return;
             }
         };

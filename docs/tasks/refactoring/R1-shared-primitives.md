@@ -1,13 +1,13 @@
 # R1 · Shared primitives
 **Status:** todo · **Risk:** low
 
-## R1.1 Shared error helpers (S)
+## R1.1 Shared error helpers (S) — done (MAX_* shared limit check deferred)
 `corrupt(context)` is copy-pasted ~19 times in `respak-respawn` (`anim_codec`, `arig`, `aseq`, `asqd`, `dtbl`, `matl`, `pak`, `patch`, `rmdl`, `rpak`, `shader`, `starpak`, `stgs`, `stlt`, `txtr`, `uiia`, `uimg`) and 5 more times elsewhere (`formats/lib.rs`, `formats/bc.rs`, `miles/lib.rs`, `nihav/bik.rs`, `nihav/bik_decode.rs`). `unsupported` has three signatures (`bc.rs`, `formats/lib.rs`, `bik_decode.rs`) and `dxbc.rs` prefixes "DXBC: ".
 - Add `Error::corrupt(format_id, ctx)`, `Error::unsupported(..)` and `Error::is_cancelled()` to `respak-core`. Replace `cast.rs` `is_cancelled` and the inline matches in tests.
 - Replace the per-file copies. Rename `nihav/enc.rs` `bad` (too vague). Keep one-off helpers (`custom`, `storage`, `not_found`) only if they add something.
 - Check the `MAX_*` limit constants in `rmdl.rs:64-68` and similar; a shared `limit` check may fit here.
 
-## R1.2 `Error::msg` (S)
+## R1.2 `Error::msg` (S) — done for the core sites (typed kinds not added)
 `ErrorKind::Custom { source: None, message }` is built by hand at `mediator.rs:536`, `plugin.rs:131`, `engine/convert.rs:133`, `engine/mod.rs:104`, `value/lazy.rs:103,168`. Add `Error::msg(impl Into<String>)`. Consider typed kinds for the registry validation (`plugin.rs:131`) and missing-operator (`engine/mod.rs:104`) cases.
 
 ## R1.3 Shared checked byte reader (M)

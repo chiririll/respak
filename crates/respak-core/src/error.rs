@@ -24,6 +24,35 @@ impl Error {
         &self.0
     }
 
+    /// Malformed or inconsistent data ([`ErrorKind::Corrupt`]).
+    pub fn corrupt(context: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Corrupt {
+            context: context.into(),
+        })
+    }
+
+    /// A known format whose `version` (or variant) is not supported
+    /// ([`ErrorKind::UnsupportedVersion`]).
+    pub fn unsupported(format: impl Into<String>, version: impl Into<String>) -> Self {
+        Self::new(ErrorKind::UnsupportedVersion {
+            format: format.into(),
+            version: version.into(),
+        })
+    }
+
+    /// Whether this is [`ErrorKind::Cancelled`].
+    pub fn is_cancelled(&self) -> bool {
+        matches!(self.kind(), ErrorKind::Cancelled)
+    }
+
+    /// A message-only [`ErrorKind::Custom`], with no underlying error.
+    pub fn msg(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Custom {
+            source: None,
+            message: message.into(),
+        })
+    }
+
     /// Wraps any error as [`ErrorKind::Custom`].
     pub fn custom(
         message: impl Into<String>,

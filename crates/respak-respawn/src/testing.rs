@@ -526,14 +526,14 @@ fn push_texture(
         let at = misc.len() as u32;
         misc.extend_from_slice(n.as_bytes());
         misc.push(0);
-        while misc.len() % 16 != 0 {
+        while !misc.len().is_multiple_of(16) {
             misc.push(0);
         }
         at
     });
     let data_offset = misc.len() as u32;
     misc.extend_from_slice(&t.data);
-    while misc.len() % 16 != 0 {
+    while !misc.len().is_multiple_of(16) {
         misc.push(0);
     }
     let head_offset = headers.len() as u32;
@@ -608,7 +608,7 @@ pub fn build_uimg_pak(pak_version: u16, textures: &[TexSpec], atlases: &[UimgSpe
         push_texture(t, &mut headers, &mut misc, &mut pointers, &mut assets);
     }
     let pad = |misc: &mut Vec<u8>| {
-        while misc.len() % 16 != 0 {
+        while !misc.len().is_multiple_of(16) {
             misc.push(0);
         }
     };

@@ -39,12 +39,6 @@ pub const DATA_EXCLUDED: &str = "!!DATA EXCLUDED!!";
 /// The longest string a cell or column name may have.
 const MAX_STRING: u64 = 1 << 20;
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// The layout variant: `0`, `1` or `1.1` (see the module docs).
 pub fn variant(asset_version: u32, created_time: u64) -> Result<Version> {
     match asset_version {
@@ -87,14 +81,14 @@ impl DtblHeader {
             (0x28, 0x20)
         };
         if h.len() != len {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "dtbl@{version} header is {} bytes, expected {len}",
                 h.len()
             )));
         }
         let b = B(h);
         let count = |at: usize, what: &str| -> Result<u32> {
-            u32::try_from(b.i32(at)?).map_err(|_| corrupt(format!("dtbl: negative {what}")))
+            u32::try_from(b.i32(at)?).map_err(|_| Error::corrupt(format!("dtbl: negative {what}")))
         };
         let ptr = |at: usize| -> Result<Option<u64>> {
             b.u64(at).map(|p| (p != 0 && p != u64::MAX).then_some(p))
@@ -236,10 +230,10 @@ async fn read_block(
     if len == 0 {
         return Ok(Vec::new());
     }
-    let at = at.ok_or_else(|| corrupt(format!("dtbl: the {what} pointer is null")))?;
+    let at = at.ok_or_else(|| Error::corrupt(format!("dtbl: the {what} pointer is null")))?;
     match at.checked_add(len) {
         Some(end) if end <= mem_len => Ok(volume.read_with(MEM).range(at..end).await?.to_vec()),
-        _ => Err(corrupt(format!(
+        _ => Err(Error::corrupt(format!(
             "dtbl: {len} bytes of {what} at {at:#x} are outside the pak's data"
         ))),
     }
@@ -261,7 +255,7 @@ async fn read_cstr(volume: &Operator, at: u64, mem_len: u64) -> Result<Vec<u8>> 
         pos = end;
         chunk *= 2;
     }
-    Err(corrupt(format!(
+    Err(Error::corrupt(format!(
         "dtbl: the string at {at:#x} does not end inside the pak's data"
     )))
 }
@@ -272,9 +266,9 @@ async fn read_string(asset: &RpakAsset, slot: &[u8], mem_len: u64, what: &str) -
     if slot == [0; 8] {
         return Ok(String::new());
     }
-    let at = asset
-        .mem_offset_of(slot)
-        .ok_or_else(|| corrupt(format!("dtbl: the {what} points outside the pak's pages")))?;
+    let at = asset.mem_offset_of(slot).ok_or_else(|| {
+        Error::corrupt(format!("dtbl: the {what} points outside the pak's pages"))
+    })?;
     let bytes = read_cstr(&asset.volume, at, mem_len).await?;
     if bytes.first() == Some(&0x0f) {
         return Ok(DATA_EXCLUDED.to_owned());
@@ -341,14 +335,15 @@ impl ReadHandler for DtblRead {
             let b = B(record);
             let index = columns.len();
             let raw = b.i32(type_at)?;
-            let ty = column_type(raw)
-                .ok_or_else(|| corrupt(format!("dtbl: column {index} has unknown type {raw}")))?;
+            let ty = column_type(raw).ok_or_else(|| {
+                Error::corrupt(format!("dtbl: column {index} has unknown type {raw}"))
+            })?;
             let offset = u32::try_from(b.i32(offset_at)?).ok().filter(|&o| {
                 o.checked_add(cell_size(ty))
                     .is_some_and(|end| end <= header.row_stride)
             });
             let offset = offset.ok_or_else(|| {
-                corrupt(format!(
+                Error::corrupt(format!(
                     "dtbl: column {index} is outside the row stride {}",
                     header.row_stride
                 ))

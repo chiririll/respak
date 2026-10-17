@@ -3,9 +3,7 @@
 //! `UnsupportedVersion` (`docs/formats/miles-codecs.md`, "RADA").
 
 use respak_core::detect::{magic, u32le};
-use respak_core::Result;
-
-use crate::corrupt;
+use respak_core::{Error, Result};
 
 /// Bytes of the `RadAFileHeader`.
 pub const RADA_HEADER_LEN: usize = 40;
@@ -38,18 +36,18 @@ impl RadaHeader {
     /// short header → `Corrupt`.
     pub fn parse(header: &[u8]) -> Result<Self> {
         if header.len() < RADA_HEADER_LEN || !Self::has_magic(header) {
-            return Err(corrupt("rada: not a RADA header"));
+            return Err(Error::corrupt("rada: not a RADA header"));
         }
         let channels = header[9];
         if channels == 0 || channels > MAX_CHANNELS {
-            return Err(corrupt(format!("rada: {channels} channels")));
+            return Err(Error::corrupt(format!("rada: {channels} channels")));
         }
         let sample_rate = match header[0x0F] {
             0 => 24000,
             1 => 32000,
             2 => 44100,
             3 => 48000,
-            other => return Err(corrupt(format!("rada: sample rate code {other}"))),
+            other => return Err(Error::corrupt(format!("rada: sample rate code {other}"))),
         };
         let u64le = |at: usize| {
             u64::from(u32le(header, at).expect("length checked"))

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::capability::Cap;
 use crate::detect::{ConvertHandler, ReadHandler};
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::{Error, Result};
 
 /// A set of formats and edges, contributed by one crate.
 pub trait Plugin: Send + Sync {
@@ -127,15 +127,9 @@ impl Registry {
 
     /// Fails if a format name was defined twice, or a direct edge leads to an undefined format.
     pub fn check(&self) -> Result<()> {
-        let custom = |message: String| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message,
-            })
-        };
         for (i, f) in self.formats.iter().enumerate() {
             if let Some(first) = self.formats[..i].iter().find(|o| o.name == f.name) {
-                return Err(custom(format!(
+                return Err(Error::msg(format!(
                     "format `{}` is defined twice (plugins `{}` and `{}`)",
                     f.name, first.plugin, f.plugin
                 )));
@@ -143,7 +137,7 @@ impl Registry {
         }
         for d in &self.direct_edges {
             if !self.formats.iter().any(|f| f.name == d.to) {
-                return Err(custom(format!(
+                return Err(Error::msg(format!(
                     "edge `{}` -> `{}` leads to an undefined format",
                     d.from, d.to
                 )));

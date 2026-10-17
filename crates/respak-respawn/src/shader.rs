@@ -20,12 +20,6 @@ use respak_core::{Error, ErrorKind, Result};
 
 use crate::rpak::{RpakAsset, MEM};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// Biggest shader blob accepted; real ones are a few kilobytes.
 const MAX_BYTECODE: u64 = 16 << 20;
 const ENTRY_SIZE: u64 = 16;
@@ -50,7 +44,7 @@ pub fn pixel_shader_guid(version: u32, header: &[u8]) -> Result<u64> {
     };
     let bytes = header
         .get(at..at + 8)
-        .ok_or_else(|| corrupt("shds header is too short"))?;
+        .ok_or_else(|| Error::corrupt("shds header is too short"))?;
     Ok(u64::from_le_bytes(bytes.try_into().expect("8 bytes")))
 }
 
@@ -58,14 +52,14 @@ pub fn pixel_shader_guid(version: u32, header: &[u8]) -> Result<u64> {
 pub async fn bytecode(asset: &RpakAsset) -> Result<Bytes> {
     let data = asset
         .data_mem_offset
-        .ok_or_else(|| corrupt("shdr has no data page"))?;
+        .ok_or_else(|| Error::corrupt("shdr has no data page"))?;
     let mem_len = asset.volume.stat(MEM).await?.content_length();
 
     let read_entry = |index: u64| async move {
         let at = data
             .checked_add(index * ENTRY_SIZE)
             .filter(|at| at + ENTRY_SIZE <= mem_len);
-        let at = at.ok_or_else(|| corrupt("shdr entry is outside the pak's pages"))?;
+        let at = at.ok_or_else(|| Error::corrupt("shdr entry is outside the pak's pages"))?;
         let raw = asset.read_mem(at, ENTRY_SIZE).await?;
         let slot: [u8; 8] = raw[..8].try_into().expect("8 bytes");
         let size = i32::from_le_bytes(raw[8..12].try_into().expect("4 bytes"));
@@ -76,19 +70,19 @@ pub async fn bytecode(asset: &RpakAsset) -> Result<Bytes> {
     if size < 0 {
         let index = !size;
         if index == 0 || index > MAX_ENTRIES {
-            return Err(corrupt("shdr entry 0 refers to an impossible entry"));
+            return Err(Error::corrupt("shdr entry 0 refers to an impossible entry"));
         }
         (slot, size) = read_entry(index as u64).await?;
     }
     if size <= 0 {
-        return Err(corrupt("shdr has no bytecode"));
+        return Err(Error::corrupt("shdr has no bytecode"));
     }
     let len = size as u64;
     let at = asset
         .mem_offset_of(slot)
-        .ok_or_else(|| corrupt("shdr bytecode pointer is null"))?;
+        .ok_or_else(|| Error::corrupt("shdr bytecode pointer is null"))?;
     if len > MAX_BYTECODE || at.checked_add(len).is_none_or(|end| end > mem_len) {
-        return Err(corrupt(
+        return Err(Error::corrupt(
             "shdr bytecode runs past the end of the pak's pages",
         ));
     }

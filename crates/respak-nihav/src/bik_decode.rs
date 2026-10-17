@@ -17,19 +17,10 @@ use nihav_core::demuxers::{create_demuxer, Demuxer, DemuxerError, RegisteredDemu
 use nihav_core::frame::{NACodecTypeInfo, NAVideoBufferRef};
 use nihav_core::io::byteio::MemoryReader;
 use respak_core::capability::{AudioChunk, AudioTrackInfo, FrameFormat, VideoFrame};
-use respak_core::{Error, ErrorKind, Result};
-
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
+use respak_core::{Error, Result};
 
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion {
-        format: "bik".into(),
-        version: version.into(),
-    })
+    Error::unsupported("bik", version)
 }
 
 /// What the container says about its streams.
@@ -54,13 +45,13 @@ fn with_demuxer<T>(
         nihav_rad::rad_register_all_decoders(&mut decoders);
         let creator = demuxers
             .find_demuxer("bink")
-            .ok_or_else(|| corrupt("bik: the Bink demuxer is missing"))?;
+            .ok_or_else(|| Error::corrupt("bik: the Bink demuxer is missing"))?;
         let mut reader = MemoryReader::new_read(file);
         let mut demuxer = create_demuxer(creator, &mut reader)
-            .map_err(|e| corrupt(format!("bik: container: {e:?}")))?;
+            .map_err(|e| Error::corrupt(format!("bik: container: {e:?}")))?;
         f(&mut demuxer, &decoders)
     }))
-    .unwrap_or_else(|_| Err(corrupt("bik: the decoder panicked")))
+    .unwrap_or_else(|_| Err(Error::corrupt("bik: the decoder panicked")))
 }
 
 /// Opens the container and lists its streams.
@@ -83,7 +74,7 @@ pub(crate) fn probe(file: &[u8]) -> Result<Probed> {
                 _ => {}
             }
         }
-        let size = size.ok_or_else(|| corrupt("bik: no video stream"))?;
+        let size = size.ok_or_else(|| Error::corrupt("bik: no video stream"))?;
         Ok(Probed { size, audio })
     })
 }
@@ -103,7 +94,7 @@ pub(crate) fn decode_video(
                 break;
             }
         }
-        let (stream, info) = found.ok_or_else(|| corrupt("bik: no video stream"))?;
+        let (stream, info) = found.ok_or_else(|| Error::corrupt("bik: no video stream"))?;
         let create = decoders
             .find_decoder(info.get_name())
             .ok_or_else(|| unsupported(info.get_name()))?;
@@ -111,21 +102,21 @@ pub(crate) fn decode_video(
         let mut support = Box::new(NADecoderSupport::new());
         decoder
             .init(&mut support, info)
-            .map_err(|e| corrupt(format!("bik: video decoder: {e:?}")))?;
+            .map_err(|e| Error::corrupt(format!("bik: video decoder: {e:?}")))?;
 
         let mut index = 0u32;
         loop {
             let packet = match dmx.get_frame() {
                 Ok(p) => p,
                 Err(DemuxerError::EOF) => return Ok(()),
-                Err(e) => return Err(corrupt(format!("bik: frame {index}: {e:?}"))),
+                Err(e) => return Err(Error::corrupt(format!("bik: frame {index}: {e:?}"))),
             };
             if packet.get_stream().get_num() != stream {
                 continue;
             }
             let frame = decoder
                 .decode(&mut support, &packet)
-                .map_err(|e| corrupt(format!("bik: frame {index}: {e:?}")))?;
+                .map_err(|e| Error::corrupt(format!("bik: frame {index}: {e:?}")))?;
             let buffer = frame
                 .get_buffer()
                 .get_vbuf()
@@ -162,7 +153,7 @@ fn convert(buffer: &NAVideoBufferRef<u8>, index: u32, format: FrameFormat) -> Re
             let start = offset + row * stride;
             out.extend_from_slice(
                 data.get(start..start + w)
-                    .ok_or_else(|| corrupt("bik: frame buffer is too short"))?,
+                    .ok_or_else(|| Error::corrupt("bik: frame buffer is too short"))?,
             );
         }
         planes.push(Bytes::from(out));
@@ -208,7 +199,7 @@ pub(crate) fn decode_audio(
             }
         }
         let (stream, info) =
-            found.ok_or_else(|| corrupt(format!("bik: no audio track {track}")))?;
+            found.ok_or_else(|| Error::corrupt(format!("bik: no audio track {track}")))?;
         let create = decoders
             .find_decoder(info.get_name())
             .ok_or_else(|| unsupported(info.get_name()))?;
@@ -216,21 +207,25 @@ pub(crate) fn decode_audio(
         let mut support = Box::new(NADecoderSupport::new());
         decoder
             .init(&mut support, info)
-            .map_err(|e| corrupt(format!("bik: audio decoder: {e:?}")))?;
+            .map_err(|e| Error::corrupt(format!("bik: audio decoder: {e:?}")))?;
 
         let mut packets = 0u32;
         loop {
             let packet = match dmx.get_frame() {
                 Ok(p) => p,
                 Err(DemuxerError::EOF) => return Ok(()),
-                Err(e) => return Err(corrupt(format!("bik: audio packet {packets}: {e:?}"))),
+                Err(e) => {
+                    return Err(Error::corrupt(format!(
+                        "bik: audio packet {packets}: {e:?}"
+                    )))
+                }
             };
             if packet.get_stream().get_num() != stream {
                 continue;
             }
             let frame = decoder
                 .decode(&mut support, &packet)
-                .map_err(|e| corrupt(format!("bik: audio packet {packets}: {e:?}")))?;
+                .map_err(|e| Error::corrupt(format!("bik: audio packet {packets}: {e:?}")))?;
             packets += 1;
             let buffer = frame.get_buffer();
             let chunk = if let Some(a) = buffer.get_abuf_f32() {
@@ -243,7 +238,7 @@ pub(crate) fn decode_audio(
                         samples.push(
                             *data
                                 .get(at)
-                                .ok_or_else(|| corrupt("bik: audio buffer is too short"))?,
+                                .ok_or_else(|| Error::corrupt("bik: audio buffer is too short"))?,
                         );
                     }
                 }

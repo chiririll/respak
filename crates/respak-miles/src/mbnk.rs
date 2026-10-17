@@ -30,7 +30,6 @@ use respak_core::{
 };
 
 use crate::asrc::{AsrcData, StreamHeads};
-use crate::corrupt;
 use crate::mstr::NOT_LOCALISED;
 
 /// Bytes of the largest bank header (v45), enough to detect and pick a layout.
@@ -274,11 +273,11 @@ fn cstring(bytes: &[u8], off: u64) -> Result<String> {
     let tail = usize::try_from(off)
         .ok()
         .and_then(|o| bytes.get(o..))
-        .ok_or_else(|| corrupt(format!("mbnk: string offset {off} is past the end")))?;
+        .ok_or_else(|| Error::corrupt(format!("mbnk: string offset {off} is past the end")))?;
     let end = tail
         .iter()
         .position(|&b| b == 0)
-        .ok_or_else(|| corrupt("mbnk: unterminated string"))?;
+        .ok_or_else(|| Error::corrupt("mbnk: unterminated string"))?;
     Ok(String::from_utf8_lossy(&tail[..end]).into_owned())
 }
 
@@ -298,7 +297,7 @@ impl Bank {
     /// range → `Corrupt`; an unknown version → `UnsupportedVersion`.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         if !magic(bytes, 0, MAGIC) || bytes.len() < 12 {
-            return Err(corrupt("mbnk: not a CBNK file"));
+            return Err(Error::corrupt("mbnk: not a CBNK file"));
         }
         let version = u32le(bytes, 4).expect("length checked") as i32;
         let layout = BankLayout::for_version(version).ok_or_else(|| {
@@ -309,7 +308,7 @@ impl Bank {
         })?;
         let h = header_fields(layout.header);
         if bytes.len() < h.len {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "mbnk: {} bytes is shorter than the v{version} header",
                 bytes.len()
             )));
@@ -328,16 +327,16 @@ impl Bank {
         let count = localised
             .checked_mul(languages - 1)
             .and_then(|l| l.checked_add(unlocalised))
-            .ok_or_else(|| corrupt("mbnk: source count overflows"))?;
+            .ok_or_else(|| Error::corrupt("mbnk: source count overflows"))?;
         let size = layout.entry_size();
         let table_len = count
             .checked_mul(size)
-            .ok_or_else(|| corrupt("mbnk: source table size overflows"))?;
+            .ok_or_else(|| Error::corrupt("mbnk: source table size overflows"))?;
         let table_end = sources_at
             .checked_add(table_len)
             .filter(|&end| end <= bytes.len() as u64);
         let table_end = table_end.ok_or_else(|| {
-            corrupt(format!(
+            Error::corrupt(format!(
                 "mbnk: {count} sources at {sources_at} do not fit the file"
             ))
         })?;
@@ -354,12 +353,12 @@ impl Bank {
                 let rel = raw
                     .name_offset
                     .checked_sub(first)
-                    .ok_or_else(|| corrupt("mbnk: name offset before the first one"))?;
+                    .ok_or_else(|| Error::corrupt("mbnk: name offset before the first one"))?;
                 table_end + rel
             } else {
                 strings_at
                     .checked_add(raw.name_offset)
-                    .ok_or_else(|| corrupt("mbnk: name offset overflows"))?
+                    .ok_or_else(|| Error::corrupt("mbnk: name offset overflows"))?
             };
             let language = (raw.language != NOT_LOCALISED).then(|| {
                 layout
@@ -370,7 +369,7 @@ impl Bank {
             let header_end = raw
                 .header_offset
                 .checked_add(u64::from(raw.header_size))
-                .ok_or_else(|| corrupt("mbnk: header range overflows"))?;
+                .ok_or_else(|| Error::corrupt("mbnk: header range overflows"))?;
             sources.push(SourceEntry {
                 name: cstring(bytes, name_at)?,
                 language,

@@ -39,17 +39,8 @@ use respak_core::{
 use crate::rpak::{RpakAsset, MEM};
 use crate::{oodle, rtech};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion {
-        format: "txtr".into(),
-        version: version.into(),
-    })
+    Error::unsupported("txtr", version)
 }
 
 const HEADER_LEN: usize = 56;
@@ -130,7 +121,7 @@ impl TxtrHeader {
             return Err(unsupported(version.to_string()));
         }
         if h.len() != HEADER_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "txtr header is {} bytes, expected {HEADER_LEN}",
                 h.len()
             )));
@@ -201,11 +192,11 @@ impl TxtrHeader {
             compressed_blocks,
         };
         if w == 0 || ht == 0 {
-            return Err(corrupt("txtr has a zero dimension"));
+            return Err(Error::corrupt("txtr has a zero dimension"));
         }
         let total = header.total_mips();
         if total == 0 || total > MAX_MIPS || header.permanent == 0 {
-            return Err(corrupt(format!("txtr mip counts are not usable (permanent {perm}, streamed {streamed}, optional {opt})")));
+            return Err(Error::corrupt(format!("txtr mip counts are not usable (permanent {perm}, streamed {streamed}, optional {opt})")));
         }
         Ok(header)
     }
@@ -271,7 +262,7 @@ fn layout_entry(
             len.div_ceil(16).max(1) * 16
         } else {
             let block = h.compressed_blocks.get(shift as usize).ok_or_else(|| {
-                corrupt(format!("txtr: no compressed size for streamed mip {shift}"))
+                Error::corrupt(format!("txtr: no compressed size for streamed mip {shift}"))
             })?;
             if h.array_size > 1 {
                 return Err(unsupported(format!(
@@ -471,7 +462,7 @@ impl ReadHandler for TxtrRead {
         let mem_len = asset.volume.stat(MEM).await?.content_length();
         let data_offset = asset
             .data_mem_offset
-            .ok_or_else(|| corrupt("txtr has no data pointer"))?;
+            .ok_or_else(|| Error::corrupt("txtr has no data pointer"))?;
 
         let name = match header.name_offset {
             Some(at) => read_name(&asset.volume, at, mem_len).await,
@@ -513,7 +504,9 @@ impl ReadHandler for TxtrRead {
             .checked_add(cursor)
             .is_none_or(|end| end > mem_len)
         {
-            return Err(corrupt("txtr mips run past the end of the pak's pages"));
+            return Err(Error::corrupt(
+                "txtr mips run past the end of the pak's pages",
+            ));
         }
 
         // The streamed mips. A starpak that is missing, or has no entry for this asset, makes the
@@ -542,7 +535,7 @@ impl ReadHandler for TxtrRead {
                 header.optional..header.optional + header.streamed,
             )?;
             if entry_len(&header, &mips) > size {
-                return Err(corrupt(format!("texture {label}: its streamed mips do not fit the starpak entry ({size} bytes)")));
+                return Err(Error::corrupt(format!("texture {label}: its streamed mips do not fit the starpak entry ({size} bytes)")));
             }
             by_shift.extend(mips);
         }
@@ -567,7 +560,7 @@ impl ReadHandler for TxtrRead {
                 Ok(size) => {
                     let mips = layout_entry(&header, pixel, Store::Opt, 0..header.optional)?;
                     if entry_len(&header, &mips) > size {
-                        return Err(corrupt(format!("texture {label}: its optional mips do not fit the starpak entry ({size} bytes)")));
+                        return Err(Error::corrupt(format!("texture {label}: its optional mips do not fit the starpak entry ({size} bytes)")));
                     }
                     by_shift.extend(mips);
                 }

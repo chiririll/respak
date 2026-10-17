@@ -20,12 +20,6 @@ use crate::matl_json::hex;
 use crate::rmdl::B;
 use crate::rpak::{RpakAsset, MEM};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// The 8-byte asset header: the page pointer to the blob.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AsqdHeader {
@@ -37,7 +31,7 @@ impl AsqdHeader {
     /// Parses a relocated header; any other length than 8 is `Corrupt`.
     pub fn parse(header: &[u8]) -> Result<Self> {
         if header.len() != 8 {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "asqd header is {} bytes, expected 8",
                 header.len()
             )));
@@ -76,7 +70,7 @@ impl AsqdAsset {
                 .range(start..end)
                 .await?
                 .to_bytes()),
-            _ => Err(corrupt(format!(
+            _ => Err(Error::corrupt(format!(
                 "asqd {}: {len} bytes at {offset:#x} are outside the pak's data",
                 hex(self.guid)
             ))),
@@ -109,7 +103,7 @@ impl AsqdAsset {
         })?;
         let mem_len = self.volume.stat(MEM).await?.content_length();
         let start = base.checked_add(offset).ok_or_else(|| {
-            corrupt(format!(
+            Error::corrupt(format!(
                 "asqd {}: offset {offset:#x} overflows",
                 hex(self.guid)
             ))

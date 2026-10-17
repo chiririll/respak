@@ -19,12 +19,6 @@ use respak_core::{
 use crate::rmdl::B;
 use crate::rpak::{RpakAsset, MEM};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// Bytes of a layout header, also the stride of the sub layout array.
 const HEADER_LEN: usize = 72;
 
@@ -263,7 +257,7 @@ fn read_layout<'a>(
 ) -> Pin<Box<dyn Future<Output = Result<Layout>> + Send + 'a>> {
     Box::pin(async move {
         if depth > DEPTH {
-            return Err(corrupt("stlt: sub layouts nest too deep"));
+            return Err(Error::corrupt("stlt: sub layouts nest too deep"));
         }
         let h = B(&header);
         let p = Pointers { asset, relocated };
@@ -278,7 +272,7 @@ fn read_layout<'a>(
         let string_data = p.get(&h, 0x38)?;
         let sub_headers = p.get(&h, 0x40)?;
         if table_size > LIMIT || field_count > LIMIT {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "stlt: implausible table of {table_size} slots / {field_count} fields"
             )));
         }
@@ -292,7 +286,9 @@ fn read_layout<'a>(
             Some(at) if table_size > 0 => {
                 let len = u64::from(table_size) * 8;
                 if at.saturating_add(len) > mem_len {
-                    return Err(corrupt("stlt: the field table is outside the pak's data"));
+                    return Err(Error::corrupt(
+                        "stlt: the field table is outside the pak's data",
+                    ));
                 }
                 asset.read_mem(at, len).await?
             }
@@ -302,7 +298,9 @@ fn read_layout<'a>(
             Some(at) if field_count > 0 => {
                 let len = u64::from(field_count) * 4;
                 if at.saturating_add(len) > mem_len {
-                    return Err(corrupt("stlt: the field map is outside the pak's data"));
+                    return Err(Error::corrupt(
+                        "stlt: the field map is outside the pak's data",
+                    ));
                 }
                 asset.read_mem(at, len).await?
             }
@@ -331,11 +329,13 @@ fn read_layout<'a>(
             let bucket = entries.u16(i * 4)? as usize;
             let help = entries.u16(i * 4 + 2)? as usize;
             if bucket >= table_size as usize {
-                return Err(corrupt(format!("stlt: field {i} is in bucket {bucket}")));
+                return Err(Error::corrupt(format!(
+                    "stlt: field {i} is in bucket {bucket}"
+                )));
             }
             let raw_ty = slots.u16(bucket * 8)?;
             let ty = FieldType::from_u16(raw_ty)
-                .ok_or_else(|| corrupt(format!("stlt: field type {raw_ty}")))?;
+                .ok_or_else(|| Error::corrupt(format!("stlt: field type {raw_ty}")))?;
             let tail = slots.u32(bucket * 8 + 4)?;
             fields.push(Field {
                 name: text(&names, usize::from(slots.u16(bucket * 8 + 2)?)),
@@ -352,7 +352,9 @@ fn read_layout<'a>(
             let count = usize::from(highest) + 1;
             let len = (count * HEADER_LEN) as u64;
             if at.saturating_add(len) > mem_len {
-                return Err(corrupt("stlt: the sub layouts are outside the pak's data"));
+                return Err(Error::corrupt(
+                    "stlt: the sub layouts are outside the pak's data",
+                ));
             }
             let block = asset.read_mem(at, len).await?;
             for chunk in block.chunks_exact(HEADER_LEN) {
@@ -361,7 +363,7 @@ fn read_layout<'a>(
                 );
             }
         } else if fields.iter().any(|f| f.sub != 0) {
-            return Err(corrupt(
+            return Err(Error::corrupt(
                 "stlt: a field names a sub layout but there are none",
             ));
         }
@@ -402,7 +404,7 @@ impl ReadHandler for StltRead {
         }
         let header = asset.read_header().await?;
         if header.len() != HEADER_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "stlt header is {} bytes, expected {HEADER_LEN}",
                 header.len()
             )));

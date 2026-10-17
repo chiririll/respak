@@ -11,7 +11,7 @@ use respak_core::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{audio_of, corrupt, unsupported};
+use crate::audio_of;
 
 /// Size of the RIFF header written before the samples.
 const HEADER_LEN: usize = 44;
@@ -76,7 +76,7 @@ impl ConvertHandler for WavEncode {
             })
         })?;
         if info.channels == 0 || info.sample_rate == 0 {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "audio track {track} has {} channels at {} Hz",
                 info.channels, info.sample_rate
             )));
@@ -88,7 +88,7 @@ impl ConvertHandler for WavEncode {
             let chunk = chunk?;
             cx.check_cancelled()?;
             if chunk.samples.len() % usize::from(info.channels) != 0 {
-                return Err(corrupt(format!(
+                return Err(Error::corrupt(format!(
                     "audio chunk of {} samples is not whole frames of {} channels",
                     chunk.samples.len(),
                     info.channels
@@ -99,7 +99,7 @@ impl ConvertHandler for WavEncode {
         let data_len = u32::try_from(data.len())
             .ok()
             .filter(|n| n.checked_add(HEADER_LEN as u32).is_some())
-            .ok_or_else(|| unsupported("wav", "audio over 4 GiB"))?;
+            .ok_or_else(|| Error::unsupported("wav", "audio over 4 GiB"))?;
 
         let mut out = Vec::with_capacity(HEADER_LEN + data.len());
         out.extend_from_slice(&header(info.channels, info.sample_rate, data_len));

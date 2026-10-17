@@ -43,13 +43,7 @@
 //! and goes on; here a command past the end of F is checked when it is read, and the last command
 //! may run past the end of the output (it is cut). Every other malformed input is `Corrupt`.
 
-use respak_core::{Error, ErrorKind, Result};
-
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
+use respak_core::{Error, Result};
 
 /// Where a run of output bytes comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,14 +95,14 @@ fn decode_table(buf: &[u8], depth: u32) -> Result<(Table, usize)> {
     let mut remaining = size;
     let (mut code, mut offset, mut previous) = (0u32, 0usize, 0u32);
     while remaining > 0 {
-        let byte = *buf
-            .get(offset)
-            .ok_or_else(|| corrupt("rpak patch: a Huffman table runs past the edit stream"))?;
+        let byte = *buf.get(offset).ok_or_else(|| {
+            Error::corrupt("rpak patch: a Huffman table runs past the edit stream")
+        })?;
         let len = u32::from(byte & 7) + 1;
         if offset > 0 {
             // The next code: one past the last, with the extra bits of a longer code appended.
             if len < previous {
-                return Err(corrupt(
+                return Err(Error::corrupt(
                     "rpak patch: Huffman code lengths are not in ascending order",
                 ));
             }
@@ -116,12 +110,12 @@ fn decode_table(buf: &[u8], depth: u32) -> Result<(Table, usize)> {
         }
         previous = len;
         if code >= 1 << len {
-            return Err(corrupt("rpak patch: Huffman codes overflow"));
+            return Err(Error::corrupt("rpak patch: Huffman codes overflow"));
         }
         let mut j = reverse(code, len) as usize;
         while j < size {
             if bits[j] != 0 {
-                return Err(corrupt("rpak patch: Huffman codes overlap"));
+                return Err(Error::corrupt("rpak patch: Huffman codes overlap"));
             }
             symbol[j] = byte >> 3;
             bits[j] = len as u8;
@@ -154,7 +148,7 @@ impl Bits<'_> {
     fn skip(&mut self, n: u32) -> Result<()> {
         self.pos += u64::from(n);
         if self.pos > self.data.len() as u64 * 8 {
-            return Err(corrupt("rpak patch: the edit stream's bits run out"));
+            return Err(Error::corrupt("rpak patch: the edit stream's bits run out"));
         }
         Ok(())
     }
@@ -181,7 +175,7 @@ impl PageMap {
     ///   the output are copied from there.
     pub fn build(stream: &[u8], len: u64, stored_len: u64, first: u64) -> Result<Self> {
         if stored_len > len {
-            return Err(corrupt(
+            return Err(Error::corrupt(
                 "rpak patch: the stored pages are larger than the pak",
             ));
         }
@@ -190,11 +184,11 @@ impl PageMap {
         let base = used_a + used_b;
         let word = stream
             .get(base..base + 8)
-            .ok_or_else(|| corrupt("rpak patch: the edit stream is too short"))?;
+            .ok_or_else(|| Error::corrupt("rpak patch: the edit stream is too short"))?;
         let replacement_at = base
             + (u32::from_le_bytes(word[..4].try_into().expect("4 bytes")) & 0xFF_FFFF) as usize;
         if replacement_at < base + 8 || replacement_at > stream.len() {
-            return Err(corrupt(
+            return Err(Error::corrupt(
                 "rpak patch: the replacement data is outside the edit stream",
             ));
         }
@@ -244,9 +238,9 @@ impl PageMap {
                 bits.skip(exponent)?;
                 n
             } else {
-                *[3u64, 7, 6]
-                    .get(usize::from(command) - 4)
-                    .ok_or_else(|| corrupt(format!("rpak patch: unknown command {command}")))?
+                *[3u64, 7, 6].get(usize::from(command) - 4).ok_or_else(|| {
+                    Error::corrupt(format!("rpak patch: unknown command {command}"))
+                })?
             };
             match command {
                 0 => {
@@ -271,11 +265,15 @@ impl PageMap {
                     let took = emit(&mut out, Source::File(f), n, &mut map.runs);
                     f += took;
                 }
-                _ => return Err(corrupt(format!("rpak patch: unknown command {command}"))),
+                _ => {
+                    return Err(Error::corrupt(format!(
+                        "rpak patch: unknown command {command}"
+                    )))
+                }
             }
         }
         if map.replacement_at as u64 + s > stream.len() as u64 {
-            return Err(corrupt(
+            return Err(Error::corrupt(
                 "rpak patch: the script reads past the replacement data",
             ));
         }
@@ -285,7 +283,7 @@ impl PageMap {
     /// The pieces that make up `.mem` bytes `range` (offsets in page order), in order.
     pub fn locate(&self, range: std::ops::Range<u64>) -> Result<Vec<Piece>> {
         if range.start > range.end || range.end > self.len {
-            return Err(corrupt("read past the end of the patched pages"));
+            return Err(Error::corrupt("read past the end of the patched pages"));
         }
         // `.mem` is the pages in index order; `D` has the stored pages first.
         let head = self.len - self.stored_len; // bytes of the pages that are not stored
@@ -313,7 +311,7 @@ impl PageMap {
                 .runs
                 .get(i)
                 .filter(|r| r.at <= at)
-                .ok_or_else(|| corrupt("rpak patch: the script leaves a gap"))?;
+                .ok_or_else(|| Error::corrupt("rpak patch: the script leaves a gap"))?;
             let skip = at - run.at;
             let n = (run.len - skip).min(range.end - at);
             let source = match run.source {

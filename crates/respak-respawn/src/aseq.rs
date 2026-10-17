@@ -52,17 +52,8 @@ use crate::matl_json::{hex, locate, pak_of};
 use crate::rmdl::{fix_offset, read_guids, B};
 use crate::rpak::{RpakAsset, MEM};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion {
-        format: "aseq".into(),
-        version: version.into(),
-    })
+    Error::unsupported("aseq", version)
 }
 
 const HEADER_LEN: usize = 64;
@@ -171,7 +162,7 @@ impl AseqHeader {
             return Err(unsupported(version.to_string()));
         }
         if header.len() != HEADER_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "aseq header is {} bytes, expected {HEADER_LEN}",
                 header.len()
             )));
@@ -183,7 +174,7 @@ impl AseqHeader {
         };
         Ok(Self {
             version,
-            data_offset: ptr(0x00)?.ok_or_else(|| corrupt("aseq has no data pointer"))?,
+            data_offset: ptr(0x00)?.ok_or_else(|| Error::corrupt("aseq has no data pointer"))?,
             name_offset: ptr(0x08)?,
             models: (ptr(0x20)?, u32::from(h.u16(0x18)?)),
             effects: ptr(0x28)?,
@@ -230,7 +221,7 @@ impl SeqDesc {
         let group_size = [b.u8(at + 0x54)?, b.u8(at + 0x55)?];
         let blends = usize::from(group_size[0]) * usize::from(group_size[1]);
         if blends == 0 {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "aseq `{label}` has no animations (group size {group_size:?})"
             )));
         }
@@ -298,7 +289,9 @@ impl FrameMovement {
             1
         };
         if count > MAX_SECTIONS {
-            return Err(corrupt(format!("frame movement with {count} sections")));
+            return Err(Error::corrupt(format!(
+                "frame movement with {count} sections"
+            )));
         }
         let sections = (0..count)
             .map(|i| {
@@ -326,10 +319,9 @@ impl FrameMovement {
         } else {
             (0, frame)
         };
-        let tracks = self
-            .sections
-            .get(section)
-            .ok_or_else(|| corrupt(format!("frame movement has no section for frame {frame}")))?;
+        let tracks = self.sections.get(section).ok_or_else(|| {
+            Error::corrupt(format!("frame movement has no section for frame {frame}"))
+        })?;
         let mut v = [0.0; 4];
         for (k, track) in tracks.iter().enumerate() {
             if let Some(at) = track {
@@ -373,12 +365,14 @@ impl AnimDesc {
         let frames = b.i32(at + 0x08)?;
         // rsx's `ANIMDESC_SANITY_CHECK`
         if !(0.0..=2048.0).contains(&fps) {
-            return Err(corrupt(format!("animation with {fps} frames per second")));
+            return Err(Error::corrupt(format!(
+                "animation with {fps} frames per second"
+            )));
         }
         let frame_count = u32::try_from(frames)
             .ok()
             .filter(|&n| n <= 0x20000)
-            .ok_or_else(|| corrupt(format!("animation with {frames} frames")))?;
+            .ok_or_else(|| Error::corrupt(format!("animation with {frames} frames")))?;
         let name = if b.u16(at + 0x0C)? == 0 {
             String::new()
         } else {
@@ -445,7 +439,7 @@ impl AnimDesc {
             .get(index as usize)
             .map(|&s| (s, local))
             .ok_or_else(|| {
-                corrupt(format!(
+                Error::corrupt(format!(
                     "animation `{}`: no section {index} for frame {frame} (the table has {})",
                     self.name,
                     self.sections.len()
@@ -593,7 +587,7 @@ impl AseqAsset {
                 let value = self.asqd(anim.asqd, cx).await?;
                 let asqd = value
                     .downcast_ref::<AsqdAsset>()
-                    .ok_or_else(|| corrupt(format!("{} is not an asqd", hex(anim.asqd))))?;
+                    .ok_or_else(|| Error::corrupt(format!("{} is not an asqd", hex(anim.asqd))))?;
                 asqd.read_upto(u64::from(offset), want).await
             }
             SectionData::Extra(offset) => {
@@ -627,7 +621,7 @@ impl AseqAsset {
                     };
                 }
                 None if (bytes.len() as u64) < want || want >= MAX_SECTION => {
-                    return Err(corrupt(format!(
+                    return Err(Error::corrupt(format!(
                         "{}: section {section:?} of animation {blend} runs past the end of its data",
                         self.label()
                     )));
@@ -926,7 +920,9 @@ impl ReadHandler for AseqRead {
         let header = AseqHeader::parse(version, &asset.read_header().await?)?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
         if header.data_offset >= mem_len {
-            return Err(corrupt("aseq: the data pointer is outside the pak's data"));
+            return Err(Error::corrupt(
+                "aseq: the data pointer is outside the pak's data",
+            ));
         }
         let origin = pak_of(source.key());
 

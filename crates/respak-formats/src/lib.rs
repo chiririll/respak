@@ -103,19 +103,6 @@ fn audio_of(source: &Value) -> Result<&dyn Audio> {
     })
 }
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
-fn unsupported(format: &str, what: &str) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion {
-        format: format.to_owned(),
-        version: what.to_owned(),
-    })
-}
-
 /// The whole file (PNG is a single deflate stream and cannot be read in parts).
 async fn read_all(file: &FileData) -> Result<bytes::Bytes> {
     let reader = file.op.read_with(&file.path);

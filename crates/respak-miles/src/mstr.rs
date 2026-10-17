@@ -9,8 +9,6 @@ use respak_core::{
     ValueKey, Version,
 };
 
-use crate::corrupt;
-
 /// Bytes of the header.
 pub const MSTR_HEADER_LEN: usize = 0x14;
 
@@ -43,7 +41,7 @@ impl MstrHeader {
     /// `UnsupportedVersion`.
     pub fn parse(header: &[u8]) -> Result<Self> {
         if header.len() < MSTR_HEADER_LEN || !Self::has_magic(header) {
-            return Err(corrupt("mstr: not a CSTR header"));
+            return Err(Error::corrupt("mstr: not a CSTR header"));
         }
         let version = u16le(header, 4).expect("length checked");
         if version != 2 {

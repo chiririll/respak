@@ -74,10 +74,6 @@ pub(crate) fn pak_of(key: &ValueKey) -> String {
         .map_or(String::new(), |(pak, _)| pak.to_owned())
 }
 
-fn is_cancelled(e: &Error) -> bool {
-    matches!(e.kind(), ErrorKind::Cancelled)
-}
-
 fn custom(message: impl Into<String>) -> Error {
     Error::new(ErrorKind::Custom {
         source: None,
@@ -147,7 +143,7 @@ impl ConvertHandler for MatlJsonEncode {
 
         let slot_names = match shader_slots(matl, &origin, cx).await {
             Ok(names) => names,
-            Err(e) if is_cancelled(&e) => return Err(e),
+            Err(e) if e.is_cancelled() => return Err(e),
             Err(e) => {
                 cx.warn(format!(
                     "material {label}: texture slots are not named ({e}); using slot_<n>"
@@ -198,7 +194,7 @@ impl ConvertHandler for MatlJsonEncode {
                         None
                     }
                 }
-                Err(e) if is_cancelled(&e) => return Err(e),
+                Err(e) if e.is_cancelled() => return Err(e),
                 Err(e) => {
                     cx.warn(format!(
                         "material {label}: texture {} ({name}) is skipped: {e}",

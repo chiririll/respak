@@ -541,10 +541,6 @@ fn custom(message: impl Into<String>) -> Error {
     })
 }
 
-fn is_cancelled(e: &Error) -> bool {
-    matches!(e.kind(), ErrorKind::Cancelled)
-}
-
 /// The last path component of `name` without its extension.
 fn stem_of(name: &str) -> String {
     let last = name.rsplit(['/', '\\']).next().unwrap_or(name);
@@ -651,7 +647,7 @@ impl ConvertHandler for CastEncode {
                                 ));
                             }
                         }
-                        Err(e) if is_cancelled(&e) => return Err(e),
+                        Err(e) if e.is_cancelled() => return Err(e),
                         Err(e) => cx.warn(format!(
                             "material {}: texture {:#018x} ({}) is skipped: {e}",
                             material.name, texture.guid, texture.slot

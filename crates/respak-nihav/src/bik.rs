@@ -24,12 +24,6 @@ use crate::bik_decode;
 /// Decoded items a stream may run ahead of its consumer (a 1080p RGBA frame is 8 MB).
 const STREAM_BUFFER: usize = 4;
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// The fixed part of a Bink header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BikHeader {
@@ -159,13 +153,13 @@ impl ReadHandler for BikRead {
         }
         .to_bytes();
         let header = BikHeader::parse(&bytes)
-            .ok_or_else(|| corrupt("bik: the header is not a Bink 2 header"))?;
+            .ok_or_else(|| Error::corrupt("bik: the header is not a Bink 2 header"))?;
         // The demuxer sizes its frame index from the header without checking the file, so a
         // damaged frame count would ask for gigabytes (and abort, which cannot be caught).
         // The index (4 bytes per frame, plus one) is part of the file.
         let index_len = (u64::from(header.frame_count) + 1) * 4 + BikHeader::LEN as u64;
         if index_len > bytes.len() as u64 {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "bik: {} frames need an index of {index_len} bytes, the file has {}",
                 header.frame_count,
                 bytes.len()
@@ -340,7 +334,7 @@ mod tests {
         let cx = cx();
         let mut stream = spawn_stream(&cx, |sink| {
             sink(Ok(1u32));
-            sink(Err(corrupt("cut here")));
+            sink(Err(Error::corrupt("cut here")));
         });
         assert_eq!(stream.next().await.unwrap().unwrap(), 1);
         let err = stream.next().await.unwrap().unwrap_err();

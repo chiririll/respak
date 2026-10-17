@@ -100,12 +100,7 @@ impl EngineBuilder {
     }
     /// Fails on a missing operator or a format defined twice.
     pub fn build(self) -> Result<Engine> {
-        let missing = |what: &str| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: format!("engine has no {what} operator"),
-            })
-        };
+        let missing = |what: &str| Error::msg(format!("engine has no {what} operator"));
         let input = self.input.ok_or_else(|| missing("input"))?;
         let output = self.output.ok_or_else(|| missing("output"))?;
         let mut registry = Registry::new();

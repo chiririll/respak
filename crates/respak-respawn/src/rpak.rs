@@ -53,12 +53,6 @@ use crate::patch::{PageMap, Source};
 use crate::rtech;
 use crate::starpak::{self, Starpak, StarpakEntry};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// The flat file of all decompressed pages (not listed, but it resolves). Pointers in served
 /// headers are offsets into it.
 pub const MEM: &str = ".mem";
@@ -171,7 +165,7 @@ impl Body {
                     let have = progress.input.len() as u64;
                     let target = at_least.max(2 * have).max(MIN_INPUT).min(*file_len);
                     if target <= have {
-                        return Err(corrupt(
+                        return Err(Error::corrupt(
                             "rpak: the compressed stream runs past the end of the file",
                         ));
                     }
@@ -202,11 +196,11 @@ impl Body {
             unreachable!("only Oodle bodies are read this way")
         };
         if range.start > range.end || range.end > *len {
-            return Err(corrupt("read past the end of the decompressed pak"));
+            return Err(Error::corrupt("read past the end of the decompressed pak"));
         }
         let (from, to) = (usize::try_from(range.start), usize::try_from(range.end));
         let (Ok(from), Ok(to), Ok(total)) = (from, to, usize::try_from(*len)) else {
-            return Err(corrupt("rpak: body too large"));
+            return Err(Error::corrupt("rpak: body too large"));
         };
         if from == to {
             return Ok(Bytes::new());
@@ -219,11 +213,11 @@ impl Body {
         let (first, last) = loop {
             check(cancel)?;
             if p.scan.scanned() >= to {
-                let last =
-                    segment_of(p, to - 1).ok_or_else(|| corrupt("rpak: no Oodle segment"))?;
+                let last = segment_of(p, to - 1)
+                    .ok_or_else(|| Error::corrupt("rpak: no Oodle segment"))?;
                 if p.scan.scanned() >= total || p.scan.segments.len() > last + 1 {
-                    let first =
-                        segment_of(p, from).ok_or_else(|| corrupt("rpak: no Oodle segment"))?;
+                    let first = segment_of(p, from)
+                        .ok_or_else(|| Error::corrupt("rpak: no Oodle segment"))?;
                     break (first, last);
                 }
             }
@@ -242,7 +236,7 @@ impl Body {
                         .max(MIN_INPUT)
                         .min(*stream_len);
                     if target <= have {
-                        return Err(corrupt(
+                        return Err(Error::corrupt(
                             "rpak: the compressed stream runs past the end of the file",
                         ));
                     }
@@ -303,7 +297,7 @@ impl Body {
                 let (s, e) = (usize::try_from(range.start), usize::try_from(range.end));
                 match (s, e) {
                     (Ok(s), Ok(e)) if s <= e && e <= body.len() => Ok(body.slice(s..e)),
-                    _ => Err(corrupt("read past the end of the decompressed pak")),
+                    _ => Err(Error::corrupt("read past the end of the decompressed pak")),
                 }
             }
         }
@@ -365,7 +359,7 @@ impl Resolved {
                     let from = self.map.replacement_at as u64 + at;
                     let bytes = self.stream.get(from as usize..(from + piece.len) as usize);
                     out.extend_from_slice(bytes.ok_or_else(|| {
-                        corrupt("rpak patch: replacement data past the edit stream")
+                        Error::corrupt("rpak patch: replacement data past the edit stream")
                     })?);
                 }
                 Source::File(mut at) => {
@@ -376,7 +370,7 @@ impl Resolved {
                             .iter()
                             .find(|l| (l.start..l.start + l.len).contains(&at))
                             .ok_or_else(|| {
-                                corrupt(
+                                Error::corrupt(
                                     "rpak patch: the script reads past the end of the pak files",
                                 )
                             })?;
@@ -500,7 +494,10 @@ impl Inner {
             _ => string_to_guid(stem),
         };
         if let Some(&index) = self.by_guid.get(&guid) {
-            if self.tables.assets[index].kind_string().eq_ignore_ascii_case(kind) {
+            if self.tables.assets[index]
+                .kind_string()
+                .eq_ignore_ascii_case(kind)
+            {
                 return Some((index, part));
             }
         }
@@ -524,7 +521,7 @@ impl Inner {
             &self.tables.starpaks
         };
         let path = list.get(index).ok_or_else(|| {
-            corrupt(format!(
+            Error::corrupt(format!(
                 "asset {:#018x}: starpak index {index} is past the pak's {} starpak(s)",
                 asset.guid,
                 list.len()
@@ -632,7 +629,7 @@ impl VolumeSource for RpakSource {
                 .await;
         }
         let header = self.0.tables.header_range(asset).ok_or_else(|| {
-            corrupt(format!(
+            Error::corrupt(format!(
                 "asset {:#018x}: header does not fit its page",
                 asset.guid
             ))
@@ -641,7 +638,7 @@ impl VolumeSource for RpakSource {
         self.0.tables.relocate_header(asset, &mut raw)?;
         raw.get(range.start as usize..range.end as usize)
             .map(Bytes::copy_from_slice)
-            .ok_or_else(|| corrupt("read past the end of an asset header"))
+            .ok_or_else(|| Error::corrupt("read past the end of an asset header"))
     }
 
     async fn list(&self, dir: &str) -> Result<Vec<VolumeEntry>> {
@@ -879,7 +876,7 @@ async fn open_body(
         header.decompressed_size
     };
     if file_len < needed {
-        return Err(corrupt(format!(
+        return Err(Error::corrupt(format!(
             "rpak: file has {file_len} bytes, its header says {needed}"
         )));
     }

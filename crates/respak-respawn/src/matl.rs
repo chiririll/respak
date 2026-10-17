@@ -37,12 +37,6 @@ use respak_core::{
 
 use crate::rpak::{RpakAsset, MEM};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// More slots than this cannot be a material.
 const MAX_SLOTS: u64 = 128;
 
@@ -87,7 +81,7 @@ struct Layout {
 fn le<const N: usize>(h: &[u8], at: usize) -> Result<[u8; N]> {
     h.get(at..at + N)
         .and_then(|b| b.try_into().ok())
-        .ok_or_else(|| corrupt("matl header is too short"))
+        .ok_or_else(|| Error::corrupt("matl header is too short"))
 }
 fn u16_at(h: &[u8], at: usize) -> Result<u16> {
     Ok(u16::from_le_bytes(le(h, at)?))
@@ -175,7 +169,7 @@ impl MatlHeader {
                         ((s - t) / 8) as u32
                     }
                     (None, _) | (_, None) => 0,
-                    _ => return Err(corrupt("matl texture array bounds are inconsistent")),
+                    _ => return Err(Error::corrupt("matl texture array bounds are inconsistent")),
                 }
             },
         })
@@ -284,7 +278,7 @@ impl ReadHandler for MatlRead {
         if let (Some(at), n) = (header.textures_at, u64::from(header.slots)) {
             if n > 0 {
                 if at.checked_add(n * 8).is_none_or(|end| end > mem_len) {
-                    return Err(corrupt(
+                    return Err(Error::corrupt(
                         "matl texture array runs past the end of the pak's pages",
                     ));
                 }

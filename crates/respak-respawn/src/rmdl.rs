@@ -45,17 +45,8 @@ use crate::matl_json::{hex, locate, pak_of, shader_slots};
 use crate::rpak::{RpakAsset, MEM};
 use crate::{oodle, rtech, snowflake};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion {
-        format: "rmdl".into(),
-        version: version.into(),
-    })
+    Error::unsupported("rmdl", version)
 }
 
 const ASSET_HEADER_LEN: usize = 96;
@@ -138,7 +129,7 @@ impl<'a> B<'a> {
         at.checked_add(len)
             .and_then(|end| self.0.get(at..end))
             .ok_or_else(|| {
-                corrupt(format!(
+                Error::corrupt(format!(
                     "rmdl: {len} bytes at {at:#x} are outside a block of {} bytes",
                     self.0.len()
                 ))
@@ -181,14 +172,13 @@ impl<'a> B<'a> {
     /// A NUL-terminated string that ends within `max` bytes.
     pub(crate) fn cstr(&self, at: usize, max: usize) -> Result<String> {
         let end = at.saturating_add(max).min(self.0.len());
-        let bytes = self
-            .0
-            .get(at..end)
-            .ok_or_else(|| corrupt(format!("rmdl: string at {at:#x} is outside its block")))?;
+        let bytes = self.0.get(at..end).ok_or_else(|| {
+            Error::corrupt(format!("rmdl: string at {at:#x} is outside its block"))
+        })?;
         let nul = bytes
             .iter()
             .position(|&b| b == 0)
-            .ok_or_else(|| corrupt(format!("rmdl: string at {at:#x} has no end")))?;
+            .ok_or_else(|| Error::corrupt(format!("rmdl: string at {at:#x} has no end")))?;
         Ok(String::from_utf8_lossy(&bytes[..nul]).into_owned())
     }
     /// `base + FIX_OFFSET(u16 at field)`, bounds are checked by the reader that uses it.
@@ -236,13 +226,13 @@ impl RmdlHeader {
         let version = variant(asset_version, created_time, source_filename_offset)?;
         let layout = StudioLayout::for_version(version)?;
         if header.len() != ASSET_HEADER_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "rmdl header is {} bytes, expected {ASSET_HEADER_LEN}",
                 header.len()
             )));
         }
         if cpu.len() != CPU_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "rmdl CPU data is {} bytes, expected {CPU_LEN}",
                 cpu.len()
             )));
@@ -252,12 +242,13 @@ impl RmdlHeader {
             let v = h.u64(at)?;
             Ok((v != u64::MAX && v != 0).then_some(v))
         };
-        let studio_offset = ptr(0x00)?.ok_or_else(|| corrupt("rmdl has no studio data pointer"))?;
+        let studio_offset =
+            ptr(0x00)?.ok_or_else(|| Error::corrupt("rmdl has no studio data pointer"))?;
         let studio_len = u64::from(
-            u32::try_from(c.i32(12)?).map_err(|_| corrupt("rmdl: negative studio size"))?,
+            u32::try_from(c.i32(12)?).map_err(|_| Error::corrupt("rmdl: negative studio size"))?,
         );
         if studio_len == 0 || studio_len > MAX_STUDIO_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "rmdl studio block of {studio_len} bytes is not usable"
             )));
         }
@@ -353,13 +344,15 @@ pub(crate) fn parse_bones(b: &B, major: u32, layout: StudioLayout) -> Result<Vec
     let shift = layout.shift();
     let bone_count = usize::from(b.u16(0x74)?);
     if bone_count > MAX_BONES {
-        return Err(corrupt(format!("rmdl: {bone_count} bones")));
+        return Err(Error::corrupt(format!("rmdl: {bone_count} bones")));
     }
     let (hdr_base, data_base) = (b.fixed(0, 0x76)?, b.fixed(0, 0x78)?);
     let linear = if major >= 19 {
         let lb = b.fixed(0, 0xCA + shift)?;
         if lb == 0 {
-            return Err(corrupt("rmdl: v19 model without a linear bone block"));
+            return Err(Error::corrupt(
+                "rmdl: v19 model without a linear bone block",
+            ));
         }
         Some(lb)
     } else {
@@ -396,7 +389,7 @@ pub(crate) fn parse_bones(b: &B, major: u32, layout: StudioLayout) -> Result<Vec
             -1 => None,
             p if p >= 0 && (p as usize) < i => Some(p as u32),
             p => {
-                return Err(corrupt(format!(
+                return Err(Error::corrupt(format!(
                     "rmdl: bone {i} ({bone_name}) has parent {p}"
                 )))
             }
@@ -450,9 +443,9 @@ impl Studio {
             let bp = bp_base + i * 16;
             let bp_name = b.cstr(b.fixed(bp, bp)?, 256)?;
             let model_count = usize::try_from(b.i32(bp + 8)?)
-                .map_err(|_| corrupt("rmdl: negative model count"))?;
+                .map_err(|_| Error::corrupt("rmdl: negative model count"))?;
             if model_count > MAX_ITEMS {
-                return Err(corrupt(format!(
+                return Err(Error::corrupt(format!(
                     "rmdl: body part {bp_name} has {model_count} models"
                 )));
             }
@@ -482,7 +475,7 @@ impl Studio {
         // LODs and groups.
         let lod_count = usize::from(b.u16(0xBA + shift)?);
         if lod_count > MAX_LODS {
-            return Err(corrupt(format!("rmdl: {lod_count} LODs")));
+            return Err(Error::corrupt(format!("rmdl: {lod_count} LODs")));
         }
         let lod_base = b.fixed(0xB8 + shift, 0xB8 + shift)?;
         let lod_switch = (0..lod_count)
@@ -554,7 +547,7 @@ impl Studio {
             })
         })?;
         let index = *row.get(usize::from(m.material)).ok_or_else(|| {
-            corrupt(format!(
+            Error::corrupt(format!(
                 "rmdl: material index {} outside the skin row",
                 m.material
             ))
@@ -563,7 +556,7 @@ impl Studio {
             .get(usize::from(index))
             .copied()
             .ok_or_else(|| {
-                corrupt(format!(
+                Error::corrupt(format!(
                     "rmdl: skin refers to material {index} of {}",
                     self.materials.len()
                 ))
@@ -681,7 +674,7 @@ impl DecodeCx<'_> {
         self.bone_map
             .get(i)
             .copied()
-            .ok_or_else(|| corrupt(format!("rmdl: vertex bone {i} is outside the bone map")))
+            .ok_or_else(|| Error::corrupt(format!("rmdl: vertex bone {i} is outside the bone map")))
     }
 }
 
@@ -693,7 +686,7 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
         m.verts,
         m.vert_count
             .checked_mul(m.stride)
-            .ok_or_else(|| corrupt("rmdl: vertex buffer size overflows"))?,
+            .ok_or_else(|| Error::corrupt("rmdl: vertex buffer size overflows"))?,
     )?;
     let extra = B(b.get(m.extra, m.extra_len)?);
     let v = B(verts);
@@ -761,7 +754,7 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
             } else {
                 let count = usize::from(idx[3]);
                 if count > 2 {
-                    return Err(corrupt(format!(
+                    return Err(Error::corrupt(format!(
                         "rmdl: vertex {i} has {} influences",
                         count + 1
                     )));
@@ -782,16 +775,16 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
         }
         let influences = flat.len() - start;
         if influences > usize::from(u8::MAX) {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "rmdl: vertex {i} has {influences} influences"
             )));
         }
         counts.push(influences as u8);
 
-        part.normals.push(
-            unpack_normal32(v.u32(at)?)
-                .ok_or_else(|| corrupt(format!("rmdl: vertex {i} has an invalid normal")))?,
-        );
+        part.normals
+            .push(unpack_normal32(v.u32(at)?).ok_or_else(|| {
+                Error::corrupt(format!("rmdl: vertex {i} has an invalid normal"))
+            })?);
         at += 4;
         if layout.color {
             part.colors.push(v.get(at, 4)?.try_into().expect("4 bytes"));
@@ -818,7 +811,7 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
                     (0, 0.0)
                 };
                 if usize::from(bone) >= d.bone_count.max(1) {
-                    return Err(corrupt(format!(
+                    return Err(Error::corrupt(format!(
                         "rmdl: vertex bone {bone} but the skeleton has {} bones",
                         d.bone_count
                     )));
@@ -831,7 +824,7 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
     }
 
     if !m.index_count.is_multiple_of(3) {
-        return Err(corrupt(format!(
+        return Err(Error::corrupt(format!(
             "rmdl: {} indices are not whole triangles",
             m.index_count
         )));
@@ -840,7 +833,7 @@ fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<
     for tri in raw.chunks_exact(6) {
         let t = [0, 2, 4].map(|o| u32::from(u16::from_le_bytes([tri[o], tri[o + 1]])));
         if t.iter().any(|&i| i as usize >= n) {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "rmdl: a triangle refers to vertex {} of {n}",
                 t.iter().max().expect("3 values")
             )));
@@ -935,7 +928,7 @@ impl RmdlAsset {
             other => return Err(unsupported(format!("vertex group compression {other}"))),
         };
         if out.len() as u64 != decoded_len && group.compression != 0 {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "rmdl: a vertex group decoded to {} bytes, expected {decoded_len}",
                 out.len()
             )));
@@ -1110,7 +1103,7 @@ impl Mesh for RmdlAsset {
         let mut parts = Vec::new();
         for sm in &studio_model.meshes {
             let Some(h) = headers.get(usize::from(sm.mesh_id)) else {
-                return Err(corrupt(format!(
+                return Err(Error::corrupt(format!(
                     "rmdl: mesh id {} but LOD {lod} has {} meshes",
                     sm.mesh_id,
                     headers.len()
@@ -1166,7 +1159,7 @@ impl RmdlAsset {
         };
         let asset = match locate(guid, "matl", origin, cx).await {
             Ok(a) => a,
-            Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
+            Err(e) if e.is_cancelled() => return Err(e),
             Err(e) => return Ok(missing(&e)),
         };
         let matl_value = match cx
@@ -1175,11 +1168,11 @@ impl RmdlAsset {
             .await
         {
             Ok(v) => v,
-            Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
+            Err(e) if e.is_cancelled() => return Err(e),
             Err(e) => return Ok(missing(&e)),
         };
         let Some(matl) = matl_value.downcast_ref::<MatlAsset>() else {
-            return Ok(missing(&corrupt("the material is not a matl")));
+            return Ok(missing(&Error::corrupt("the material is not a matl")));
         };
         let name = matl.name.as_deref().map_or_else(
             || hex(guid),
@@ -1190,7 +1183,7 @@ impl RmdlAsset {
         } else {
             match shader_slots(matl, origin, cx).await {
                 Ok(names) => names,
-                Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
+                Err(e) if e.is_cancelled() => return Err(e),
                 Err(e) => {
                     cx.warn(format!(
                         "material {name}: texture slots are not named ({e}); using slot_<n>"
@@ -1203,7 +1196,7 @@ impl RmdlAsset {
         for (slot, texture_guid) in matl.bound_textures() {
             let texture = match locate(texture_guid, "txtr", origin, cx).await {
                 Ok(t) => Some(t),
-                Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
+                Err(e) if e.is_cancelled() => return Err(e),
                 Err(e) => {
                     cx.warn(format!(
                         "material {name}: texture {} is not available ({e})",
@@ -1307,7 +1300,9 @@ pub(crate) async fn read_guids(asset: &RpakAsset, at: Option<u64>, count: u32) -
         return Ok(Vec::new());
     };
     if count as usize > MAX_GUIDS {
-        return Err(corrupt(format!("rmdl lists {count} animation assets")));
+        return Err(Error::corrupt(format!(
+            "rmdl lists {count} animation assets"
+        )));
     }
     let bytes = asset.read_mem(at, u64::from(count) * 8).await?;
     Ok(bytes
@@ -1333,12 +1328,12 @@ impl ReadHandler for RmdlRead {
         let header_bytes = asset.read_header().await?;
         let data_at = asset
             .data_mem_offset
-            .ok_or_else(|| corrupt("rmdl has no CPU data pointer"))?;
+            .ok_or_else(|| Error::corrupt("rmdl has no CPU data pointer"))?;
         let cpu = asset.read_mem(data_at, CPU_LEN as u64).await?;
         let studio_at = B(&header_bytes).u64(0)?;
         let studio_len = u64::from(B(&cpu).u32(12)?);
         if studio_len == 0 || studio_len > MAX_STUDIO_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "rmdl studio block of {studio_len} bytes is not usable"
             )));
         }

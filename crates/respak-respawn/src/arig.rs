@@ -29,17 +29,8 @@ use crate::matl_json::{hex, locate, pak_of};
 use crate::rmdl::{self, parse_bones, read_guids, StudioLayout, B};
 use crate::rpak::{RpakAsset, MEM};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion {
-        format: "arig".into(),
-        version: version.into(),
-    })
+    Error::unsupported("arig", version)
 }
 
 const HEADER_LEN: usize = 0x28;
@@ -98,7 +89,7 @@ impl ArigHeader {
             return Err(unsupported(asset_version.to_string()));
         }
         if header.len() != HEADER_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "arig header is {} bytes, expected {HEADER_LEN}",
                 header.len()
             )));
@@ -109,13 +100,15 @@ impl ArigHeader {
             Ok((v != u64::MAX && v != 0).then_some(v))
         };
         let count = if asset_version == 4 {
-            u32::try_from(h.i32(0x14)?).map_err(|_| corrupt("arig: negative sequence count"))?
+            u32::try_from(h.i32(0x14)?)
+                .map_err(|_| Error::corrupt("arig: negative sequence count"))?
         } else {
             u32::from(h.u16(0x12)?)
         };
         Ok(Self {
             version: Version::new(asset_version),
-            studio_offset: ptr(0x00)?.ok_or_else(|| corrupt("arig has no studio data pointer"))?,
+            studio_offset: ptr(0x00)?
+                .ok_or_else(|| Error::corrupt("arig has no studio data pointer"))?,
             name_offset: ptr(0x08)?,
             anim_seqs: (ptr(0x18)?, count),
         })
@@ -283,7 +276,7 @@ impl ReadHandler for ArigRead {
         let header = ArigHeader::parse(asset.entry.version, &asset.read_header().await?)?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
         if header.studio_offset >= mem_len {
-            return Err(corrupt(
+            return Err(Error::corrupt(
                 "arig: the studio data pointer is outside the pak's data",
             ));
         }
@@ -322,7 +315,7 @@ impl ReadHandler for ArigRead {
         let b = B(&studio);
         let local = b.u16(0x7A)?;
         if local != 0 {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "arig has {local} local sequences (a rig has none)"
             )));
         }

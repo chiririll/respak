@@ -23,12 +23,6 @@ use crate::rmdl::B;
 use crate::rpak::{RpakAsset, MEM};
 use crate::stlt::{FieldType, Layout, StltAsset};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// Bytes of a `SettingsMod_s`.
 const MOD_LEN: usize = 12;
 
@@ -296,7 +290,7 @@ fn decode(
     depth: usize,
 ) -> Result<Json> {
     if depth > DEPTH {
-        return Err(corrupt("stgs: arrays nest too deep"));
+        return Err(Error::corrupt("stgs: arrays nest too deep"));
     }
     let mut out = Map::new();
     for f in &layout.fields {
@@ -313,7 +307,7 @@ fn decode(
             }
             FieldType::Array | FieldType::DynamicArray => {
                 let sub = layout.subs.get(usize::from(f.sub)).ok_or_else(|| {
-                    corrupt(format!("stgs: field `{}` has no sub layout", f.name))
+                    Error::corrupt(format!("stgs: field `{}` has no sub layout", f.name))
                 })?;
                 let stride = sub.stride() as usize;
                 let (first, count) = if f.ty == FieldType::Array {
@@ -327,7 +321,7 @@ fn decode(
                     (values.u32(at + 4)? as usize, count)
                 };
                 if stride.saturating_mul(count) > values.0.len() {
-                    return Err(corrupt(format!(
+                    return Err(Error::corrupt(format!(
                         "stgs: array `{}` of {count} elements does not fit",
                         f.name
                     )));
@@ -364,14 +358,14 @@ impl Detect for StgsRead {
 /// The NUL-terminated string at `.mem` offset `at` (at most 4 KiB), lossy UTF-8.
 async fn string_at(asset: &RpakAsset, at: u64, mem_len: u64) -> Result<String> {
     if at >= mem_len {
-        return Err(corrupt("stgs: a string is outside the pak's data"));
+        return Err(Error::corrupt("stgs: a string is outside the pak's data"));
     }
     let end = (at + 4096).min(mem_len);
     let bytes = asset.read_mem(at, end - at).await?;
     let nul = bytes
         .iter()
         .position(|&b| b == 0)
-        .ok_or_else(|| corrupt("stgs: a string has no end"))?;
+        .ok_or_else(|| Error::corrupt("stgs: a string has no end"))?;
     Ok(String::from_utf8_lossy(&bytes[..nul]).into_owned())
 }
 
@@ -430,7 +424,9 @@ impl ReadHandler for StgsRead {
             Some(at) if header.values_size > 0 => {
                 let len = u64::from(header.values_size);
                 if len > LIMIT || at.saturating_add(len) > mem_len {
-                    return Err(corrupt("stgs: the value buffer is outside the pak's data"));
+                    return Err(Error::corrupt(
+                        "stgs: the value buffer is outside the pak's data",
+                    ));
                 }
                 asset.read_mem(at, len).await?
             }
@@ -440,7 +436,7 @@ impl ReadHandler for StgsRead {
         let count = |n: u32| -> Result<u64> {
             let n = u64::from(n);
             if n > LIMIT {
-                return Err(corrupt(format!("stgs: implausible entry count {n}")));
+                return Err(Error::corrupt(format!("stgs: implausible entry count {n}")));
             }
             Ok(n)
         };
@@ -449,7 +445,9 @@ impl ReadHandler for StgsRead {
         if let Some(at) = header.mod_names {
             let n = count(header.mod_name_count)?;
             if at.saturating_add(8 * n) > mem_len {
-                return Err(corrupt("stgs: the mod names are outside the pak's data"));
+                return Err(Error::corrupt(
+                    "stgs: the mod names are outside the pak's data",
+                ));
             }
             let table = asset.read_mem(at, 8 * n).await?;
             for slot in table.chunks_exact(8) {
@@ -467,7 +465,7 @@ impl ReadHandler for StgsRead {
             let n = count(header.mod_value_count)?;
             let bytes = MOD_LEN as u64 * n;
             if at.saturating_add(bytes) > mem_len {
-                return Err(corrupt("stgs: the mods are outside the pak's data"));
+                return Err(Error::corrupt("stgs: the mods are outside the pak's data"));
             }
             let table = asset.read_mem(at, bytes).await?;
             let b = B(&table);
@@ -496,7 +494,7 @@ impl ReadHandler for StgsRead {
         if let Some(stlt) = find_layout(header.layout, &source, cx).await? {
             let stlt = stlt
                 .downcast_ref::<StltAsset>()
-                .ok_or_else(|| corrupt("stgs: the layout is not a stlt"))?;
+                .ok_or_else(|| Error::corrupt("stgs: the layout is not a stlt"))?;
             layout_name = stlt.layout().name.clone();
             // First pass collects the pointers of the text values, the second uses their text.
             let view = B(&values);

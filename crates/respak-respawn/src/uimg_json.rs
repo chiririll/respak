@@ -177,7 +177,7 @@ impl ConvertHandler for UimgJsonEncode {
                 }
                 file
             }
-            Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
+            Err(e) if e.is_cancelled() => return Err(e),
             Err(e) => {
                 cx.warn(format!(
                     "uimg {label}: the atlas {} is skipped: {e}",
@@ -191,7 +191,7 @@ impl ConvertHandler for UimgJsonEncode {
         let pixels = if options.options().sprites {
             match uimg.atlas_rgba().await {
                 Ok(p) => Some(p),
-                Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
+                Err(e) if e.is_cancelled() => return Err(e),
                 Err(e) => {
                     cx.warn(format!("uimg {label}: the sprites are skipped: the atlas {} is not available ({e})", hex(h.atlas_guid)));
                     None
@@ -257,7 +257,7 @@ impl ConvertHandler for UimgJsonEncode {
                                     ));
                                 }
                             }
-                            Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => return Err(e),
+                            Err(e) if e.is_cancelled() => return Err(e),
                             Err(e) => cx.warn(format!(
                                 "uimg {label}: sprite {index} ({}) is skipped: {e}",
                                 s.path

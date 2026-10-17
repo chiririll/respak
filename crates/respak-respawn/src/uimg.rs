@@ -33,17 +33,8 @@ use respak_formats::decode_rgba8;
 use crate::matl_json::{locate, pak_of};
 use crate::rpak::{RpakAsset, MEM};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 fn unsupported(version: impl Into<String>) -> Error {
-    Error::new(ErrorKind::UnsupportedVersion {
-        format: "uimg".into(),
-        version: version.into(),
-    })
+    Error::unsupported("uimg", version)
 }
 
 const HEADER_LEN: usize = 0x40;
@@ -97,7 +88,7 @@ impl UimgHeader {
             return Err(unsupported(version.to_string()));
         }
         if h.len() < HEADER_LEN {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "uimg header is {} bytes, expected {HEADER_LEN}",
                 h.len()
             )));
@@ -123,7 +114,7 @@ impl UimgHeader {
             names: ptr(0x30).filter(|&v| v != 0),
         };
         if header.width == 0 || header.height == 0 {
-            return Err(corrupt("uimg has a zero dimension"));
+            return Err(Error::corrupt("uimg has a zero dimension"));
         }
         Ok(header)
     }
@@ -228,7 +219,7 @@ impl UimgAsset {
         let asset = locate(self.header.atlas_guid, "txtr", &self.origin, &self.cx).await?;
         let texture = self.cx.mediator.identify(asset, &self.cx).await?;
         let bitmap = texture.as_bitmap().ok_or_else(|| {
-            corrupt(format!(
+            Error::corrupt(format!(
                 "the atlas {:#018x} is not a texture",
                 self.header.atlas_guid
             ))
@@ -330,9 +321,9 @@ async fn mem(
     len: u64,
     mem_len: u64,
 ) -> Result<Bytes> {
-    let at = at.ok_or_else(|| corrupt(format!("uimg has no {what}")))?;
+    let at = at.ok_or_else(|| Error::corrupt(format!("uimg has no {what}")))?;
     if at.checked_add(len).is_none_or(|end| end > mem_len) {
-        return Err(corrupt(format!(
+        return Err(Error::corrupt(format!(
             "uimg {what} runs past the end of the pak's pages"
         )));
     }

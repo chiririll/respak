@@ -532,12 +532,9 @@ impl Cx {
             .acquire()
             .await
             .expect("semaphore is never closed");
-        tokio::task::spawn_blocking(f).await.map_err(|e| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: format!("blocking task failed: {e}"),
-            })
-        })
+        tokio::task::spawn_blocking(f)
+            .await
+            .map_err(|e| Error::msg(format!("blocking task failed: {e}")))
     }
 
     /// Runs an I/O-bound future, bounded by `io_limit`.

@@ -83,7 +83,7 @@ async fn try_pak(pak: &str, file: &str, cx: &Cx) -> Result<Option<Value>> {
         {
             Ok(None)
         }
-        Err(e) if matches!(e.kind(), ErrorKind::Cancelled) => Err(e),
+        Err(e) if e.is_cancelled() => Err(e),
         Err(e) => {
             cx.warn(format!("cannot look for {file} in {pak}: {e}"));
             Ok(None)

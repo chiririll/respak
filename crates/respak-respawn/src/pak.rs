@@ -50,12 +50,6 @@ const PAGE_LEN: u64 = 0xC;
 const PATCH_DATA_HDR_LEN: u64 = 8;
 const PATCH_FILE_HDR_LEN: u64 = 16;
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// A reader over a byte slice that fails with `Corrupt` instead of panicking.
 struct Cursor<'a> {
     buf: &'a [u8],
@@ -65,7 +59,7 @@ struct Cursor<'a> {
 impl<'a> Cursor<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.pos.checked_add(n).filter(|&e| e <= self.buf.len());
-        let end = end.ok_or_else(|| corrupt("rpak table runs past the end of the data"))?;
+        let end = end.ok_or_else(|| Error::corrupt("rpak table runs past the end of the data"))?;
         let s = &self.buf[self.pos..end];
         self.pos = end;
         Ok(s)
@@ -111,7 +105,7 @@ fn le_i64(b: &[u8], at: usize) -> i64 {
 
 /// A non-negative count from a signed header field.
 fn count(v: i64, what: &str) -> Result<u64> {
-    u64::try_from(v).map_err(|_| corrupt(format!("rpak header: negative {what}")))
+    u64::try_from(v).map_err(|_| Error::corrupt(format!("rpak header: negative {what}")))
 }
 
 /// The pak header, normalised across versions.
@@ -187,7 +181,7 @@ impl PakHeader {
         };
         let header_len = Self::len_for(version).ok_or_else(|| unsupported(version.to_string()))?;
         if data.len() < header_len {
-            return Err(corrupt("rpak file is shorter than its header"));
+            return Err(Error::corrupt("rpak file is shorter than its header"));
         }
         let flags = le_u16(data, 6);
         let c = |v: i32, w: &str| count(i64::from(v), w);
@@ -269,13 +263,13 @@ impl PakHeader {
             h.flags &= !(FLAG_RTECH | FLAG_OODLE);
         }
         if h.decompressed_size < h.header_len as u64 {
-            return Err(corrupt(
+            return Err(Error::corrupt(
                 "rpak: decompressed size is smaller than the header",
             ));
         }
         let tables = h.tables_len();
         if tables > h.body_len() {
-            return Err(corrupt("rpak: tables are larger than the file"));
+            return Err(Error::corrupt("rpak: tables are larger than the file"));
         }
         Ok(h)
     }
@@ -467,11 +461,11 @@ impl Tables {
     /// `header.tables_len()` bytes).
     pub fn parse(header: &PakHeader, body: &[u8]) -> Result<Self> {
         let len = usize::try_from(header.tables_len())
-            .map_err(|_| corrupt("rpak tables are too large"))?;
+            .map_err(|_| Error::corrupt("rpak tables are too large"))?;
         let mut r = Cursor {
             buf: body
                 .get(..len)
-                .ok_or_else(|| corrupt("rpak tables run past the data"))?,
+                .ok_or_else(|| Error::corrupt("rpak tables run past the data"))?,
             pos: 0,
         };
         let patch = if header.patch_count > 0 {
@@ -486,7 +480,7 @@ impl Tables {
                 .map(|_| Ok(u16::from_le_bytes(r.take(2)?.try_into().expect("2 bytes"))))
                 .collect::<Result<Vec<_>>>()?;
             if patch_pages > header.num_pages {
-                return Err(corrupt(
+                return Err(Error::corrupt(
                     "rpak: the patch block claims more patched pages than the pak has",
                 ));
             }
@@ -560,11 +554,11 @@ impl Tables {
             .tables_len()
             .saturating_add(patch.as_ref().map_or(0, |p| p.stream_size));
         if page_data_offset.saturating_add(stored) > header.body_len() {
-            return Err(corrupt("rpak pages run past the end of the data"));
+            return Err(Error::corrupt("rpak pages run past the end of the data"));
         }
         for a in &assets {
             if !a.head.is_null() && a.head.page as usize >= pages.len() {
-                return Err(corrupt(format!(
+                return Err(Error::corrupt(format!(
                     "asset {:#018x}: header page {} does not exist",
                     a.guid, a.head.page
                 )));
@@ -663,7 +657,7 @@ impl Tables {
                 u64::MAX
             } else {
                 self.mem_offset(target).ok_or_else(|| {
-                    corrupt(format!(
+                    Error::corrupt(format!(
                         "asset {:#018x}: pointer at +{at:#x} leads to page {} offset {}, which does not exist",
                         asset.guid, target.page, target.offset
                     ))

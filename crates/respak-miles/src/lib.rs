@@ -13,7 +13,7 @@ mod mstr;
 mod rada;
 
 use respak_core::capability::{Audio, Container, Metadata};
-use respak_core::{Error, ErrorKind, Plugin, Registry};
+use respak_core::{Plugin, Registry};
 
 pub use asrc::AsrcData;
 pub use bcf1::{Bcf1Frame, Bcf1Header};
@@ -46,11 +46,4 @@ impl Plugin for MilesPlugin {
             .provides::<dyn Audio>()
             .provides::<dyn Metadata>();
     }
-}
-
-/// A damaged file.
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
 }

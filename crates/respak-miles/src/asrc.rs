@@ -17,7 +17,6 @@ use respak_core::{Cx, Data, Error, ErrorKind, FormatId, Result, ValueKey, Versio
 use tokio::sync::OnceCell;
 
 use crate::bcf1::{self, Bcf1Header};
-use crate::corrupt;
 use crate::mbnk::{Bank, SourceEntry};
 use crate::mstr::{MstrHeader, MSTR_HEADER_LEN};
 use crate::rada::RadaHeader;
@@ -170,7 +169,7 @@ impl AsrcData {
             || mstr.language_idx != source.language_idx
             || mstr.patch_idx != i32::from(source.patch_idx)
         {
-            return Err(corrupt(format!(
+            return Err(Error::corrupt(format!(
                 "{stream_path} does not belong to this bank or source (build tag {:#x} vs {:#x}, language {} vs {}, patch {} vs {})",
                 mstr.build_tag,
                 bank.build_tag(),
@@ -193,7 +192,7 @@ impl AsrcData {
             Codec::Rada(h) => h.file_size,
         };
         let data_len = total.checked_sub(block.len() as u64).ok_or_else(|| {
-            corrupt(format!(
+            Error::corrupt(format!(
                 "{}: codec stream of {total} bytes is shorter than its header",
                 source.name
             ))
