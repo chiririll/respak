@@ -6,8 +6,9 @@
 
 ## R5.2 Codec splits (M each, only with the vector tests green)
 - ✅ done (`codec/snowflake/`, longest fn `run` 160 lines; real-block hashes in an ignored test, run with `SNOWFLAKE_VECTORS=<dir of NNNN.in>`): `snowflake.rs` (1334 lines): `run` (~440 lines), `literals` (~185), `c880` (~159); 95 `as` casts and a 0x25000 flat state block addressed by raw offsets. Move the SIMD constants to a table, name the state offsets (accessors or a `#[repr]` struct), split into `snowflake/{state,bits,model,literals,run}.rs`.
-- `rtech.rs`: `run` (156 lines), `decode` (131 lines). Optional.
-- Long read handlers: `stgs.rs`, `uiia.rs`, `rpak.rs` `oodle_read`. Check for a shared "parse asset then Value" skeleton across `stgs`, `uiia`, `uimg`, `stlt`, `matl`.
+- ✅ done: `rtech.rs` is now `codec/rtech/{mod,lut,decoder,tests}.rs`; `run` and `decode` are split into short helpers (the real-file `ui_rpak` tests skip when the local game file is missing).
+- ✅ done (`stgs` `read` → `read_values/read_mod_names/read_mods/decode_settings`, `uiia` `read` → `pick_quality`, `oodle_read` → `scan_range/decode_segments/assemble`). Also split the read handlers (plus tests) of `uiia`, `stgs`, `uimg`, `stlt`, `dtbl`, `txtr` into `read.rs`/`tests.rs`, `uiia/pixels.rs`, `pak/tables.rs`, `arig/owners.rs`, `anim_codec/tests.rs`.
+- Skeleton check result (not done): 9 handlers (`stgs uiia uimg stlt dtbl txtr arig matl asqd`) repeat the same `downcast_ref::<RpakAsset>() else "X must be read from an rpak.asset"` block, and 8 `Detect` impls repeat `kind == *b"xxxx"` -> `score: 10`. A `rpak::asset_of(&Value, kind)` helper and a `detect_kind(kind)` helper would remove both.
 
 ## R5.3 Core public API (M, breaking is OK)
 Decided: breaking the `respak-core` public API is acceptable. Update `respak-respawn`, `-formats`, `-miles`, `-nihav`, `-steam`, `-cli` in the same step.

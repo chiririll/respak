@@ -23,16 +23,7 @@ pub(super) struct OodleProgress {
 impl Body {
     /// The decoded bytes of an Oodle body in `range` (inside the body).
     pub(super) async fn oodle_read(&self, range: Range<u64>) -> Result<Bytes> {
-        let Self::Oodle {
-            op,
-            path,
-            start,
-            len,
-            stream_len,
-            state,
-            cancel,
-        } = self
-        else {
+        let Self::Oodle { len, state, .. } = self else {
             unreachable!("only Oodle bodies are read this way")
         };
         if range.start > range.end || range.end > *len {
@@ -47,10 +38,34 @@ impl Body {
         }
         let mut progress = state.lock().await;
         let p = &mut *progress;
-        // Walk the stream until the last segment needed is known, and where it ends.
+        let (first, last) = self.scan_range(p, from, to, total).await?;
+        self.decode_segments(p, first, last, total).await?;
+        Ok(assemble(p, first, last, from, to))
+    }
+
+    /// Walks the stream until the last segment needed for `from..to` is known and where it ends.
+    /// Returns the first and last segment index.
+    async fn scan_range(
+        &self,
+        p: &mut OodleProgress,
+        from: usize,
+        to: usize,
+        total: usize,
+    ) -> Result<(usize, usize)> {
+        let Self::Oodle {
+            op,
+            path,
+            start,
+            stream_len,
+            cancel,
+            ..
+        } = self
+        else {
+            unreachable!("only Oodle bodies are read this way")
+        };
         let segment_of =
             |p: &OodleProgress, at: usize| p.scan.segments.iter().rposition(|s| s.output <= at);
-        let (first, last) = loop {
+        loop {
             check(cancel)?;
             if p.scan.scanned() >= to {
                 let last = segment_of(p, to - 1)
@@ -58,7 +73,7 @@ impl Body {
                 if p.scan.scanned() >= total || p.scan.segments.len() > last + 1 {
                     let first = segment_of(p, from)
                         .ok_or_else(|| Error::corrupt("rpak: no Oodle segment"))?;
-                    break (first, last);
+                    return Ok((first, last));
                 }
             }
             // One block further once the range is covered, else up to its end.
@@ -88,6 +103,19 @@ impl Body {
                 }
                 Err(e) => return Err(Error::custom("oodle", e)),
             }
+        }
+    }
+
+    /// Decodes the segments `first..=last` that are not decoded yet.
+    async fn decode_segments(
+        &self,
+        p: &mut OodleProgress,
+        first: usize,
+        last: usize,
+        total: usize,
+    ) -> Result<()> {
+        let Self::Oodle { cancel, .. } = self else {
+            unreachable!("only Oodle bodies are read this way")
         };
         for k in first..=last {
             if p.segments.contains_key(&k) {
@@ -109,17 +137,22 @@ impl Body {
             .map_err(|e| Error::custom("oodle", e))?;
             p.segments.insert(k, Bytes::from(decoded));
         }
-        let at = |k: usize| p.scan.segments[k].output;
-        if first == last {
-            let base = at(first);
-            return Ok(p.segments[&first].slice(from - base..to - base));
-        }
-        let mut out = Vec::with_capacity(to - from);
-        for k in first..=last {
-            let seg = &p.segments[&k];
-            let base = at(k);
-            out.extend_from_slice(&seg[from.max(base) - base..(to - base).min(seg.len())]);
-        }
-        Ok(Bytes::from(out))
+        Ok(())
     }
+}
+
+/// The bytes `from..to` out of the decoded segments `first..=last`.
+fn assemble(p: &OodleProgress, first: usize, last: usize, from: usize, to: usize) -> Bytes {
+    let at = |k: usize| p.scan.segments[k].output;
+    if first == last {
+        let base = at(first);
+        return p.segments[&first].slice(from - base..to - base);
+    }
+    let mut out = Vec::with_capacity(to - from);
+    for k in first..=last {
+        let seg = &p.segments[&k];
+        let base = at(k);
+        out.extend_from_slice(&seg[from.max(base) - base..(to - base).min(seg.len())]);
+    }
+    Bytes::from(out)
 }
