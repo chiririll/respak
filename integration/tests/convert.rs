@@ -491,21 +491,32 @@ async fn events_are_printed_to_their_own_stream() {
         r#"{"type":"dds"}"#,
     ])
     .unwrap();
-    let (mut out, mut err, mut events) = (Vec::new(), Vec::new(), Vec::new());
+    #[derive(Clone, Default)]
+    struct Shared(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Shared {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let (mut out, mut err, events) = (Vec::new(), Vec::new(), Shared::default());
     let code = respak_cli::run_with_events(
         cli,
         &env.engine,
         &CancellationToken::new(),
         &mut out,
         &mut err,
-        &mut events,
+        events.clone(),
     )
     .await
     .unwrap();
 
     assert_eq!(code, ExitCode::SUCCESS);
     assert!(err.is_empty());
-    let lines = String::from_utf8(events).unwrap();
+    let lines = String::from_utf8(events.0.lock().unwrap().clone()).unwrap();
     for expected in ["wrote a.dds", "wrote b.dds", "[2/2] convert"] {
         assert!(
             lines.lines().any(|l| l == expected),

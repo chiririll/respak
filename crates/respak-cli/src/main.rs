@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<ExitCode> {
         &cancel,
         &mut report,
         &mut std::io::stderr(),
-        &mut std::io::stderr(),
+        std::io::stderr(),
     )
     .await?;
     report.flush()?;

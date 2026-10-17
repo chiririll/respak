@@ -8,11 +8,14 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand};
-use respak_core::broadcast::error::{RecvError, TryRecvError};
 #[cfg(feature = "steam")]
+use respak_core::broadcast::error::RecvError;
+use respak_core::broadcast::error::TryRecvError;
 use respak_core::broadcast::Receiver;
 use respak_core::{CancellationToken, Engine, Event};
 
@@ -283,36 +286,48 @@ fn print_skipped(events: &mut impl Write, missed: u64) -> std::io::Result<()> {
     writeln!(events, "({missed} events skipped)")
 }
 
+/// Prints every event waiting in `rx`; stops at the first write error.
+fn drain_events(rx: &mut Receiver<Event>, events: &mut impl Write) -> std::io::Result<()> {
+    loop {
+        match rx.try_recv() {
+            Ok(event) => print_event(events, &event)?,
+            Err(TryRecvError::Lagged(missed)) => print_skipped(events, missed)?,
+            Err(_) => return Ok(()),
+        }
+    }
+}
+
 /// [`run`], printing the engine's events to `events` as they happen.
+///
+/// The events are printed from a thread of their own: a command that works on blocked threads
+/// (as the engine's parallel reads do) never lets this task poll a receiver until it is done.
 pub async fn run_with_events(
     cli: Cli,
     engine: &Engine,
     cancel: &CancellationToken,
     out: &mut impl Write,
     err: &mut impl Write,
-    events: &mut impl Write,
+    mut events: impl Write + Send + 'static,
 ) -> anyhow::Result<ExitCode> {
+    const POLL: std::time::Duration = std::time::Duration::from_millis(50);
     let mut rx = engine.events();
-    let command = run(cli, engine, cancel, out, err);
-    tokio::pin!(command);
-    let result = loop {
-        tokio::select! {
-            result = &mut command => break result,
-            event = rx.recv() => match event {
-                Ok(event) => print_event(events, &event)?,
-                Err(RecvError::Lagged(missed)) => print_skipped(events, missed)?,
-                Err(RecvError::Closed) => {}
-            },
+    let finished = Arc::new(AtomicBool::new(false));
+    let printer = std::thread::spawn({
+        let finished = Arc::clone(&finished);
+        move || {
+            while !finished.load(Ordering::Acquire) {
+                drain_events(&mut rx, &mut events)?;
+                std::thread::sleep(POLL);
+            }
+            // Whatever was published after the last poll.
+            drain_events(&mut rx, &mut events)
         }
-    };
-    // Whatever was published after the last poll.
-    loop {
-        match rx.try_recv() {
-            Ok(event) => print_event(events, &event)?,
-            Err(TryRecvError::Lagged(missed)) => print_skipped(events, missed)?,
-            Err(_) => break,
-        }
-    }
+    });
+    let result = run(cli, engine, cancel, out, err).await;
+    finished.store(true, Ordering::Release);
+    printer
+        .join()
+        .unwrap_or_else(|p| std::panic::resume_unwind(p))?;
     result
 }
 
