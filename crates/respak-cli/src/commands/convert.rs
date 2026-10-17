@@ -8,7 +8,7 @@ use respak_core::{
     CancellationToken, ConvertRequest, Engine, Error, ErrorKind, OutputRequest, TargetSpec,
 };
 
-use super::output::{file_target, report, skip_assets};
+use super::output::report;
 
 /// Arguments of `convert`.
 #[derive(Debug, Args)]
@@ -42,25 +42,19 @@ pub(crate) async fn run(
         from: args.path.clone().into(),
         to,
         path: args.out_path,
+        skip_unsupported: false,
     }];
     if args.copy {
+        // An asset inside a pak has no bytes of its own to copy: skip it, not fail.
         outputs.push(OutputRequest {
             from: args.path.into(),
-            to: file_target(),
+            to: TargetSpec::file(),
             path: None,
+            skip_unsupported: true,
         });
     }
-    let mut done = engine
-        .convert(
-            &ConvertRequest {
-                version: 1,
-                outputs,
-            },
-            cancel,
-        )
+    let done = engine
+        .convert(&ConvertRequest::new(outputs), cancel)
         .await?;
-    if args.copy {
-        skip_assets(&mut done);
-    }
     report(done, out, err)
 }

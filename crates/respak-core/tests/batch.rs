@@ -261,3 +261,19 @@ async fn engine_open_takes_a_path_or_a_glob() {
         ErrorKind::NotFound { .. }
     ));
 }
+
+#[tokio::test]
+async fn skip_unsupported_drops_only_the_no_path_entries() {
+    let env = env().await;
+    let r = run(
+        &env,
+        r#"{"version":1,"outputs":[
+            {"from":{"path":"loose.dat","format":"nope"},"to":{"type":"beta"},"skip_unsupported":true},
+            {"from":{"path":"loose.dat","format":"nope"},"to":{"type":"beta"}},
+            {"from":"zzz/*.aa","to":{"type":"beta"},"skip_unsupported":true}
+        ]}"#,
+    )
+    .await;
+    let kinds: Vec<_> = r.iter().map(|(_, res)| res.clone().err()).collect();
+    assert_eq!(kinds, [Some("NoPath"), Some("NoMatch")], "{r:?}");
+}

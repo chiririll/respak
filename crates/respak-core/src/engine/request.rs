@@ -24,6 +24,21 @@ pub struct OutputRequest {
     /// container with the target's extension.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Leave a source out of the report when there is no conversion path to the target (`NoPath`)
+    /// instead of reporting the failure. For copying a glob that also reaches assets inside
+    /// containers, which have no bytes of their own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skip_unsupported: bool,
+}
+
+impl ConvertRequest {
+    /// A request for `outputs`, at the current schema version.
+    pub fn new(outputs: Vec<OutputRequest>) -> Self {
+        Self {
+            version: 1,
+            outputs,
+        }
+    }
 }
 
 /// `from`: one source or several.
@@ -81,6 +96,17 @@ impl FromSpec {
             })
             .collect::<Vec<_>>()
             .join(", ")
+    }
+}
+
+impl TargetSpec {
+    /// `{"type":"file"}`: the source unchanged.
+    pub fn file() -> Self {
+        Self {
+            format: FormatId::from_static("file"),
+            via: Vec::new(),
+            options: Default::default(),
+        }
     }
 }
 

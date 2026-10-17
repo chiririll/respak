@@ -1,5 +1,5 @@
 # R2 · Core restructuring
-**Status:** in-progress · **Risk:** low–medium · **Depends on:** R1
+**Status:** done · **Risk:** low–medium · **Depends on:** R1
 
 ## R2.1 Split `mediator.rs` (M) — done
 `mediator.rs` (649 lines) holds the detect/identify/convert pipeline, `Cx` (limits, cancel, cache, link state), the output-writing path (`claim`/`write`/`write_blob`/`copy_blob`) and plan/target passthroughs. `glob.rs` (`Mediator::expand`) and `resolve.rs` (`open`/`mount`/`resolve`) add more `impl Mediator`.
@@ -19,5 +19,5 @@ Check first that `tests/batch.rs` and `tests/containers.rs` cover ordering and c
 ## R2.4 Split request and report types (S) — done
 `engine/request.rs` mixes request DTOs with report DTOs (`ConvertReport`, `OutputReport`, `LinkedValue`, `OutputResult`). Split into `request.rs` and `report.rs`.
 
-## R2.5 Request constructors (S)
+## R2.5 Request constructors (S) — done
 Add `ConvertRequest::new(outputs)` (removes the hand-set `version: 1` in `convert.rs` and `copy.rs`) and `TargetSpec::file()`. Add a core option on `OutputRequest` (e.g. `skip_unsupported`) so the CLI stops matching `ErrorKind::NoPath { to == "file" }` strings in `output::skip_assets`.

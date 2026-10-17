@@ -81,6 +81,8 @@ impl Engine {
                                 .await
                         }
                     };
+                    let skip = job.out.skip_unsupported
+                        && matches!(&result, Err(e) if matches!(e.kind(), ErrorKind::NoPath { .. }));
                     let result = match result {
                         Ok(files) => OutputResult::Ok {
                             files,
@@ -93,13 +95,17 @@ impl Engine {
                         done: done.fetch_add(1, Ordering::SeqCst) + 1,
                         total,
                     });
-                    OutputReport {
-                        from: job.from,
-                        result,
-                    }
+                    (
+                        skip,
+                        OutputReport {
+                            from: job.from,
+                            result,
+                        },
+                    )
                 }
             })
             .buffered(self.max_concurrency)
+            .filter_map(|(skip, report)| futures::future::ready((!skip).then_some(report)))
             .collect()
             .await;
         Ok(ConvertReport { outputs })
