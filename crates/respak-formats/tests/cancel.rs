@@ -8,8 +8,8 @@ use bytes::Bytes;
 use opendal::{services::Memory, Operator};
 use respak_core::capability::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
 use respak_core::{
-    CancellationToken, Cx, Data, ErrorKind, Event, FormatId, Plugin, Registry, Target,
-    Value, ValueKey,
+    CancellationToken, Cx, Data, ErrorKind, Event, FormatId, Plugin, Registry, Target, Value,
+    ValueKey,
 };
 use respak_formats::FormatsPlugin;
 

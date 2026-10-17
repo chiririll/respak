@@ -114,10 +114,7 @@ pub(super) async fn build_index(origin: &str, cx: &Cx) -> Result<Arc<OwnerIndex>
 
 /// Reads an `arig` / `mdl_` asset (`kind` `arig` or `rmdl`) as a value with a skeleton.
 pub(super) async fn as_rig(asset: Value, kind: &'static str, cx: &Cx) -> Result<Value> {
-    let rig = cx
-        .mediator
-        .read_as(asset, &FormatId::new(kind), cx)
-        .await?;
+    let rig = cx.mediator.read_as(asset, &FormatId::new(kind), cx).await?;
     if rig.as_skeleton().is_none() {
         return Err(Error::new(ErrorKind::Custom {
             source: None,

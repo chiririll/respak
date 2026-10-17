@@ -1,13 +1,12 @@
 //! Batch requests: globs, lists, `{path, format}`, parallel outputs, composite outputs and the
 //! written-paths map.
 
-mod common;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common::*;
+use respak_core::testing::*;
 use respak_core::value::{BlobData, BundleData};
 use respak_core::{
     ConvertHandler, Cx, ErrorKind, FormatId, OutputResult, Registry, Result, Target, Value,

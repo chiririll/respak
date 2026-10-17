@@ -20,7 +20,8 @@ Decided: breaking the `respak-core` public API is acceptable. Update `respak-res
 ## R5.4 Test layout (M, after R5.3)
 - Move the `tests/common/mod.rs` fixtures (204 lines, `allow(dead_code)`) into a `respak-core` testing module; reuse them in `cache.rs` (`Versioned`) and `linking.rs` (`SlowPlugin`), and in downstream crates.
 - Split the biggest test files by concern: `respak-core/tests/{containers,graph,events,engine}.rs`, `respak-respawn/tests/aseq.rs` (1386 lines) and `rpak.rs` (655). Keep pure planning tests as unit tests next to `graph.rs`; dedupe against `src/graph.rs:314`.
-- Look for repeated fixture builders in `formats/tests/*` and add `tests/common/mod.rs` if so.
+- ✅ done: fixtures live in `respak_core::testing` (`tests/common` removed; `Versioned`, `SlowPlugin` reused); `respawn/tests/aseq` and `rpak` are now directories (`main.rs` + concern modules). Core test files were already split; the `graph.rs` unit test is unique, no dedupe needed.
+- ✅ done: `formats/tests/common/mod.rs` holds `env()` and `decode_png` (was duplicated in 4 files).
 
 
 # User questions

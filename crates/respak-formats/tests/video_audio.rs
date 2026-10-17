@@ -1,5 +1,8 @@
 //! `wav` and `png.frames`, written from stub `Audio` and `Video` values.
 
+mod common;
+
+use common::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -12,8 +15,8 @@ use respak_core::capability::{
 };
 use respak_core::value::BundleData;
 use respak_core::{
-    CancellationToken, Cx, Data, Error, ErrorKind, Event, FormatId, Plugin, Registry,
-    Target, Value, ValueKey,
+    CancellationToken, Cx, Data, Error, ErrorKind, Event, FormatId, Plugin, Registry, Target,
+    Value, ValueKey,
 };
 use respak_formats::FormatsPlugin;
 
@@ -389,16 +392,6 @@ async fn a_triggered_token_stops_the_wav_between_chunks() {
 }
 
 // ---------------------------------------------------------------- png.frames
-
-fn decode_png(bytes: &[u8]) -> (u32, u32, Vec<u8>) {
-    let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
-        .read_info()
-        .unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    buf.truncate(info.buffer_size());
-    (info.width, info.height, buf)
-}
 
 fn frames_target() -> Target {
     target("png.frames", serde_json::json!({}))

@@ -1,26 +1,16 @@
 //! Block-compressed DDS files to PNG, and the `png` target options.
 
+mod common;
+
+use common::*;
 use ddsfile::{
     AlphaMode, D3D10ResourceDimension, D3DFormat, Dds, DxgiFormat, NewD3dParams, NewDxgiParams,
 };
-use opendal::{services::Memory, Operator};
+use opendal::Operator;
 use respak_core::{ConvertRequest, Engine, ErrorKind, OutputResult};
-use respak_formats::FormatsPlugin;
 
 const RED_BC1: [u8; 8] = [0x00, 0xF8, 0, 0, 0, 0, 0, 0];
 const BLUE_BC1: [u8; 8] = [0x1F, 0x00, 0, 0, 0, 0, 0, 0];
-
-fn env() -> (Engine, Operator, Operator) {
-    let input = Operator::new(Memory::default()).unwrap();
-    let output = Operator::new(Memory::default()).unwrap();
-    let engine = Engine::builder()
-        .input(input.clone())
-        .output(output.clone())
-        .plugin(FormatsPlugin)
-        .build()
-        .unwrap();
-    (engine, input, output)
-}
 
 fn dx10(format: DxgiFormat, w: u32, h: u32, mips: u32, data: Vec<u8>) -> Vec<u8> {
     let mut d = Dds::new_dxgi(NewDxgiParams {
@@ -41,16 +31,6 @@ fn dx10(format: DxgiFormat, w: u32, h: u32, mips: u32, data: Vec<u8>) -> Vec<u8>
     let mut out = Vec::new();
     d.write(&mut out).unwrap();
     out
-}
-
-fn decode(bytes: &[u8]) -> (u32, u32, Vec<u8>) {
-    let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
-        .read_info()
-        .unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    buf.truncate(info.buffer_size());
-    (info.width, info.height, buf)
 }
 
 async fn to_png(
@@ -101,7 +81,7 @@ async fn a_legacy_dxt1_file_becomes_a_png() {
     d.write(&mut bytes).unwrap();
     env.1.write("red.dds", bytes).await.unwrap();
 
-    let (w, h, px) = decode(
+    let (w, h, px) = decode_png(
         &to_png(&env, "red.dds", serde_json::json!({ "type": "png" }))
             .await
             .unwrap(),
@@ -138,7 +118,7 @@ async fn the_mips_option_picks_a_level() {
             [0, 0, 255, 255],
         ),
     ] {
-        let (w, h, px) = decode(&to_png(&env, "t.dds", to.clone()).await.unwrap());
+        let (w, h, px) = decode_png(&to_png(&env, "t.dds", to.clone()).await.unwrap());
         assert_eq!((w, h), (size, size), "{to}");
         assert!(px.chunks_exact(4).all(|p| p == colour), "{to}");
     }
@@ -209,7 +189,7 @@ async fn every_block_format_decodes_through_a_dds_file() {
             )
             .await
             .unwrap();
-        let (w, h, px) = decode(
+        let (w, h, px) = decode_png(
             &to_png(
                 &env,
                 &format!("{name}.dds"),
@@ -254,8 +234,8 @@ async fn mips_all_writes_a_folder_with_one_png_per_mip() {
         panic!("{:?}", report.outputs[0].result)
     };
     assert_eq!(files, &["t/mip0.png", "t/mip1.png"]);
-    let (w, h, px) = decode(&env.2.read("t/mip0.png").await.unwrap().to_vec());
+    let (w, h, px) = decode_png(&env.2.read("t/mip0.png").await.unwrap().to_vec());
     assert_eq!((w, h, &px[..4]), (8, 8, &[255, 0, 0, 255][..]));
-    let (w, h, px) = decode(&env.2.read("t/mip1.png").await.unwrap().to_vec());
+    let (w, h, px) = decode_png(&env.2.read("t/mip1.png").await.unwrap().to_vec());
     assert_eq!((w, h, &px[..4]), (4, 4, &[0, 0, 255, 255][..]));
 }

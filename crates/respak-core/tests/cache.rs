@@ -1,8 +1,7 @@
 //! The plugin cache (slice 13): namespaced by plugin id and `cache_version`.
 
-mod common;
 
-use common::*;
+use respak_core::testing::*;
 use respak_core::{Cx, Event, Plugin, Registry};
 
 struct Versioned(&'static str, u32);
@@ -22,7 +21,7 @@ fn cx_with_cache(plugins: &[&dyn Plugin], cache: Option<opendal::Operator>) -> C
     for p in plugins {
         r.add(*p);
     }
-    let builder = respak_core::testing::CxBuilder::new(r, mem(), mem());
+    let builder = CxBuilder::new(r, mem(), mem());
     match cache {
         Some(op) => builder.cache(op),
         None => builder,

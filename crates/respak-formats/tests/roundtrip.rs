@@ -1,9 +1,11 @@
 //! PNG <-> DDS through the whole engine, on synthetic files in memory.
 
+mod common;
+
+use common::*;
 use ddsfile::{D3DFormat, Dds, NewD3dParams};
-use opendal::{services::Memory, Operator};
+use opendal::Operator;
 use respak_core::{ConvertRequest, Engine, ErrorKind, OutputResult};
-use respak_formats::FormatsPlugin;
 
 struct Env {
     engine: Engine,
@@ -12,14 +14,7 @@ struct Env {
 }
 
 fn env() -> Env {
-    let input = Operator::new(Memory::default()).unwrap();
-    let output = Operator::new(Memory::default()).unwrap();
-    let engine = Engine::builder()
-        .input(input.clone())
-        .output(output.clone())
-        .plugin(FormatsPlugin)
-        .build()
-        .unwrap();
+    let (engine, input, output) = common::env();
     Env {
         engine,
         input,
@@ -87,16 +82,6 @@ fn encode_png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
     enc.set_depth(png::BitDepth::Eight);
     enc.write_header().unwrap().write_image_data(rgba).unwrap();
     out
-}
-
-fn decode_png(bytes: &[u8]) -> (u32, u32, Vec<u8>) {
-    let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
-        .read_info()
-        .unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    buf.truncate(info.buffer_size());
-    (info.width, info.height, buf)
 }
 
 fn dds(format: D3DFormat, w: u32, h: u32, data: Vec<u8>) -> Vec<u8> {

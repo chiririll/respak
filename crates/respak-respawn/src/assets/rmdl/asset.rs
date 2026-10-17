@@ -340,11 +340,7 @@ impl RmdlAsset {
             Err(e) if e.is_cancelled() => return Err(e),
             Err(e) => return Ok(missing(&e)),
         };
-        let matl_value = match cx
-            .mediator
-            .read_as(asset, &FormatId::new("matl"), cx)
-            .await
-        {
+        let matl_value = match cx.mediator.read_as(asset, &FormatId::new("matl"), cx).await {
             Ok(v) => v,
             Err(e) if e.is_cancelled() => return Err(e),
             Err(e) => return Ok(missing(&e)),

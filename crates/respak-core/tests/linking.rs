@@ -1,6 +1,5 @@
 //! Dedup and cycle-guard middleware (slice 13).
 
-mod common;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -8,7 +7,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common::*;
+use respak_core::testing::*;
 use respak_core::value::BlobData;
 use respak_core::{
     ConvertHandler, Cx, ErrorKind, FormatId, Registry, Result, Target, Value, ValueKey,
@@ -57,19 +56,10 @@ fn setup(
 ) -> (respak_core::Mediator, Cx, Arc<AtomicUsize>) {
     let runs = Arc::new(AtomicUsize::new(0));
     let mut r = Registry::new();
-    r.add(&TestPlugin {
-        id: "t",
-        register: |_| {},
-    });
-    let handler = Slow {
-        runs: runs.clone(),
+    r.add(&SlowPlugin {
         links,
-    };
-    r.format("src")
-        .from("file", MagicRead::new("src", b"SSSS", 10))
-        .extensions(["ss"])
-        .to("dst", handler);
-    r.format("dst");
+        runs: runs.clone(),
+    });
     r.check().unwrap();
     let (mediator, cx) = cx_for(r);
     (mediator, cx, runs)
@@ -161,6 +151,7 @@ async fn concurrent_chains_that_wait_on_each_other_fail_instead_of_hanging() {
 }
 
 struct SlowPlugin {
+    runs: Arc<AtomicUsize>,
     links: Vec<(&'static str, &'static str)>,
 }
 
@@ -170,7 +161,7 @@ impl respak_core::Plugin for SlowPlugin {
     }
     fn register(&self, r: &mut Registry) {
         let handler = Slow {
-            runs: Arc::default(),
+            runs: self.runs.clone(),
             links: self.links.clone(),
         };
         r.format("src")
@@ -185,6 +176,7 @@ impl respak_core::Plugin for SlowPlugin {
 async fn the_report_lists_the_values_a_converter_asked_for() {
     let (input, output) = (mem(), mem());
     let plugin = SlowPlugin {
+        runs: Arc::default(),
         links: vec![("a.ss", "b.ss")],
     };
     let engine = respak_core::Engine::builder()

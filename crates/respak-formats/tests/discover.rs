@@ -1,21 +1,10 @@
 //! `discover` and `formats` on synthetic PNG and DDS files.
 
-use ddsfile::{D3DFormat, Dds, NewD3dParams};
-use opendal::{services::Memory, Operator};
-use respak_core::{ConvertRequest, DiscoverOptions, Engine, OutputResult};
-use respak_formats::FormatsPlugin;
+mod common;
 
-fn env() -> (Engine, Operator, Operator) {
-    let input = Operator::new(Memory::default()).unwrap();
-    let output = Operator::new(Memory::default()).unwrap();
-    let engine = Engine::builder()
-        .input(input.clone())
-        .output(output.clone())
-        .plugin(FormatsPlugin)
-        .build()
-        .unwrap();
-    (engine, input, output)
-}
+use common::*;
+use ddsfile::{D3DFormat, Dds, NewD3dParams};
+use respak_core::{ConvertRequest, DiscoverOptions, OutputResult};
 
 fn png() -> Vec<u8> {
     let mut out = Vec::new();

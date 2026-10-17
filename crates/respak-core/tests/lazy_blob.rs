@@ -1,12 +1,11 @@
 //! `LazyBlob`: computed on demand, computed ranges kept, streamed to the output.
 
-mod common;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use common::cx_for;
+use respak_core::testing::cx_for;
 use futures::stream;
 use respak_core::capability::{read_all, Blob};
 use respak_core::value::{LazyBlob, LazySource};

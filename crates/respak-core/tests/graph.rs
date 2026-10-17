@@ -1,12 +1,11 @@
 //! Detection helpers, path planning, `formats`, `discover` and multi-hop conversion.
 
-mod common;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common::*;
+use respak_core::testing::*;
 use respak_core::capability::{Bitmap, Blob};
 use respak_core::value::{BlobData, FileData};
 use respak_core::{
