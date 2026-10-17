@@ -568,8 +568,8 @@ async fn the_cli_binds_a_sequence_to_an_explicit_rig() {
         all.extend(args);
         let cli = Cli::try_parse_from(all).unwrap();
         let plugin = RespawnPlugin::new()
-            .rig(cli.rig.clone())
-            .studio(cli.studio.clone());
+            .rig(cli.rig.clone().unwrap_or_else(|| "auto".into()))
+            .studio(cli.studio.clone().unwrap_or_else(|| "auto".into()));
         let engine = Engine::builder()
             .input(env.input.clone())
             .output(env.output.clone())

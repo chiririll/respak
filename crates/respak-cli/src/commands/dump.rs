@@ -14,6 +14,7 @@ const CHUNK: u64 = 1 << 20;
 
 /// Arguments of `dump`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct DumpArgs {
     /// Asset path or glob inside a pak, relative to `--root`, e.g. `paks/Win64/common.rpak/0x1234.txtr`.
     path: String,

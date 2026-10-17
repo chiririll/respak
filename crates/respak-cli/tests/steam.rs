@@ -58,7 +58,7 @@ fn steam_input_flags() {
     ])
     .unwrap();
     assert_eq!(cli.steam, Some(1172470));
-    assert_eq!(cli.branch, "beta");
+    assert_eq!(cli.branch.as_deref(), Some("beta"));
     assert_eq!(cli.steam_cache_size, Some(500 << 20));
     assert_eq!(
         cli.depot,
@@ -76,12 +76,10 @@ fn steam_input_flags() {
 }
 
 #[test]
-fn steam_and_root_exclude_each_other_and_steam_needs_a_depot() {
+fn steam_and_root_exclude_each_other() {
     let parse =
         |args: &[&str]| Cli::try_parse_from(["respak", "--out", "o", "formats"].iter().chain(args));
     assert!(parse(&["--steam", "1", "--depot", "2", "--root", "r"]).is_err());
-    assert!(parse(&["--steam", "1"]).is_err());
-    assert!(parse(&["--depot", "2"]).is_err());
     assert!(parse(&["--steam", "1", "--depot", "x"]).is_err());
 }
 

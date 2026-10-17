@@ -8,6 +8,7 @@ use respak_core::{CancellationToken, DiscoverOptions, Engine};
 
 /// Arguments of `discover`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct DiscoverArgs {
     /// Paths relative to `--root`.
     #[arg(required = true)]

@@ -10,6 +10,7 @@ use respak_respawn::{parse_guids, Finder};
 
 /// Arguments of `names`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct NamesArgs {
     /// Text file with the wanted guids (`0x0123456789ABCDEF`, extra text on a line is ignored),
     /// e.g. the output of `list`. A path relative to the working directory. Without it, the

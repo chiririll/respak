@@ -10,6 +10,7 @@ use super::output::report;
 
 /// Arguments of `copy`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct CopyArgs {
     /// Source path or glob, relative to `--root` (or the Steam depots).
     path: String,

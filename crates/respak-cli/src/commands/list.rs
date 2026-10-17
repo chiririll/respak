@@ -8,6 +8,7 @@ use respak_core::{CancellationToken, Engine};
 
 /// Arguments of `list`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct ListArgs {
     /// Container paths relative to `--root`.
     #[arg(required = true)]

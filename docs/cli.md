@@ -1,8 +1,10 @@
 # CLI guide
 
 ```
-respak [GLOBAL OPTIONS] <command>
+respak [GLOBAL OPTIONS] [PROFILE] <command>
 ```
+
+The global options can also come after the command (`respak convert x --out out`), and can be kept in a [config file](#config-file-and-profiles). A command run with no arguments (`respak convert`) prints its help.
 
 Paths you pass to commands (`from`, `PATH`) always use `/` and are relative to `--root` (or to the Steam depots, see [steam.md](steam.md)).
 
@@ -10,8 +12,8 @@ Paths you pass to commands (`from`, `PATH`) always use `/` and are relative to `
 
 | Option | Meaning |
 |---|---|
-| `--root DIR` | Input directory (the game folder). Required unless `--steam` is used. Created if missing, so a typo makes an empty folder |
-| `--out DIR` | Output directory, created if missing. Required by every command except `steam` |
+| `--root DIR` | Input directory (the game folder). Required unless `--steam` is used (or set in the config file). Created if missing, so a typo makes an empty folder |
+| `--out DIR` | Output directory, created if missing. Required by every command except `steam` (or set in the config file) |
 | `--search GLOB` | Extra paks to look in when an asset refers to another asset (such as a material's textures) that is not in its own pak or the `common.rpak` beside it. Relative to `--root`, repeatable, e.g. `--search "paks/Win64/*.rpak"`. Nothing is scanned unless a lookup needs it |
 | `--no-patches` | Do not apply rpak patches. By default `common.rpak` next to a `patch_master.rpak` is opened as its newest patch (`common(NN).rpak`), and a patch file is completed from the files it lists. With this flag `patch_master.rpak` is ignored and a patch file is refused as an unsupported version |
 | `--rig AUTO\|GUID\|PATH` | The skeleton animation sequences (`aseq`) are bound to. `auto` (default) takes the `arig` (else the `mdl_`) that lists the sequence, looked for in its pak and the `common.rpak` beside it. Otherwise the guid (`0x...`) or the path of an `arig` / `mdl_` |
@@ -19,6 +21,52 @@ Paths you pass to commands (`from`, `PATH`) always use `/` and are relative to `
 | `--cache DIR` | Remembers where `--search` found each asset, so later runs are faster. Optional |
 | `--report FILE` | Write the JSON report to a file instead of stdout |
 | `--steam`, `--depot`, `--branch`, `--steam-cache-size` | Read from Steam, see [steam.md](steam.md) |
+| `--config FILE`, `--no-config`, `-p/--profile NAME` | Which config file supplies the defaults, see [below](#config-file-and-profiles) |
+
+## Config file and profiles
+
+Typing `--root`, `--out` and the rest every time gets old. Put them in a `respak.toml`:
+
+```toml
+root = "D:/Games/Apex"
+out = "out"
+cache = ".cache"
+report = "report.json"
+search = ["paks/Win64/*.rpak"]
+no_patches = false
+
+[respawn]
+rig = "auto"
+studio = "auto"
+
+# Instead of `root`:
+# [steam]
+# app = 1172470
+# depots = [1172471, "1172472=7843921"]   # ID or "ID=MANIFEST"
+# branch = "public"
+# cache_size = "8GiB"
+```
+
+Then `respak convert "paks/Win64/common.rpak/*.txtr" --to '{"type":"png"}'` is the whole command. Every key is the flag of the same name; unknown keys are an error.
+
+- **Where it is looked for:** `respak.toml` in the working directory, else in the nearest parent directory that has one. No file is fine, the flags alone then have to say everything.
+- **Relative paths** in the file (`root`, `out`, `cache`, `report`) are relative to the file's directory, not to where you run `respak`. Paths on the command line stay relative to the working directory.
+- **The command line wins.** A flag overrides the file; for `--search` and `--depot` the flag's list replaces the file's. `--no-patches` can only be switched on from the command line.
+- **The input is one choice.** If you pass `--root` or `--steam`, the file's `root` and `[steam]` are not looked at. `--depot`, `--branch` and `--steam-cache-size` on their own refine the file's `[steam]`.
+- `--config FILE` reads that file instead; `--no-config` reads none.
+
+### Profiles
+
+For several games, keep one file per game, `respak-<name>.toml`, and name it before the command:
+
+```sh
+respak apex convert "paks/Win64/common.rpak/*.txtr" --to '{"type":"png"}'    # respak-apex.toml
+respak -p apex list paks/Win64/common.rpak                                    # the same, with the flag
+```
+
+A profile reads only its own file (not `respak.toml`), found the same way, and the file must exist: a typo like `respak covnert ...` ends with `respak-covnert.toml not found`. Names are letters, digits, `-` and `_`. `-p/--profile` is the way to use a profile named like a command. `--config` overrides the profile lookup (with a warning).
+
+Run `RUST_LOG=info respak ...` to see which file was read.
 
 ## Commands
 
@@ -133,7 +181,7 @@ Entries come in request order, one per matched source.
 | Exit code | Meaning |
 |---|---|
 | 0 | everything succeeded |
-| 1 | any output failed, or a fatal error (missing `--out`, bad JSON, unreadable request, not logged in to Steam) |
+| 1 | any output failed, or a fatal error (missing `--out`, a profile without its file, bad JSON, unreadable request, not logged in to Steam) |
 | 130 | second Ctrl-C |
 
 The first Ctrl-C stops cleanly: unfinished outputs are reported as `Cancelled`. Press it again to abort at once.
