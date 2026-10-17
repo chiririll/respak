@@ -261,3 +261,23 @@ impl oio::List for VolumeLister {
         }))
     }
 }
+
+/// Every file in a volume, as paths relative to it, sorted.
+pub(crate) async fn list_volume(op: &Operator) -> Result<Vec<String>> {
+    let mut files = Vec::new();
+    let mut dirs = vec!["/".to_owned()];
+    while let Some(dir) = dirs.pop() {
+        for e in op.list(&dir).await? {
+            if e.path() == dir {
+                continue;
+            }
+            if e.metadata().is_dir() {
+                dirs.push(e.path().to_owned());
+            } else {
+                files.push(e.path().trim_start_matches('/').to_owned());
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}

@@ -18,11 +18,9 @@ use crate::value::Value;
 use crate::CancellationToken;
 
 pub use request::{
-    ConvertReport, ConvertRequest, FromSpec, LinkedValue, OutputReport, OutputRequest,
-    OutputResult, SourceSpec, TargetSpec,
+    ConvertReport, ConvertRequest, FromSpec, OutputReport, OutputRequest, OutputResult, SourceSpec,
+    TargetSpec,
 };
-
-pub(crate) use inspect::list_volume;
 
 /// Entries read at once by `list` with names.
 const NAME_CONCURRENCY: usize = 32;

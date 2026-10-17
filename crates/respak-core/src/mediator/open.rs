@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use opendal::Operator;
 
 use super::{Cx, Mediator};
+use crate::capability::Container;
 use crate::error::{Error, ErrorKind, Result};
 use crate::value::{FileData, Value};
 
@@ -48,6 +49,24 @@ impl Mounts {
     /// Whether nothing is mounted.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+/// A mounted container: a value known to provide [`Container`].
+#[derive(Clone)]
+pub struct Mounted(Value);
+
+impl Mounted {
+    /// The container capability.
+    pub fn container(&self) -> &dyn Container {
+        self.0
+            .as_container()
+            .expect("Mounted is only built from containers")
+    }
+
+    /// The mounted value.
+    pub fn value(&self) -> &Value {
+        &self.0
     }
 }
 
@@ -98,12 +117,11 @@ impl Mediator {
                 Err(e) => return Err(e),
             }
         };
-        if value.as_container().is_none() {
+        let Some(c) = value.as_container() else {
             return Err(not_found(&key));
-        }
+        };
         cx.mounts.insert(key, value.clone());
-        let c = value.as_container().expect("checked above");
-        let entries = crate::engine::list_volume(&c.volume())
+        let entries = crate::volume::list_volume(&c.volume())
             .await
             .map_or(0, |files| files.len());
         cx.mediator.publish(crate::event::Event::InputOpened {
@@ -111,6 +129,11 @@ impl Mediator {
             entries,
         });
         Ok(value)
+    }
+
+    /// Like [`mount`](Self::mount), with the container capability already checked.
+    pub async fn mount_container(&self, file: Value, cx: &Cx) -> Result<Mounted> {
+        self.mount(file, cx).await.map(Mounted)
     }
 
     async fn resolve(
@@ -147,15 +170,15 @@ impl Mediator {
                         join(mount, &prefix),
                         None,
                     ));
-                    let inner = self.mount(file, cx).await?;
-                    let c = inner.as_container().expect("mount checks this");
+                    let inner = self.mount_container(file, cx).await?;
+                    let c = inner.container();
                     let rest = segments[n..].join("/");
                     let (volume, mount_path) = (c.volume(), c.mount_path().to_owned());
                     return Box::pin(self.resolve(
                         volume,
                         &mount_path,
                         &rest,
-                        Some(inner.clone()),
+                        Some(inner.value().clone()),
                         cx,
                     ))
                     .await;

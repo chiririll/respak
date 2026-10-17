@@ -9,8 +9,8 @@ use crate::error::Result;
 use crate::event::Event;
 use crate::mediator::Cx;
 use crate::value::{FormatId, Value, FILE};
+use crate::volume::list_volume;
 use crate::CancellationToken;
-use opendal::Operator;
 
 impl Engine {
     /// Detects what `path` is and which formats it can be converted to, without decoding.
@@ -56,8 +56,8 @@ impl Engine {
         use futures::StreamExt;
         let cx = self.cx(cancel);
         let value = self.mediator.open(path, &cx).await?;
-        let container = self.mediator.mount(value, &cx).await?;
-        let c = container.as_container().expect("mount checks this");
+        let mounted = self.mediator.mount_container(value, &cx).await?;
+        let c = mounted.container();
         let files = list_volume(&c.volume()).await?;
         if !names {
             return Ok(files
@@ -90,8 +90,8 @@ impl Engine {
         use std::sync::atomic::{AtomicUsize, Ordering};
         let cx = self.cx(cancel);
         let value = self.mediator.open(path, &cx).await?;
-        let container = self.mediator.mount(value, &cx).await?;
-        let c = container.as_container().expect("mount checks this");
+        let mounted = self.mediator.mount_container(value, &cx).await?;
+        let c = mounted.container();
         let files = list_volume(&c.volume()).await?;
         let total = files.len();
         let handle = tokio::runtime::Handle::current();
@@ -252,8 +252,8 @@ impl Engine {
             out.push(entry);
             return Ok(());
         }
-        let container = self.mediator.mount(value.clone(), cx).await?;
-        let c = container.as_container().expect("mount checks this");
+        let mounted = self.mediator.mount_container(value.clone(), cx).await?;
+        let c = mounted.container();
         let mount_path = c.mount_path().to_owned();
         for rel in list_volume(&c.volume()).await? {
             cx.check_cancelled()?;
@@ -284,24 +284,4 @@ fn unrecognised(path: &str) -> DiscoveryEntry {
         kind: None,
         targets: Vec::new(),
     }
-}
-
-/// Every file in a volume, as paths relative to it, sorted.
-pub(crate) async fn list_volume(op: &Operator) -> Result<Vec<String>> {
-    let mut files = Vec::new();
-    let mut dirs = vec!["/".to_owned()];
-    while let Some(dir) = dirs.pop() {
-        for e in op.list(&dir).await? {
-            if e.path() == dir {
-                continue;
-            }
-            if e.metadata().is_dir() {
-                dirs.push(e.path().to_owned());
-            } else {
-                files.push(e.path().trim_start_matches('/').to_owned());
-            }
-        }
-    }
-    files.sort();
-    Ok(files)
 }

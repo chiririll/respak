@@ -149,9 +149,9 @@ impl Mediator {
                         virtual_path.clone(),
                         None,
                     ));
-                    match self.mount(file, cx).await {
-                        Ok(container) => {
-                            let c = container.as_container().expect("mount checks this");
+                    match self.mount_container(file, cx).await {
+                        Ok(mounted) => {
+                            let c = mounted.container();
                             let (volume, mount_path) = (c.volume(), c.mount_path().to_owned());
                             Box::pin(self.expand_in(&volume, &mount_path, "", rest, cx, out))
                                 .await?;

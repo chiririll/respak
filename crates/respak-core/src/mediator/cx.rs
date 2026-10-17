@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use opendal::Operator;
+use serde::Serialize;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
@@ -31,11 +32,20 @@ pub struct Cx {
     /// Bounds for `blocking` and `io`.
     limits: Arc<Limits>,
     /// Values requested by the converters of the current output (see `scoped`).
-    linked: Arc<std::sync::Mutex<Vec<crate::engine::LinkedValue>>>,
+    linked: Arc<std::sync::Mutex<Vec<LinkedValue>>>,
     /// The plugin cache operator, if the host gave one.
     cache: Option<Operator>,
     /// Requests being served on the way to this one, outermost first (docs/design/project.md §5.6).
     chain: Arc<Vec<String>>,
+}
+
+/// A value a converter needed to produce its output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LinkedValue {
+    /// Key of the value that was converted.
+    pub key: String,
+    /// The format it was converted to.
+    pub format: String,
 }
 
 /// Semaphores behind `Cx::blocking` and `Cx::io`.
@@ -73,7 +83,7 @@ impl Cx {
 
     /// Notes that the converter running asked for `key` converted to `format`, once.
     pub(crate) fn link(&self, key: String, format: String) {
-        let value = crate::engine::LinkedValue { key, format };
+        let value = LinkedValue { key, format };
         let mut linked = self.linked.lock().unwrap();
         if !linked.contains(&value) {
             linked.push(value);
@@ -81,7 +91,7 @@ impl Cx {
     }
 
     /// The values linked so far in this scope.
-    pub(crate) fn dependencies(&self) -> Vec<crate::engine::LinkedValue> {
+    pub(crate) fn dependencies(&self) -> Vec<LinkedValue> {
         self.linked.lock().unwrap().clone()
     }
 

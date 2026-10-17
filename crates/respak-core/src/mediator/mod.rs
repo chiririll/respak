@@ -16,8 +16,8 @@ mod expand;
 mod open;
 mod pipeline;
 
-pub use cx::Cx;
-pub use open::Mounts;
+pub use cx::{Cx, LinkedValue};
+pub use open::{Mounted, Mounts};
 
 /// What to convert to: a format and its options.
 #[derive(Debug, Clone, PartialEq)]

@@ -25,14 +25,14 @@ pub use discover::{
     Alternative, DiscoverOptions, Discovery, DiscoveryEntry, EntryInfo, ListedEntry,
 };
 pub use engine::{
-    ConvertReport, ConvertRequest, Engine, EngineBuilder, FromSpec, LinkedValue, OutputReport,
-    OutputRequest, OutputResult, SourceSpec, TargetSpec,
+    ConvertReport, ConvertRequest, Engine, EngineBuilder, FromSpec, OutputReport, OutputRequest,
+    OutputResult, SourceSpec, TargetSpec,
 };
 pub use error::{Error, ErrorKind, Result};
 pub use event::{Event, Events, LogSubscriber};
 pub use graph::{EdgeInfo, FormatGraph, FormatInfo, Path, Step, TargetInfo};
 pub use mediator::Mounts;
-pub use mediator::{Cx, Mediator, Target};
+pub use mediator::{Cx, LinkedValue, Mediator, Mounted, Target};
 pub use middleware::{Convert, Middleware, Next};
 pub use plugin::{CapId, FormatBuilder, Plugin, Registry};
 pub use target::TypedTarget;

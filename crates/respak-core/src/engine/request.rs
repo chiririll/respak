@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
+use crate::mediator::LinkedValue;
 use crate::value::FormatId;
 
 /// `{ "version": 1, "outputs": [...] }`
@@ -113,15 +114,6 @@ pub struct OutputReport {
     pub from: String,
     /// Files written, or the error.
     pub result: OutputResult,
-}
-
-/// A value a converter needed to produce its output.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct LinkedValue {
-    /// Key of the value that was converted.
-    pub key: String,
-    /// The format it was converted to.
-    pub format: String,
 }
 
 /// `{ "Ok": { "files": [..] } }` or `{ "Err": { "error": {..} } }`
