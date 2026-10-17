@@ -16,7 +16,7 @@ Check first that `tests/batch.rs` and `tests/containers.rs` cover ordering and c
 - `describe()`: add `DiscoveryEntry::from_detected`, `apply_meta`, separate `describe_children`.
 - `list()` and `inspect()` share the open → mount → `list_volume` prologue; use the R2.2 accessor.
 
-## R2.4 Split request and report types (S)
+## R2.4 Split request and report types (S) — done
 `engine/request.rs` mixes request DTOs with report DTOs (`ConvertReport`, `OutputReport`, `LinkedValue`, `OutputResult`). Split into `request.rs` and `report.rs`.
 
 ## R2.5 Request constructors (S)

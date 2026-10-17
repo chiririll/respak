@@ -3,6 +3,7 @@
 mod convert;
 mod inspect;
 mod parallel;
+mod report;
 mod request;
 
 use std::sync::Arc;
@@ -18,10 +19,8 @@ use crate::plugin::{Plugin, Registry};
 use crate::value::Value;
 use crate::CancellationToken;
 
-pub use request::{
-    ConvertReport, ConvertRequest, FromSpec, OutputReport, OutputRequest, OutputResult, SourceSpec,
-    TargetSpec,
-};
+pub use report::{ConvertReport, OutputReport, OutputResult};
+pub use request::{ConvertRequest, FromSpec, OutputRequest, SourceSpec, TargetSpec};
 
 /// Entries read at once by `list` with names.
 const NAME_CONCURRENCY: usize = 32;
