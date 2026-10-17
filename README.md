@@ -62,7 +62,8 @@ Keep the options in a `respak.toml` (or a `respak-apex.toml`, used as `respak ap
 | `respak-core` | engine: format graph, containers, caching, events |
 | `respak-respawn` | Respawn formats (rpak, starpak, txtr, matl, uiia, uimg) |
 | `respak-formats` | PNG, DDS, WAV and frame output |
-| `respak-nihav` | Bink 2 decoding and AVI/MOV/Y4M encoding |
+| `respak-rad` | RAD Game Tools formats: Miles banks and Bink 2 video |
+| `respak-nihav` | AVI/MOV/Y4M encoding |
 | `respak-steam` | Steam login and depot access |
 | `respak-cli` | the `respak` binary |
 

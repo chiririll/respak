@@ -5,7 +5,7 @@ use std::path::Path;
 use opendal::{services::Fs, Operator};
 use respak_core::{CancellationToken, Engine};
 use respak_formats::FormatsPlugin;
-use respak_miles::MilesPlugin;
+use respak_rad::RadPlugin;
 use respak_nihav::NihavPlugin;
 use respak_respawn::RespawnPlugin;
 
@@ -78,7 +78,7 @@ pub fn build_engine(settings: &Settings, input: Operator) -> anyhow::Result<Engi
         .output(fs(&settings.out)?)
         .plugin(FormatsPlugin)
         .plugin(NihavPlugin)
-        .plugin(MilesPlugin)
+        .plugin(RadPlugin)
         .plugin(
             RespawnPlugin::new()
                 .search(settings.search.clone())

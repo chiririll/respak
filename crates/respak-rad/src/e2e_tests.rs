@@ -8,7 +8,7 @@ use respak_core::{
 use respak_formats::FormatsPlugin;
 
 use crate::mbnk::fixtures::{bank, Fx};
-use crate::MilesPlugin;
+use crate::RadPlugin;
 
 const BANK: &str = "audio/ship/general.mbnk";
 const STREAM: &str = "audio/ship/general_stream.mstr";
@@ -21,7 +21,7 @@ const DATA_AT: usize = 0x200;
 fn cx_on(op: &Operator) -> Cx {
     let mut r = Registry::new();
     r.add(&FormatsPlugin);
-    r.add(&MilesPlugin);
+    r.add(&RadPlugin);
     Cx::new(Mediator::new(r), op.clone(), op.clone())
 }
 
@@ -144,7 +144,7 @@ async fn a_bank_is_detected_and_listed_without_its_stream() {
         .input(op.clone())
         .output(mem())
         .plugin(FormatsPlugin)
-        .plugin(MilesPlugin)
+        .plugin(RadPlugin)
         .build()
         .unwrap();
     let d = engine

@@ -20,3 +20,8 @@ Decided: breaking the `respak-core` public API is acceptable. Update `respak-res
 - Move the `tests/common/mod.rs` fixtures (204 lines, `allow(dead_code)`) into a `respak-core` testing module; reuse them in `cache.rs` (`Versioned`) and `linking.rs` (`SlowPlugin`), and in downstream crates.
 - Split the biggest test files by concern: `respak-core/tests/{containers,graph,events,engine}.rs`, `respak-respawn/tests/aseq.rs` (1386 lines) and `rpak.rs` (655). Keep pure planning tests as unit tests next to `graph.rs`; dedupe against `src/graph.rs:314`.
 - Look for repeated fixture builders in `formats/tests/*` and add `tests/common/mod.rs` if so.
+
+
+# User questions
+
+- ~~move bik into miles and rename the crate to rad~~ Done: `bik`, `bik_decode` and the bik tests live in `respak-rad` (was `respak-miles`), plugin `RadPlugin` (id `rad`); `respak-nihav` keeps only the encoders and muxers.

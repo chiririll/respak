@@ -6,9 +6,9 @@ Per file: move tests/fixtures out of `src` first, then split, keeping public pat
 ## R4.1 `respak-formats/src/cast.rs` (1380 lines) (M)
 ~565 lines are an inline `mod tests` with its own parser helpers. Production mixes options/selectors, the `Node` tree + `CastWriter`, model encode, animation encode and math. Split into `cast/{options,node,model,anim}.rs`; tests into `cast/tests.rs` or `tests/cast_*.rs`, with a shared test reader.
 
-## R4.2 `respak-miles/src/mbnk.rs` (961 lines) (M)
+## R4.2 `respak-rad/src/mbnk.rs` (961 lines) (M)
 1. Move `pub mod fixtures` (used by `e2e_tests.rs`) out of the production file (`src/testing.rs` behind `#[cfg(test)]`, or `tests/support/`).
-2. Move `e2e_tests.rs` to `crates/respak-miles/tests/e2e.rs`.
+2. Move `e2e_tests.rs` to `crates/respak-rad/tests/e2e.rs`.
 3. Split production into `mbnk/{layout,entry,bank,source,handler}.rs`.
 
 ## R4.3 `respak-respawn` testing → dev-crate (M)

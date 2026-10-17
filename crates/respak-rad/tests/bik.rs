@@ -4,7 +4,7 @@
 use opendal::{services::Memory, Operator};
 use respak_core::{CancellationToken, Cx, Engine, ErrorKind, Mediator, Registry};
 use respak_formats::FormatsPlugin;
-use respak_nihav::NihavPlugin;
+use respak_rad::RadPlugin;
 
 /// The 44-byte fixed header of a Bink file, then `extra` bytes.
 fn header(
@@ -47,7 +47,7 @@ fn env() -> Env {
         .input(input.clone())
         .output(output)
         .plugin(FormatsPlugin)
-        .plugin(NihavPlugin)
+        .plugin(RadPlugin)
         .build()
         .unwrap();
     Env { engine, input }
@@ -164,7 +164,7 @@ async fn bink_1_is_unsupported_not_unknown() {
 
     let mut r = Registry::new();
     r.add(&FormatsPlugin);
-    r.add(&NihavPlugin);
+    r.add(&RadPlugin);
     let cx = Cx::new(Mediator::new(r), env.input.clone(), env.input.clone());
     let file = cx.mediator.open("old.bik", &cx).await.unwrap();
     let err = cx.mediator.identify(file, &cx).await.unwrap_err();
@@ -177,7 +177,7 @@ async fn bink_1_is_unsupported_not_unknown() {
 fn cx_on(env: &Env) -> Cx {
     let mut r = Registry::new();
     r.add(&FormatsPlugin);
-    r.add(&NihavPlugin);
+    r.add(&RadPlugin);
     Cx::new(Mediator::new(r), env.input.clone(), env.input.clone())
 }
 

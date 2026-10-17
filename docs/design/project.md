@@ -29,8 +29,8 @@ crates/
   respak-core/      # mediator, format graph, scoring, capabilities, volumes, Engine, errors
   respak-respawn/   # Respawn formats: rpak, starpak, txtr, matl, rmdl, aseq, arig, dtbl, uimg, stgs, stlt, ...
   respak-formats/   # common formats: png, dds, wav, cast (read + write where needed)
-  respak-miles/     # Miles audio banks (mbnk, mstr, asrc)
-  respak-nihav/     # video (Bink and others) through NihAV
+  respak-rad/       # RAD formats: Miles audio banks (mbnk, mstr, asrc), Bink 2 video (bik)
+  respak-nihav/     # video encoding and muxing (AVI, MOV, Y4M) through NihAV
   respak-steam/     # Steam depot input, host only (steam.md)
   respak-cli/       # host: registers plugins, CLI commands
 # Not planned: respak-source (Valve Source MDL/VPK).

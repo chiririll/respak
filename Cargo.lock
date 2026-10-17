@@ -2272,8 +2272,8 @@ dependencies = [
  "png",
  "respak-core",
  "respak-formats",
- "respak-miles",
  "respak-nihav",
+ "respak-rad",
  "respak-respawn",
  "respak-respawn-testing",
  "respak-steam",
@@ -2343,14 +2343,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "respak-miles"
+name = "respak-nihav"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
  "futures",
+ "nihav_commonfmt",
  "nihav_core",
- "nihav_rad",
  "opendal",
  "respak-core",
  "respak-formats",
@@ -2359,13 +2359,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "respak-nihav"
+name = "respak-rad"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "nihav_commonfmt",
  "nihav_core",
  "nihav_rad",
  "opendal",

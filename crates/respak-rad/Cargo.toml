@@ -1,5 +1,5 @@
 [package]
-name = "respak-miles"
+name = "respak-rad"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
