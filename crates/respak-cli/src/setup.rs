@@ -32,8 +32,11 @@ impl OpenedInput {
         if let Some(steam) = &self.steam {
             let s = steam.stats();
             return Some(format!(
-                "steam: {} chunks downloaded ({} bytes), {} served from the cache",
-                s.chunks_downloaded, s.bytes_downloaded, s.cache_hits
+                "steam: {} chunks requested: {} downloaded ({}), {} served from the cache",
+                s.chunks_downloaded + s.cache_hits,
+                s.chunks_downloaded,
+                crate::format_size(s.bytes_downloaded),
+                s.cache_hits
             ));
         }
         None

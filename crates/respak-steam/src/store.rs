@@ -49,6 +49,7 @@ struct Inner {
     downloaded: AtomicU64,
     bytes: AtomicU64,
     hits: AtomicU64,
+    requested: AtomicU64,
 }
 
 /// Cache + source. At most `parallel` fetches at a time; concurrent requests for the same
@@ -110,6 +111,7 @@ impl ChunkStore {
             downloaded: AtomicU64::new(0),
             bytes: AtomicU64::new(0),
             hits: AtomicU64::new(0),
+            requested: AtomicU64::new(0),
         };
         Self {
             inner: Arc::new(inner),
@@ -165,6 +167,15 @@ impl ChunkStore {
     /// Reads `range` of a file made of `chunks`: `covering`, `get_many`, `assemble`.
     pub async fn read(&self, depot: u32, chunks: &[ChunkRef], range: Range<u64>) -> Result<Bytes> {
         let need = covering(chunks, range.clone());
+        if !need.is_empty() {
+            let count = need.len() as u64;
+            let total = self.inner.requested.fetch_add(count, Ordering::Relaxed) + count;
+            self.inner.events.publish(Event::Custom {
+                source: "steam".into(),
+                name: "request".into(),
+                data: serde_json::json!({ "depot": depot, "chunks": count, "total": total }),
+            });
+        }
         let data = self.get_many(depot, &chunks[need.clone()]).await?;
         Ok(assemble(chunks, need.start, &data, range))
     }

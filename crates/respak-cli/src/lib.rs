@@ -232,6 +232,21 @@ pub fn parse_size(text: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("`{text}` is too large"))
 }
 
+/// `bytes` as `512 B`, `1.5 KiB`, `3.2 MiB`, ... (binary units, as `parse_size` reads them).
+pub fn format_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["KiB", "MiB", "GiB", "TiB", "PiB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
+}
+
 /// One line of progress for `event`, or `None` for events a person does not need to see
 /// (failures are in the report).
 pub fn event_line(event: &Event) -> Option<String> {
@@ -245,9 +260,14 @@ pub fn event_line(event: &Event) -> Option<String> {
                 "steam: depot {} manifest {} ({} files)",
                 data["depot"], data["manifest"], data["files"]
             )),
+            "request" => Some(format!(
+                "steam: requesting {} chunks ({} so far)",
+                data["chunks"], data["total"]
+            )),
             "chunk" => Some(format!(
-                "steam: {} chunks, {} bytes downloaded",
-                data["chunks"], data["bytes"]
+                "steam: {} chunks, {} downloaded",
+                data["chunks"],
+                format_size(data["bytes"].as_u64().unwrap_or(0))
             )),
             _ => None,
         },
@@ -414,16 +434,27 @@ mod tests {
         };
         let depot = custom("depot", json!({"depot": 1, "manifest": 2, "files": 3}));
         let chunk = custom("chunk", json!({"chunks": 4, "bytes": 5}));
+        let request = custom("request", json!({"chunks": 3, "total": 7}));
         for (event, line) in [
+            (&request, "steam: requesting 3 chunks (7 so far)"),
             (&warning, "warning: odd"),
             (&progress, "[2/5] convert"),
             (&opened, "opened a.rpak (7 entries)"),
             (&written, "wrote x.png"),
             (&depot, "steam: depot 1 manifest 2 (3 files)"),
-            (&chunk, "steam: 4 chunks, 5 bytes downloaded"),
+            (&chunk, "steam: 4 chunks, 5 B downloaded"),
         ] {
             assert_eq!(event_line(event).as_deref(), Some(line));
         }
+    }
+
+    #[test]
+    fn sizes_are_friendly() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(1023), "1023 B");
+        assert_eq!(format_size(1536), "1.5 KiB");
+        assert_eq!(format_size(5 << 20), "5.0 MiB");
+        assert_eq!(format_size(3 << 30), "3.0 GiB");
     }
 
     #[test]
