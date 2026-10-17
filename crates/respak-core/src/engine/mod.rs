@@ -2,27 +2,26 @@
 
 mod convert;
 mod inspect;
+mod parallel;
+mod report;
 mod request;
 
 use std::sync::Arc;
 
 use opendal::Operator;
 
+use crate::discover::{DiscoverOptions, EntryInfo};
 use crate::error::{Error, ErrorKind, Result};
 use crate::event::{Event, Events, DEFAULT_EVENT_CAPACITY};
 use crate::graph::FormatGraph;
 use crate::mediator::{Cx, Mediator};
 use crate::middleware::Middleware;
 use crate::plugin::{Plugin, Registry};
-use crate::value::Value;
+use crate::value::{Data, Value};
 use crate::CancellationToken;
 
-pub use request::{
-    ConvertReport, ConvertRequest, FromSpec, LinkedValue, OutputReport, OutputRequest,
-    OutputResult, SourceSpec, TargetSpec,
-};
-
-pub(crate) use inspect::list_volume;
+pub use report::{ConvertReport, OutputReport, OutputResult};
+pub use request::{ConvertRequest, FromSpec, OutputRequest, SourceSpec, TargetSpec};
 
 /// Entries read at once by `list` with names.
 const NAME_CONCURRENCY: usize = 32;
@@ -100,12 +99,7 @@ impl EngineBuilder {
     }
     /// Fails on a missing operator or a format defined twice.
     pub fn build(self) -> Result<Engine> {
-        let missing = |what: &str| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: format!("engine has no {what} operator"),
-            })
-        };
+        let missing = |what: &str| Error::msg(format!("engine has no {what} operator"));
         let input = self.input.ok_or_else(|| missing("input"))?;
         let output = self.output.ok_or_else(|| missing("output"))?;
         let mut registry = Registry::new();
@@ -126,6 +120,17 @@ impl EngineBuilder {
             limits: (self.blocking_limit, self.io_limit),
         })
     }
+}
+
+/// What the file at a path holds, as far as scanning it for names goes. See [`Engine::content`].
+#[derive(Debug)]
+pub enum Content {
+    /// A container, with what each entry is made of.
+    Container(Vec<EntryInfo>),
+    /// A file of no known format: it may hold paths as text, see [`Engine::read_file`].
+    Unrecognized,
+    /// A file of a known format that is not a container, or one that cannot be described: no names.
+    Opaque,
 }
 
 /// Converts requests using the registered plugins.
@@ -190,6 +195,47 @@ impl Engine {
         }
     }
 
+    /// Reads what the file at `path` holds: the entries of a container (as [`Engine::inspect`]), else
+    /// whether it is a file of no known format. Only a failure other than "not a container" is an `Err`.
+    pub async fn content(&self, path: &str, cancel: &CancellationToken) -> Result<Content> {
+        match self.inspect(path, cancel).await {
+            Ok(entries) => Ok(Content::Container(entries)),
+            Err(error) if matches!(error.kind(), ErrorKind::NotFound { .. }) => {
+                let found = self
+                    .discover(path, &DiscoverOptions::default(), cancel)
+                    .await;
+                let unknown = found
+                    .is_ok_and(|found| found.entries.first().is_some_and(|e| e.format.is_none()));
+                Ok(if unknown {
+                    Content::Unrecognized
+                } else {
+                    Content::Opaque
+                })
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Writes the bytes of `data` to `dest` on the output, in chunks, like any other output: a
+    /// failure part-way leaves no file, and `OutputWritten` is published. Each call is its own
+    /// request, so paths written by earlier calls are not tracked. `data` must have bytes
+    /// (`InvalidRequest` otherwise). Returns whether the file was written.
+    pub async fn write(
+        &self,
+        dest: &str,
+        data: &dyn Data,
+        cancel: &CancellationToken,
+    ) -> Result<bool> {
+        let cx = self.cx(cancel);
+        cx.check_cancelled()?;
+        let blob = data.as_blob().ok_or_else(|| {
+            Error::new(ErrorKind::InvalidRequest {
+                message: format!("{dest} has no bytes to write ({})", data.format()),
+            })
+        })?;
+        cx.write_blob(dest, data.key(), blob).await
+    }
+
     fn cx(&self, cancel: &CancellationToken) -> Cx {
         let cx = Cx::new(
             self.mediator.clone(),
@@ -211,7 +257,7 @@ impl Engine {
 
     /// Opens a path or glob on the input: one value per match (`NoMatch` if a glob matches
     /// nothing, `NotFound` for a path that is not there).
-    pub async fn open(&self, path_or_glob: &str, cancel: &CancellationToken) -> Result<Vec<Value>> {
+    pub async fn open_matches(&self, path_or_glob: &str, cancel: &CancellationToken) -> Result<Vec<Value>> {
         let cx = self.cx(cancel);
         let mut values = Vec::new();
         for path in self.mediator.expand(path_or_glob, &cx).await? {

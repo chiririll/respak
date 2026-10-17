@@ -2,8 +2,10 @@
 
 use serde::Serialize;
 
-use crate::capability::Dependency;
+use crate::capability::{Dependency, Metadata};
 use crate::graph::TargetInfo;
+use crate::mediator::Hit;
+use crate::value::FormatId;
 
 /// One line of [`Engine::list`](crate::Engine::list).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +75,71 @@ pub struct DiscoveryEntry {
     pub kind: Option<String>,
     /// Formats it can be converted to, found without decoding.
     pub targets: Vec<TargetInfo>,
+}
+
+impl DiscoveryEntry {
+    /// An item nothing recognised.
+    pub(crate) fn unrecognised(path: &str) -> Self {
+        Self {
+            path: path.to_owned(),
+            format: None,
+            version: None,
+            score: 0,
+            alternatives: Vec::new(),
+            name: None,
+            kind: None,
+            targets: Vec::new(),
+        }
+    }
+
+    /// An item whose format was detected: `winner` plus the other `hits`.
+    pub(crate) fn from_detected(
+        path: &str,
+        winner: Hit,
+        hits: impl Iterator<Item = Hit>,
+        targets: Vec<TargetInfo>,
+    ) -> Self {
+        Self {
+            path: path.to_owned(),
+            format: Some(winner.format.name().to_owned()),
+            version: version_of(&winner.format),
+            score: winner.score,
+            alternatives: hits
+                .map(|h| Alternative {
+                    format: h.format.name().to_owned(),
+                    version: version_of(&h.format),
+                    score: h.score,
+                })
+                .collect(),
+            name: None,
+            kind: None,
+            targets,
+        }
+    }
+
+    /// An item that carries its own format (a typed entry handed out by a container).
+    pub(crate) fn typed(path: &str, format: &FormatId, targets: Vec<TargetInfo>) -> Self {
+        Self {
+            path: path.to_owned(),
+            format: Some(format.name().to_owned()),
+            version: version_of(format),
+            score: 10,
+            alternatives: Vec::new(),
+            name: None,
+            kind: None,
+            targets,
+        }
+    }
+
+    /// Takes the name and, if not known yet, the kind from `meta`.
+    pub(crate) fn apply_meta(&mut self, meta: &dyn Metadata) {
+        self.name = meta.name().map(str::to_owned);
+        self.kind = self.kind.take().or_else(|| meta.kind().map(str::to_owned));
+    }
+}
+
+fn version_of(format: &FormatId) -> Option<String> {
+    format.version().map(|v| v.to_string())
 }
 
 /// A runner-up in detection.

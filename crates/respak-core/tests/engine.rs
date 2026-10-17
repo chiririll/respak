@@ -1,10 +1,9 @@
 //! Core behaviour with a synthetic plugin: formats `alpha` / `beta` recognised by magic bytes.
 
-mod common;
 
 use std::sync::Arc;
 
-use common::*;
+use respak_core::testing::*;
 use respak_core::capability::{Bitmap, Blob};
 use respak_core::{
     magic, Engine, ErrorKind, FormatId, OutputResult, Registry, Target, Value, ValueKey, Version,
@@ -325,4 +324,26 @@ async fn report_serializes_with_ok_and_err() {
         .unwrap();
     let json = serde_json::to_value(&report).unwrap();
     assert_eq!(json["outputs"][0]["result"]["Ok"]["files"][0], "pic.bb");
+}
+
+#[tokio::test]
+async fn write_copies_a_files_bytes_to_the_output() {
+    use respak_core::value::FileData;
+    use respak_core::CancellationToken;
+
+    let env = env_with(register_ab);
+    let volume = mem();
+    volume.write("in.bin", b"hello".to_vec()).await.unwrap();
+    let cancel = CancellationToken::new();
+    let data = FileData::new(volume.clone(), "in.bin", "pak/in.bin", None);
+
+    assert!(env
+        .engine
+        .write("dump/in.bin", &data, &cancel)
+        .await
+        .unwrap());
+    assert_eq!(
+        env.output.read("dump/in.bin").await.unwrap().to_vec(),
+        b"hello"
+    );
 }

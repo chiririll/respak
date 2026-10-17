@@ -7,11 +7,11 @@ use opendal::{services::Memory, Operator};
 use respak_cli::{run, Cli};
 use respak_core::{CancellationToken, ConvertRequest, Engine, ErrorKind, OutputResult};
 use respak_formats::FormatsPlugin;
-use respak_respawn::testing::aseq::{
+use respak_respawn::RespawnPlugin;
+use respak_respawn_testing::aseq::{
     bone, quat64, raw_track, section, value_ptr, vec48, Anim, Seq, Weights,
 };
-use respak_respawn::testing::{rmdl, PakBuilder};
-use respak_respawn::RespawnPlugin;
+use respak_respawn_testing::{rmdl, PakBuilder};
 use serde_json::{json, Value};
 
 const SEQ: u64 = 0x10;
@@ -77,7 +77,7 @@ async fn env_with(seq: Seq, blobs: &[(u64, Vec<u8>)]) -> Env {
         SEQ,
         "anim/walk.rseq",
         14,
-        &respak_respawn::testing::aseq::seq_block(&seq),
+        &respak_respawn_testing::aseq::seq_block(&seq),
         &[],
         None,
     );
@@ -458,7 +458,7 @@ async fn errors_are_reported_per_output() {
         SEQ,
         "anim/walk.rseq",
         14,
-        &respak_respawn::testing::aseq::seq_block(&walk()),
+        &respak_respawn_testing::aseq::seq_block(&walk()),
         &[],
         None,
     );
@@ -499,7 +499,7 @@ async fn errors_are_reported_per_output() {
         SEQ,
         "anim/walk.rseq",
         11,
-        &respak_respawn::testing::aseq::seq_block(&walk()),
+        &respak_respawn_testing::aseq::seq_block(&walk()),
         &[],
         None,
     );
@@ -551,7 +551,7 @@ async fn the_cli_binds_a_sequence_to_an_explicit_rig() {
         SEQ,
         "anim/walk.rseq",
         14,
-        &respak_respawn::testing::aseq::seq_block(&walk()),
+        &respak_respawn_testing::aseq::seq_block(&walk()),
         &[],
         None,
     );
@@ -568,8 +568,8 @@ async fn the_cli_binds_a_sequence_to_an_explicit_rig() {
         all.extend(args);
         let cli = Cli::try_parse_from(all).unwrap();
         let plugin = RespawnPlugin::new()
-            .rig(cli.rig.clone())
-            .studio(cli.studio.clone());
+            .rig(cli.rig.clone().unwrap_or_else(|| "auto".into()))
+            .studio(cli.studio.clone().unwrap_or_else(|| "auto".into()));
         let engine = Engine::builder()
             .input(env.input.clone())
             .output(env.output.clone())

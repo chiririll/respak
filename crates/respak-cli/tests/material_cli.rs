@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use respak_respawn::testing::{build_tex_pak, PakBuilder, TexSpec};
+use respak_respawn_testing::{build_tex_pak, PakBuilder, TexSpec};
 
 fn write(root: &Path, path: &str, bytes: Vec<u8>) {
     let full = root.join(path);

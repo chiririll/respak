@@ -9,12 +9,6 @@
 use respak_core::capability::PixelFormat;
 use respak_core::{Error, ErrorKind, Result};
 
-fn corrupt(context: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Corrupt {
-        context: context.into(),
-    })
-}
-
 /// `format` cannot be turned into RGBA8 here.
 fn unsupported(format: PixelFormat) -> Error {
     Error::new(ErrorKind::UnsupportedVersion {
@@ -54,7 +48,7 @@ fn unorm8(v: f32) -> u8 {
 pub fn decode_rgba8(format: PixelFormat, width: u32, height: u32, data: &[u8]) -> Result<Vec<u8>> {
     let (w, h) = (width as usize, height as usize);
     if data.len() as u64 != format.mip_len(width, height) {
-        return Err(corrupt(format!(
+        return Err(Error::corrupt(format!(
             "{format:?} mip of {width}x{height} has {} bytes",
             data.len()
         )));

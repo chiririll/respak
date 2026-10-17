@@ -10,12 +10,13 @@ description = "End-to-end tests over synthetic data. Not a default member: `carg
 respak-core.workspace = true
 respak-cli = { path = "../crates/respak-cli", default-features = false }
 respak-formats.workspace = true
-respak-respawn = { workspace = true, features = ["testing"] }
+respak-respawn.workspace = true
+respak-respawn-testing.workspace = true
 opendal.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
-png = "0.18"
-ddsfile = "0.6"
-tempfile = "3"
+png.workspace = true
+ddsfile.workspace = true
+tempfile.workspace = true
 clap.workspace = true
 anyhow.workspace = true

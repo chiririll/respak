@@ -18,7 +18,7 @@ use respak_core::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{bitmap_of, corrupt, file_of, unsupported};
+use crate::{bitmap_of, file_of};
 
 const MAGIC: &[u8] = b"DDS ";
 /// Magic + `DDS_HEADER`.
@@ -150,13 +150,16 @@ impl ReadHandler for DdsRead {
             .range(start..start + head_len)
             .await?
             .to_vec();
-        let dds = Dds::read(Cursor::new(&head)).map_err(|e| corrupt(format!("dds header: {e}")))?;
+        let dds = Dds::read(Cursor::new(&head))
+            .map_err(|e| Error::corrupt(format!("dds header: {e}")))?;
 
         let format = match &dds.header10 {
             Some(h) => ALL_FORMATS
                 .into_iter()
                 .find(|f| dxgi_format(*f) == Some(h.dxgi_format))
-                .ok_or_else(|| unsupported("dds", &format!("pixel format {:?}", h.dxgi_format)))?,
+                .ok_or_else(|| {
+                    Error::unsupported("dds", format!("pixel format {:?}", h.dxgi_format))
+                })?,
             None => match dds.get_d3d_format() {
                 Some(D3DFormat::A8B8G8R8) => PixelFormat::Rgba8,
                 Some(D3DFormat::A8R8G8B8) => PixelFormat::Bgra8,
@@ -164,12 +167,14 @@ impl ReadHandler for DdsRead {
                 Some(D3DFormat::DXT3) => PixelFormat::Bc2,
                 Some(D3DFormat::DXT5) => PixelFormat::Bc3,
                 Some(D3DFormat::L8) => PixelFormat::R8,
-                Some(other) => return Err(unsupported("dds", &format!("pixel format {other:?}"))),
-                None => return Err(unsupported("dds", "unrecognised pixel format")),
+                Some(other) => {
+                    return Err(Error::unsupported("dds", format!("pixel format {other:?}")))
+                }
+                None => return Err(Error::unsupported("dds", "unrecognised pixel format")),
             },
         };
         if dds.header.depth.is_some_and(|d| d > 1) {
-            return Err(unsupported("dds", "volume textures"));
+            return Err(Error::unsupported("dds", "volume textures"));
         }
         // A cube map is 6 faces per array element; layers are face-major within an element.
         let layers = dds.get_num_array_layers().max(1);
@@ -198,12 +203,12 @@ impl ReadHandler for DdsRead {
                 chain.push((offset, len));
                 offset = offset
                     .checked_add(len)
-                    .ok_or_else(|| corrupt("dds: mip chain overflows"))?;
+                    .ok_or_else(|| Error::corrupt("dds: mip chain overflows"))?;
             }
             mips.push(chain);
         }
         if offset > start + total {
-            return Err(corrupt("dds: file is shorter than its mip chain"));
+            return Err(Error::corrupt("dds: file is shorter than its mip chain"));
         }
 
         let info = BitmapInfo {
@@ -268,7 +273,7 @@ impl ConvertHandler for DdsEncode {
         let bitmap = bitmap_of(&source)?;
         let info = bitmap.info();
         if info.faces != 1 || info.depth != 1 {
-            return Err(unsupported("dds", "cube maps and volumes"));
+            return Err(Error::unsupported("dds", "cube maps and volumes"));
         }
         let mips = info.mip_count.max(1);
         let legacy = match info.format {
@@ -287,7 +292,7 @@ impl ConvertHandler for DdsEncode {
             }),
             None => {
                 let format = dxgi_format(info.format).ok_or_else(|| {
-                    unsupported("dds", &format!("pixel format {:?}", info.format))
+                    Error::unsupported("dds", format!("pixel format {:?}", info.format))
                 })?;
                 Dds::new_dxgi(NewDxgiParams {
                     height: info.height,
@@ -313,7 +318,7 @@ impl ConvertHandler for DdsEncode {
                     .format
                     .mip_len(info.width >> level, info.height >> level);
                 if mip.len() as u64 != want {
-                    return Err(corrupt(format!(
+                    return Err(Error::corrupt(format!(
                         "bitmap mip {level} of layer {layer} has the wrong size"
                     )));
                 }
@@ -321,7 +326,7 @@ impl ConvertHandler for DdsEncode {
             }
         }
         if data.len() != dds.data.len() {
-            return Err(corrupt("bitmap mip chain does not match its info"));
+            return Err(Error::corrupt("bitmap mip chain does not match its info"));
         }
         dds.data = data;
 

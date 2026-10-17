@@ -2,41 +2,18 @@
 //!
 //! The format code is ported from the C++ tool rsx (AGPL-3.0); each module names its sources.
 
-mod anim_codec;
-mod arig;
-mod aseq;
-mod asqd;
-mod dtbl;
-mod dtbl_text;
-mod dxbc;
+mod assets;
+mod codec;
+mod container;
 mod guid;
-mod locate;
-mod matl;
-mod matl_json;
+mod mem;
 mod names;
-mod oodle;
-mod pak;
-mod patch;
-mod rmdl;
-mod rmdl_json;
-mod rpak;
-mod rtech;
-mod shader;
-mod snowflake;
-mod starpak;
-mod stgs;
-mod stgs_json;
-mod stlt;
-mod stlt_json;
-#[cfg(feature = "testing")]
-pub mod testing;
-mod txtr;
-mod uiia;
-mod uiia_json;
-mod uimg;
-mod uimg_json;
 
 use std::sync::Arc;
+
+use assets::{arig, aseq, asqd, dtbl, matl, rmdl, shader, stgs, stlt, txtr, uiia, uimg};
+use codec::{anim_codec, dxbc, oodle, rtech, snowflake};
+use container::{locate, pak, patch, rpak, starpak};
 
 use respak_core::capability::{
     Animation, Bitmap, Container, Mesh, Metadata, NameSource, Skeleton, Table,
@@ -49,30 +26,28 @@ pub use aseq::{
     SectionData, SeqDesc, Weights,
 };
 pub use asqd::{AsqdAsset, AsqdHeader, AsqdRead};
+pub use dtbl::{format_g, to_csv as dtbl_csv, to_json as dtbl_json, DtblCsvEncode, DtblJsonEncode};
 pub use dtbl::{variant as dtbl_variant, DtblAsset, DtblHeader, DtblRead, DATA_EXCLUDED};
-pub use dtbl_text::{
-    format_g, to_csv as dtbl_csv, to_json as dtbl_json, DtblCsvEncode, DtblJsonEncode,
-};
 pub use dxbc::texture_slots;
 pub use guid::string_to_guid;
 pub use locate::{GuidRef, RpakLocate};
 pub use matl::{MatlAsset, MatlHeader, MatlRead};
-pub use matl_json::{MatlJsonEncode, MatlJsonOptions, TextureTarget};
+pub use matl::{MatlJsonEncode, MatlJsonOptions, TextureTarget};
 pub use names::{parse_guids, Finder};
 pub use pak::{AssetEntry, PagePtr, PakHeader, PatchBlock, Tables};
 pub use rmdl::{variant as rmdl_variant, RmdlAsset, RmdlHeader, RmdlRead, Studio, StudioLayout};
-pub use rmdl_json::{RmdlJsonEncode, RmdlJsonOptions};
+pub use rmdl::{RmdlJsonEncode, RmdlJsonOptions};
 pub use rpak::{RpakAsset, RpakData, RpakRead, MEM};
 pub use starpak::{Starpak, StarpakData, StarpakEntry, StarpakRead};
+pub use stgs::StgsJsonEncode;
 pub use stgs::{ModType, StgsAsset, StgsHeader, StgsMod, StgsRead};
-pub use stgs_json::StgsJsonEncode;
+pub use stlt::StltJsonEncode;
 pub use stlt::{Field, FieldType, Layout, StltAsset, StltRead};
-pub use stlt_json::StltJsonEncode;
 pub use txtr::{pixel_format, TxtrAsset, TxtrHeader, TxtrRead};
 pub use uiia::{Quality, Resolution, UiiaAsset, UiiaHeader, UiiaRead};
-pub use uiia_json::{UiiaJsonEncode, UiiaJsonOptions};
+pub use uiia::{UiiaJsonEncode, UiiaJsonOptions};
 pub use uimg::{Rect, Sprite, UimgAsset, UimgHeader, UimgRead};
-pub use uimg_json::{UimgJsonEncode, UimgJsonOptions};
+pub use uimg::{UimgJsonEncode, UimgJsonOptions};
 
 /// Registers the Respawn formats.
 #[derive(Debug, Default)]

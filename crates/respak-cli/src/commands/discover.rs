@@ -6,8 +6,11 @@ use std::process::ExitCode;
 use clap::Args;
 use respak_core::{CancellationToken, DiscoverOptions, Engine};
 
+use super::failures::Failures;
+
 /// Arguments of `discover`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct DiscoverArgs {
     /// Paths relative to `--root`.
     #[arg(required = true)]
@@ -33,21 +36,16 @@ pub(crate) async fn run(
         names: args.names,
     };
     let mut found = Vec::new();
-    let mut failed = false;
+    let mut failures = Failures::default();
     for path in &args.paths {
         match engine.discover(path, &options, cancel).await {
             Ok(discovery) => found.push(discovery),
             Err(error) => {
-                writeln!(err, "{path}: {error}")?;
-                failed = true;
+                failures.report(err, path, error)?;
             }
         }
     }
     serde_json::to_writer_pretty(&mut *out, &found)?;
     writeln!(out)?;
-    Ok(if failed {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(failures.exit_code())
 }

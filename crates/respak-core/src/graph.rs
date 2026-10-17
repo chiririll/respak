@@ -121,6 +121,18 @@ struct OutEdge {
     handler: Arc<dyn ConvertHandler>,
 }
 
+impl OutEdge {
+    /// The planned step this edge makes when taken from `from`.
+    fn step(&self, from: &str) -> Step {
+        Step {
+            from: from.to_owned(),
+            to: self.to.to_owned(),
+            capability: self.capability.map(str::to_owned),
+            cost: self.cost,
+        }
+    }
+}
+
 /// Edges leaving a value of format `from`: direct edges, and capability edges of any other
 /// format whose capability `from` provides.
 fn edges_from(reg: &Registry, from: &str) -> Vec<OutEdge> {
@@ -217,15 +229,7 @@ pub(crate) fn plan(reg: &Registry, from: &str, to: &str, via: &[String]) -> Opti
     let alternatives = found.len().saturating_sub(1);
     let best = found.into_iter().min_by_key(|p| key(p))?;
     let path = Path {
-        steps: best
-            .iter()
-            .map(|(f, e)| Step {
-                from: f.clone(),
-                to: e.to.to_owned(),
-                capability: e.capability.map(str::to_owned),
-                cost: e.cost,
-            })
-            .collect(),
+        steps: best.iter().map(|(f, e)| e.step(f)).collect(),
     };
     Some(Planned {
         path,

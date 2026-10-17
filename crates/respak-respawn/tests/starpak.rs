@@ -11,7 +11,7 @@ use common::*;
 use opendal::Operator;
 use respak_core::capability::PixelFormat;
 use respak_core::volume::{volume_operator, VolumeEntry, VolumeSource, VolumeStat};
-use respak_core::{Cx, ErrorKind, Mediator, Registry, Value};
+use respak_core::{Cx, ErrorKind, Registry, Value};
 use respak_respawn::RespawnPlugin;
 
 const RGBA8: u16 = 31;
@@ -22,7 +22,7 @@ const OPT: &str = "paks/opt.starpak";
 fn cx_on(op: &Operator) -> Cx {
     let mut r = Registry::new();
     r.add(&RespawnPlugin::new());
-    Cx::new(Mediator::new(r), op.clone(), op.clone())
+    respak_core::testing::cx(r, op.clone(), op.clone())
 }
 
 async fn texture_on(op: &Operator, path: &str) -> respak_core::Result<Value> {

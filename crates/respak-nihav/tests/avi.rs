@@ -11,7 +11,7 @@ use respak_core::capability::{
     read_all, Audio, AudioChunk, AudioTrackInfo, FrameFormat, Video, VideoFrame, VideoInfo,
 };
 use respak_core::{
-    Cx, Data, ErrorKind, FormatId, Mediator, Plugin, Registry, Target, Value, ValueKey,
+    Cx, Data, ErrorKind, FormatId, Plugin, Registry, Target, Value, ValueKey,
 };
 use respak_nihav::NihavPlugin;
 
@@ -143,7 +143,7 @@ fn cx() -> Cx {
     r.add(&StubPlugin);
     r.check().unwrap();
     let mem = || Operator::new(Memory::default()).unwrap();
-    Cx::new(Mediator::new(r), mem(), mem())
+    respak_core::testing::cx(r, mem(), mem())
 }
 
 fn clip(full_range: bool) -> (Arc<Clip>, Value) {

@@ -1,8 +1,7 @@
-//! Request and report types of [`Engine::convert`](super::Engine::convert).
+//! Request types of [`Engine::convert`](super::Engine::convert).
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Error;
 use crate::value::FormatId;
 
 /// `{ "version": 1, "outputs": [...] }`
@@ -25,6 +24,21 @@ pub struct OutputRequest {
     /// container with the target's extension.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Leave a source out of the report when there is no conversion path to the target (`NoPath`)
+    /// instead of reporting the failure. For copying a glob that also reaches assets inside
+    /// containers, which have no bytes of their own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skip_unsupported: bool,
+}
+
+impl ConvertRequest {
+    /// A request for `outputs`, at the current schema version.
+    pub fn new(outputs: Vec<OutputRequest>) -> Self {
+        Self {
+            version: 1,
+            outputs,
+        }
+    }
 }
 
 /// `from`: one source or several.
@@ -85,6 +99,17 @@ impl FromSpec {
     }
 }
 
+impl TargetSpec {
+    /// `{"type":"file"}`: the source unchanged.
+    pub fn file() -> Self {
+        Self {
+            format: FormatId::from_static("file"),
+            via: Vec::new(),
+            options: Default::default(),
+        }
+    }
+}
+
 /// `{ "type": "dds", ...options }`
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TargetSpec {
@@ -97,49 +122,6 @@ pub struct TargetSpec {
     /// All other fields. Not interpreted in this slice.
     #[serde(flatten)]
     pub options: serde_json::Map<String, serde_json::Value>,
-}
-
-/// One entry per output.
-#[derive(Debug, Serialize)]
-pub struct ConvertReport {
-    /// In request order.
-    pub outputs: Vec<OutputReport>,
-}
-
-/// The outcome of one output.
-#[derive(Debug, Serialize)]
-pub struct OutputReport {
-    /// The source this conversion read (a glob is reported once per match).
-    pub from: String,
-    /// Files written, or the error.
-    pub result: OutputResult,
-}
-
-/// A value a converter needed to produce its output.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct LinkedValue {
-    /// Key of the value that was converted.
-    pub key: String,
-    /// The format it was converted to.
-    pub format: String,
-}
-
-/// `{ "Ok": { "files": [..] } }` or `{ "Err": { "error": {..} } }`
-#[derive(Debug, Serialize)]
-pub enum OutputResult {
-    /// Success.
-    Ok {
-        /// Paths written on the output operator.
-        files: Vec<String>,
-        /// The values this output's converters asked the mediator for directly (e.g. a
-        /// material's textures), each once, in request order.
-        dependencies: Vec<LinkedValue>,
-    },
-    /// Failure of this output only.
-    Err {
-        /// What went wrong.
-        error: Error,
-    },
 }
 
 /// `icon.png` + `dds` -> `icon.dds`; a dot in a directory name is not an extension.

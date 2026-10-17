@@ -3,14 +3,13 @@
 //! A pak file is `PAK1` followed by entries `path:content`, separated by `\n` (or by `|` if the first character after the magic is `|`, so
 //! that a pak can be nested in another pak's entry).
 
-mod common;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common::*;
+use respak_core::testing::*;
 use opendal::Operator;
 use respak_core::capability::{Container, Metadata};
 use respak_core::value::FileData;
@@ -210,8 +209,8 @@ fn cx(env: &Env) -> Cx {
     // A fresh context, as one `Engine` call would have.
     let mut r = Registry::new();
     r.add(&TestPlugin { id: "t", register });
-    Cx::new(
-        respak_core::Mediator::new(r),
+    respak_core::testing::cx(
+        r,
         env.input.clone(),
         env.output.clone(),
     )
@@ -378,7 +377,7 @@ async fn discover_accepts_a_path_inside_a_container() {
 async fn globbed(env: &Env, pattern: &str) -> Result<Vec<String>> {
     Ok(env
         .engine
-        .open(pattern, &respak_core::CancellationToken::new())
+        .open_matches(pattern, &respak_core::CancellationToken::new())
         .await?
         .iter()
         .map(|v| v.key().to_string())
@@ -449,4 +448,64 @@ async fn mounting_a_container_publishes_input_opened() {
         }
     }
     assert_eq!(opened, [("outer.pak".to_owned(), 3)]);
+}
+
+#[tokio::test]
+async fn list_gives_sorted_entries_and_names_only_on_request() {
+    let env = fixture().await;
+    let token = respak_core::CancellationToken::new();
+
+    let plain = env.engine.list("outer.pak", false, &token).await.unwrap();
+    let paths: Vec<_> = plain.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(paths, ["inner.pak", "other.txt", "z.dat"]);
+    assert!(plain.iter().all(|e| e.name.is_none()));
+
+    let named = env.engine.list("outer.pak", true, &token).await.unwrap();
+    let paths: Vec<_> = named.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(paths, ["inner.pak", "other.txt", "z.dat"], "order is kept");
+    // A name equal to the path is not reported.
+    assert!(named.iter().all(|e| e.name.is_none()));
+
+    let err = env
+        .engine
+        .list("plain.txt", false, &token)
+        .await
+        .unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::NotFound { .. }), "{err}");
+}
+
+async fn inspected_paths(env: &Env) -> Vec<String> {
+    let token = respak_core::CancellationToken::new();
+    let infos = env.engine.inspect("outer.pak", &token).await.unwrap();
+    let z = infos.iter().find(|i| i.path == "z.dat").unwrap();
+    assert_eq!(z.name.as_deref(), Some("z.dat"));
+    assert_eq!(z.kind.as_deref(), Some("dat"));
+    infos.into_iter().map(|i| i.path).collect()
+}
+
+#[tokio::test]
+async fn inspect_keeps_the_container_order_on_one_thread() {
+    let env = fixture().await;
+    assert_eq!(
+        inspected_paths(&env).await,
+        ["inner.pak", "other.txt", "z.dat"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn inspect_keeps_the_container_order_across_worker_threads() {
+    let env = fixture().await;
+    assert_eq!(
+        inspected_paths(&env).await,
+        ["inner.pak", "other.txt", "z.dat"]
+    );
+}
+
+#[tokio::test]
+async fn inspect_stops_when_cancelled() {
+    let env = fixture().await;
+    let token = respak_core::CancellationToken::new();
+    token.cancel();
+    let err = env.engine.inspect("outer.pak", &token).await.unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::Cancelled), "{err}");
 }

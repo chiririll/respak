@@ -27,8 +27,8 @@ use respak_core::{
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 
+use crate::video_of;
 use crate::wav::pcm16;
-use crate::{corrupt, video_of};
 
 /// One encoded frame.
 #[derive(Debug, Clone)]
@@ -353,7 +353,7 @@ impl Job {
                 }
             }
             if seen == 0 {
-                return Err(corrupt("the video has no frames"));
+                return Err(Error::corrupt("the video has no frames"));
             }
             encoder.finish(&mut packets)?;
             for packet in packets.drain(..) {

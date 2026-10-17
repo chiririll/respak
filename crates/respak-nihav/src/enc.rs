@@ -130,7 +130,7 @@ impl Driver {
     }
 }
 
-fn bad(frame: &VideoFrame, what: &str) -> Error {
+fn bad_frame(frame: &VideoFrame, what: &str) -> Error {
     Error::new(ErrorKind::Corrupt {
         context: format!("frame {}: {what}", frame.index),
     })
@@ -188,7 +188,7 @@ pub(crate) fn yuv420_buffer(
     step: &str,
 ) -> Result<NABufferType> {
     if frame.format != FrameFormat::Yuv420 || frame.planes.len() != 3 || frame.strides.len() != 3 {
-        return Err(bad(frame, "expected three YUV 4:2:0 planes"));
+        return Err(bad_frame(frame, "expected three YUV 4:2:0 planes"));
     }
     let mut buffer = alloc_video_buffer(info, 1).map_err(|e| backend(step, e))?;
     let NABufferType::Video(vbuf) = &mut buffer else {
@@ -214,7 +214,7 @@ pub(crate) fn yuv420_buffer(
         let (dst_w, dst_h) = dims[plane];
         let (src, src_stride) = (&frame.planes[plane], frame.strides[plane]);
         if src_w == 0 || src_h == 0 || src.len() < (src_h - 1) * src_stride + src_w {
-            return Err(bad(frame, "a plane is too short"));
+            return Err(bad_frame(frame, "a plane is too short"));
         }
         for row in 0..dst_h {
             let from = &src[row.min(src_h - 1) * src_stride..][..src_w];
@@ -234,13 +234,13 @@ pub(crate) fn bgr0_buffer(
     step: &str,
 ) -> Result<NABufferType> {
     if frame.format != FrameFormat::Rgba8 || frame.planes.len() != 1 || frame.strides.len() != 1 {
-        return Err(bad(frame, "expected one RGBA plane"));
+        return Err(bad_frame(frame, "expected one RGBA plane"));
     }
     let mut buffer = alloc_video_buffer(info, 1).map_err(|e| backend(step, e))?;
     let (w, h) = (info.get_width(), info.get_height());
     let (src, src_stride) = (&frame.planes[0], frame.strides[0]);
     if w == 0 || h == 0 || src.len() < (h - 1) * src_stride + w * 4 {
-        return Err(bad(frame, "the plane is too short"));
+        return Err(bad_frame(frame, "the plane is too short"));
     }
     let vbuf = match &mut buffer {
         NABufferType::Video(v) | NABufferType::VideoPacked(v) => v,

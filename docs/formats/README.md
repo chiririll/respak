@@ -2,12 +2,12 @@
 
 One file per format that rsx supports. The *respak support* column says whether respak handles it: `yes`, `partially` (see the spec and `../tasks/backlog.md` for what is left) or `no`. **Each file stands on its own:** an agent reads that one file (plus [`../design/project.md`](../design/project.md) for the rules) and can sketch the slice without opening rsx again. They are research notes, not tasks. A spec becomes a slice (`../tasks/`) when the user picks it, and the slice still goes through the rsx review and the gate (project.md §12, tasks/README).
 
-Already built, no spec here: `rpak`, `starpak`, `txtr`, `matl` (v15+), `uiia`, `uimg`, `dtbl`, `stgs`, `stlt`, `ptch`, `bik` (NihAV, not rsx). `shdr` exists only as a helper inside `matl` (`shader.rs`, `dxbc.rs`).
+Already built, with a spec describing what respak implements: [txtr](txtr.md), [matl](matl.md) (v15+, includes the `shds`/`shdr`/DXBC helper), [uiia](uiia.md), [dtbl](dtbl.md), [stgs](stgs.md), [stlt](stlt.md). Already built, no spec here: `rpak`, `starpak`, `uimg`, `ptch`, `bik` (NihAV, not rsx). `shdr` exists only as a helper inside `matl` (`shader.rs`, `dxbc.rs`).
 
 rsx = `C:\Users\chiririll\Projects\rsx`. Paths in the specs are relative to `rsx/src`.
 
 ## Index
-**Written so far:** miles, miles-codecs, vpk, wrap, wepn, impa, rmdl, arig, aseq, anir. Every other row is planned, not researched yet (the first research run stopped at the session limit). `mt4a` and `txtx` are not supported by rsx. `wrap`, `wepn` and `impa` are rpak assets, not VPK entries.
+**Written so far:** miles, miles-codecs, vpk, wrap, wepn, impa, rmdl, arig, aseq, anir (plus the built-format specs above). Every other row is planned, not researched yet (the first research run stopped at the session limit). `mt4a` and `txtx` are not supported by rsx. `wrap`, `wepn` and `impa` are rpak assets, not VPK entries.
 | Spec | rsx kind (FourCC) | What | Group | respak support |
 |---|---|---|---|---|
 | [rmdl](rmdl.md) | `mdl_` | rpak model (studiohdr r5, VG vertex data) | model | partially |

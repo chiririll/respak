@@ -4,12 +4,13 @@ use std::io::Write;
 use std::process::ExitCode;
 
 use clap::Args;
-use respak_core::{CancellationToken, ConvertRequest, Engine, OutputRequest};
+use respak_core::{CancellationToken, ConvertRequest, Engine, OutputRequest, TargetSpec};
 
-use super::output::{file_target, report, skip_assets};
+use super::output::report;
 
 /// Arguments of `copy`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct CopyArgs {
     /// Source path or glob, relative to `--root` (or the Steam depots).
     path: String,
@@ -27,18 +28,14 @@ pub(crate) async fn run(
 ) -> anyhow::Result<ExitCode> {
     let outputs = vec![OutputRequest {
         from: args.path.into(),
-        to: file_target(),
+        to: TargetSpec::file(),
         path: args.out_path,
+        // An asset inside a pak has no bytes of its own to copy: skip it, not fail, so a glob
+        // that reaches into paks copies the real files and goes on.
+        skip_unsupported: true,
     }];
-    let mut done = engine
-        .convert(
-            &ConvertRequest {
-                version: 1,
-                outputs,
-            },
-            cancel,
-        )
+    let done = engine
+        .convert(&ConvertRequest::new(outputs), cancel)
         .await?;
-    skip_assets(&mut done);
     report(done, out, err)
 }

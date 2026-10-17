@@ -5,7 +5,7 @@ use opendal::{services::Memory, Operator};
 use respak_core::Engine;
 use respak_respawn::RespawnPlugin;
 
-pub use respak_respawn::testing::*;
+pub use respak_respawn_testing::*;
 
 pub struct Env {
     pub engine: Engine,

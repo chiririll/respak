@@ -17,7 +17,7 @@ use respak_core::{
 use serde::{Deserialize, Serialize};
 
 use crate::png::encode_rgba8;
-use crate::{corrupt, video_of};
+use crate::video_of;
 
 /// Capability edge `Video -> png.frames`.
 pub struct FramesEncode;
@@ -99,7 +99,7 @@ impl ConvertHandler for FramesEncode {
             let pixels = match (frame.format, frame.planes.as_slice()) {
                 (FrameFormat::Rgba8, [pixels]) if pixels.len() == expected => pixels.clone(),
                 _ => {
-                    return Err(corrupt(format!(
+                    return Err(Error::corrupt(format!(
                         "frame {}: expected {expected} bytes of RGBA8 for {}x{}",
                         frame.index, info.width, info.height
                     )))
@@ -130,7 +130,7 @@ impl ConvertHandler for FramesEncode {
             }
         }
         if seen == 0 {
-            return Err(corrupt("the video has no frames"));
+            return Err(Error::corrupt("the video has no frames"));
         }
         if items.is_empty() {
             return Err(invalid(&format!(

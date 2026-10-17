@@ -112,14 +112,38 @@ pub struct Resolver {
     app: u32,
     branch: String,
     client: OnceCell<SteamClient<LoggedIn>>,
+    /// One CM call at a time: steamroom reads replies straight off the socket and drops the ones that
+    /// are not its own, so overlapping calls steal each other's replies and hang until Steam closes the socket.
+    calls: tokio::sync::Mutex<()>,
     details: Mutex<HashMap<u32, Arc<OnceCell<Arc<AppDetails>>>>>,
 }
 
-impl Resolver {
-    async fn client(&self) -> Result<&SteamClient<LoggedIn>> {
+/// The CM client, with the call lock held until it is dropped.
+struct Locked<'a> {
+    client: &'a SteamClient<LoggedIn>,
+    _guard: tokio::sync::MutexGuard<'a, ()>,
+}
+
+impl std::ops::Deref for Locked<'_> {
+    type Target = SteamClient<LoggedIn>;
+
+    fn deref(&self) -> &Self::Target {
         self.client
-            .get_or_try_init(|| async { Ok(crate::session::logon(&self.accounts).await?.0) })
-            .await
+    }
+}
+
+impl Resolver {
+    async fn client(&self) -> Result<Locked<'_>> {
+        let client = self
+            .client
+            .get_or_try_init(|| async {
+                Ok::<_, Error>(crate::session::logon(&self.accounts).await?.0)
+            })
+            .await?;
+        Ok(Locked {
+            client,
+            _guard: self.calls.lock().await,
+        })
     }
 
     async fn details(&self, app: u32) -> Result<Arc<AppDetails>> {
@@ -344,6 +368,7 @@ pub async fn open(
         app: options.app,
         branch: options.branch.clone(),
         client: OnceCell::new(),
+        calls: tokio::sync::Mutex::new(()),
         details: Mutex::default(),
     });
     let mut tree = DepotTree::default();

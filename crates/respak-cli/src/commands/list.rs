@@ -6,8 +6,11 @@ use std::process::ExitCode;
 use clap::Args;
 use respak_core::{CancellationToken, Engine};
 
+use super::failures::Failures;
+
 /// Arguments of `list`.
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
 pub struct ListArgs {
     /// Container paths relative to `--root`.
     #[arg(required = true)]
@@ -29,7 +32,7 @@ pub(crate) async fn run(
     err: &mut impl Write,
 ) -> anyhow::Result<ExitCode> {
     let names = args.names;
-    let mut failed = false;
+    let mut failures = Failures::default();
     for path in &args.paths {
         match engine.list(path, args.map || names, cancel).await {
             Ok(entries) => {
@@ -43,14 +46,9 @@ pub(crate) async fn run(
                 }
             }
             Err(error) => {
-                writeln!(err, "{path}: {error}")?;
-                failed = true;
+                failures.report(err, path, error)?;
             }
         }
     }
-    Ok(if failed {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(failures.exit_code())
 }
