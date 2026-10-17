@@ -28,7 +28,8 @@ default = ["steam"]
 steam = ["dep:respak-steam"]
 
 [dev-dependencies]
-respak-respawn = { workspace = true, features = ["testing"] }
+respak-respawn.workspace = true
+respak-respawn-testing.workspace = true
 png = "0.18"
 ddsfile = "0.6"
 tempfile = "3"

@@ -1,5 +1,5 @@
 # R4 · Large file splits
-**Status:** todo · **Risk:** low–medium · **Depends on:** R1 (except where noted)
+**Status:** done · **Risk:** low–medium · **Depends on:** R1 (except where noted)
 
 Per file: move tests/fixtures out of `src` first, then split, keeping public paths via `pub use`.
 
@@ -30,3 +30,13 @@ Split into `rpak/{volume,body,progress,names}.rs` with the oodle/rtech progressi
 - `hex(guid)` is in `matl_json.rs:66` but used by `aseq.rs:566`: move to `guid.rs`.
 - Group the 33 flat `mod` lines in `lib.rs` into `container/`, `assets/`, `codec/`.
 - `aseq.rs:473` and `asqd.rs:88` both define `read_upto`; unify with the `dtbl.rs` cstr/string reader.
+
+## Done
+- R4.1: `cast/{options,node,model,anim,tests}.rs`.
+- R4.2: `mbnk/{layout,entry,bank,source,handler,fixtures,tests}.rs`. Deviation: `e2e_tests.rs` stays in `src/` — the fixtures need private layout internals, so it cannot move to `tests/` without making them public.
+- R4.3: new crate `respak-respawn-testing` (no dependency on respawn, so no cycle); `testing` feature and `testing.rs` removed. `put*`/`cstr` helpers deduped into `bytes.rs`; unused `page1_at` deleted. The crate allows `missing_docs` explicitly in its manifest instead of a blanket `allow(dead_code)`. The `le32/le64` closures in `rtech.rs` and `tests/starpak.rs:put` turned out to be unrelated to the builders and were left alone.
+- R4.4: `rmdl/{block,header,studio,vg,asset,handler,tests}.rs`; `decode_mesh` and `Studio::parse` broken into per-part functions; `fix_offset` lives next to `FixedOffset`.
+- R4.5: `rpak/{body,rtech_read,oodle_read,volume,chain,master,names,data,handler,tests}.rs`. The patch file naming (`stem(NN).rpak`) was parsed twice in `rpak.rs`; now `names.rs`. `patch.rs` has no naming code.
+- R4.6: `*_json.rs` and `dtbl_text.rs` are submodules (`json.rs`, `text.rs`); `hex` is in `guid.rs`; modules grouped into `container/`, `codec/`, `assets/` (lib.rs re-imports them by name, so `crate::rpak::...` paths are unchanged). The two `read_upto` are unified as `mem::read_clamped`; the cstr readers differ in error semantics and were left.
+- Extra: `aseq.rs` (1014 production lines) split into `aseq/{options,header,desc,asset,handler}.rs`.
+- Left to R5: `snowflake`, `rtech`, `anim_codec`, and the large test files.

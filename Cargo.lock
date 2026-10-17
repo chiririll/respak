@@ -2275,6 +2275,7 @@ dependencies = [
  "respak-miles",
  "respak-nihav",
  "respak-respawn",
+ "respak-respawn-testing",
  "respak-steam",
  "serde",
  "serde_json",
@@ -2335,6 +2336,7 @@ dependencies = [
  "respak-core",
  "respak-formats",
  "respak-respawn",
+ "respak-respawn-testing",
  "serde_json",
  "tempfile",
  "tokio",
@@ -2384,13 +2386,17 @@ dependencies = [
  "opendal",
  "respak-core",
  "respak-formats",
- "respak-respawn",
+ "respak-respawn-testing",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "respak-respawn-testing"
+version = "0.1.0"
 
 [[package]]
 name = "respak-steam"

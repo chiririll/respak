@@ -249,7 +249,7 @@ fn rpak_env() -> Env {
 
 #[tokio::test]
 async fn an_rpak_texture_converts_to_dds_inside_the_container_path() {
-    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    use respak_respawn_testing::{build_tex_pak, TexSpec};
     // 8x8 BC1 with 2 permanent mips: 32 bytes + 8 bytes (padded to 16 each), smallest first.
     let mut data = vec![2u8; 16];
     data.extend(vec![1u8; 32]);
@@ -304,7 +304,7 @@ async fn an_rpak_texture_converts_to_dds_inside_the_container_path() {
 
 #[tokio::test]
 async fn discover_in_an_rpak_lists_textures_as_convertible() {
-    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    use respak_respawn_testing::{build_tex_pak, TexSpec};
     let env = rpak_env();
     let t = TexSpec::new(0x42, 10, 4, 4, 31, 1, vec![9u8; 64]);
     env.input
@@ -330,7 +330,7 @@ async fn discover_in_an_rpak_lists_textures_as_convertible() {
 
 #[tokio::test]
 async fn discover_names_reads_the_asset_names() {
-    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    use respak_respawn_testing::{build_tex_pak, TexSpec};
     let env = rpak_env();
     let mut t = TexSpec::new(0x42, 10, 4, 4, 31, 1, vec![9u8; 64]);
     t.name = Some("texture/ui/icon");
@@ -351,7 +351,7 @@ async fn discover_names_reads_the_asset_names() {
 
 #[tokio::test]
 async fn an_rpak_bc1_texture_converts_to_png_and_honours_mips() {
-    use respak_respawn::testing::{build_tex_pak, TexSpec};
+    use respak_respawn_testing::{build_tex_pak, TexSpec};
     // 8x8 BC1, 2 permanent mips (smallest first in the file): mip 0 is solid colour 0xF800 (red).
     let block = |c0: u16| {
         let mut b = c0.to_le_bytes().to_vec();

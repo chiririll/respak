@@ -13,6 +13,7 @@ publish = false
 [workspace.dependencies]
 respak-core = { path = "crates/respak-core" }
 respak-respawn = { path = "crates/respak-respawn" }
+respak-respawn-testing = { path = "crates/respak-respawn-testing" }
 respak-formats = { path = "crates/respak-formats" }
 respak-nihav = { path = "crates/respak-nihav" }
 respak-miles = { path = "crates/respak-miles" }

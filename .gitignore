@@ -1,5 +1,9 @@
 target/
 
-# Steam login and cache state (holds a plaintext token)
+# Respak cache
 .respak/
+
+# Respak profiles
+respak*.toml
+
 out/
