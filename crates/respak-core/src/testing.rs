@@ -10,10 +10,10 @@ use bytes::Bytes;
 use opendal::{services::Memory, Operator};
 
 use crate::capability::{Bitmap, BitmapBuf, BitmapInfo, PixelFormat};
+use crate::detect::{magic, Detect, Detected, Probe};
 use crate::event::Events;
 use crate::mediator::{Cx, Mediator, Target};
 use crate::middleware::Middleware;
-use crate::detect::{magic, Detect, Detected, Probe};
 use crate::plugin::{Plugin, Registry};
 use crate::value::{BlobData, Data, Value, ValueKey};
 use crate::{

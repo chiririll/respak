@@ -1,17 +1,14 @@
 //! Events, middleware, cancellation and bounded work in `Cx` (slice 12).
 
-
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use respak_core::testing::*;
 use respak_core::broadcast::error::{RecvError, TryRecvError};
-use respak_core::testing::CxBuilder;
 use respak_core::middleware::{Convert, Middleware, Next};
-use respak_core::{
-    Cx, ErrorKind, Event, Events, FormatId, Registry, Result, Target, Value,
-};
+use respak_core::testing::CxBuilder;
+use respak_core::testing::*;
+use respak_core::{Cx, ErrorKind, Event, Events, FormatId, Registry, Result, Target, Value};
 
 fn register(r: &mut Registry) {
     r.format("src")

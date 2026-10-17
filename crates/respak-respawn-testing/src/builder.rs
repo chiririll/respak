@@ -1,5 +1,5 @@
 use crate::bytes::put;
-use crate::raw::{build_raw, RawAsset};
+use crate::raw::{build_raw_with, RawAsset};
 
 /// A cell of [`PakBuilder::dtbl`]; `Str` is any string-typed cell, `Null` a null string pointer.
 pub enum DtblCell<'a> {
@@ -17,6 +17,8 @@ pub struct PakBuilder {
     misc: Vec<u8>,
     pointers: Vec<(u32, u32)>,
     assets: Vec<RawAsset>,
+    starpaks: Vec<String>,
+    opt_starpaks: Vec<String>,
 }
 
 impl PakBuilder {
@@ -215,13 +217,67 @@ impl PakBuilder {
         );
     }
 
+    /// The pak's starpak path lists (mandatory, optional), as the pak stores them.
+    pub fn starpak_files(&mut self, starpaks: &[&str], opt_starpaks: &[&str]) {
+        self.starpaks = starpaks.iter().map(|s| (*s).to_owned()).collect();
+        self.opt_starpaks = opt_starpaks.iter().map(|s| (*s).to_owned()).collect();
+    }
+
+    /// Points the last asset added at entries of starpak 0 and optional starpak 0, by their
+    /// 4096-aligned offsets.
+    pub fn stream_last(&mut self, starpak: Option<u64>, opt: Option<u64>) {
+        let last = self.assets.last_mut().expect("an asset");
+        last.starpak = starpak.map_or(-1, |o| o as i64);
+        last.opt_starpak = opt.map_or(-1, |o| o as i64);
+    }
+
+    /// A `wrap` of asset version 7 (0x28-byte header). `path` is the stored path, `path_size` the
+    /// length of the real file name's end in it, `data` the stored bytes (`None`: not in the pak,
+    /// the flags must say streamed).
+    #[allow(clippy::too_many_arguments)]
+    pub fn wrap_v7(
+        &mut self,
+        guid: u64,
+        path: &str,
+        path_size: u16,
+        skip_first_folder: u16,
+        flags: u16,
+        cmp_size: u32,
+        dcmp_size: u32,
+        data: Option<&[u8]>,
+    ) {
+        let path_at = self.string(path);
+        let data_at = data.map(|d| self.data(d));
+        let mut h = vec![0u8; 0x28];
+        put(&mut h, 0x14, &cmp_size.to_le_bytes());
+        put(&mut h, 0x18, &dcmp_size.to_le_bytes());
+        put(&mut h, 0x1C, &path_size.to_le_bytes());
+        put(&mut h, 0x1E, &skip_first_folder.to_le_bytes());
+        put(&mut h, 0x22, &flags.to_le_bytes());
+        let mut pointers = vec![(0, path_at)];
+        pointers.extend(data_at.map(|d| (8, d)));
+        self.asset(guid, b"wrap", 7, h, &pointers, None);
+    }
+
+    /// A `wrap` of asset version 1 (0x10-byte header) holding `data`.
+    pub fn wrap_v1(&mut self, guid: u64, data: &[u8]) {
+        let data_at = self.data(data);
+        let mut h = vec![0u8; 0x10];
+        put(&mut h, 0, &(data.len() as u32).to_le_bytes());
+        self.asset(guid, b"wrap", 1, h, &[(8, data_at)], None);
+    }
+
     /// The pak file.
     pub fn build(self, pak_version: u16) -> Vec<u8> {
-        build_raw(
+        let starpaks: Vec<&str> = self.starpaks.iter().map(String::as_str).collect();
+        let opt: Vec<&str> = self.opt_starpaks.iter().map(String::as_str).collect();
+        build_raw_with(
             pak_version,
             &[self.heads, self.misc],
             &self.pointers,
             &self.assets,
+            &starpaks,
+            &opt,
         )
     }
 }

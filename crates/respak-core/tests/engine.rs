@@ -1,10 +1,9 @@
 //! Core behaviour with a synthetic plugin: formats `alpha` / `beta` recognised by magic bytes.
 
-
 use std::sync::Arc;
 
-use respak_core::testing::*;
 use respak_core::capability::{Bitmap, Blob};
+use respak_core::testing::*;
 use respak_core::{
     magic, Engine, ErrorKind, FormatId, OutputResult, Registry, Target, Value, ValueKey, Version,
 };

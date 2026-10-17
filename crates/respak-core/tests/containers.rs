@@ -3,15 +3,14 @@
 //! A pak file is `PAK1` followed by entries `path:content`, separated by `\n` (or by `|` if the first character after the magic is `|`, so
 //! that a pak can be nested in another pak's entry).
 
-
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use respak_core::testing::*;
 use opendal::Operator;
 use respak_core::capability::{Container, Metadata};
+use respak_core::testing::*;
 use respak_core::value::FileData;
 use respak_core::volume::{volume_operator, VolumeEntry, VolumeSource, VolumeStat};
 use respak_core::{
@@ -209,11 +208,7 @@ fn cx(env: &Env) -> Cx {
     // A fresh context, as one `Engine` call would have.
     let mut r = Registry::new();
     r.add(&TestPlugin { id: "t", register });
-    respak_core::testing::cx(
-        r,
-        env.input.clone(),
-        env.output.clone(),
-    )
+    respak_core::testing::cx(r, env.input.clone(), env.output.clone())
 }
 
 #[tokio::test]

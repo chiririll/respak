@@ -1,12 +1,11 @@
 //! Detection helpers, path planning, `formats`, `discover` and multi-hop conversion.
 
-
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use respak_core::testing::*;
 use respak_core::capability::{Bitmap, Blob};
+use respak_core::testing::*;
 use respak_core::value::{BlobData, FileData};
 use respak_core::{
     u16le, u32le, within, ConvertHandler, Cx, DiscoverOptions, ErrorKind, FormatId, Mediator,

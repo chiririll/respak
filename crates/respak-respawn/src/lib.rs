@@ -11,12 +11,12 @@ mod names;
 
 use std::sync::Arc;
 
-use assets::{arig, aseq, asqd, dtbl, matl, rmdl, shader, stgs, stlt, txtr, uiia, uimg};
+use assets::{arig, aseq, asqd, dtbl, matl, rmdl, shader, stgs, stlt, txtr, uiia, uimg, wrap};
 use codec::{anim_codec, dxbc, oodle, rtech, snowflake};
 use container::{locate, pak, patch, rpak, starpak};
 
 use respak_core::capability::{
-    Animation, Bitmap, Container, Mesh, Metadata, NameSource, Skeleton, Table,
+    Animation, Bitmap, Blob, Container, Mesh, Metadata, NameSource, Skeleton, Table,
 };
 use respak_core::{Plugin, Registry};
 
@@ -48,6 +48,7 @@ pub use uiia::{Quality, Resolution, UiiaAsset, UiiaHeader, UiiaRead};
 pub use uiia::{UiiaJsonEncode, UiiaJsonOptions};
 pub use uimg::{Rect, Sprite, UimgAsset, UimgHeader, UimgRead};
 pub use uimg::{UimgJsonEncode, UimgJsonOptions};
+pub use wrap::{WrapAsset, WrapHeader, WrapRead};
 
 /// Registers the Respawn formats.
 #[derive(Debug, Default)]
@@ -222,6 +223,12 @@ impl Plugin for RespawnPlugin {
         r.format("stlt.json")
             .label("Settings layout (JSON)")
             .extensions(["json"]);
+        r.format("wrap")
+            .label("Respawn wrapped file")
+            .from("rpak.asset", WrapRead)
+            .extensions(["wrap"])
+            .provides::<dyn Blob>()
+            .provides::<dyn Metadata>();
         r.format("dtbl.csv")
             .label("Datatable (CSV)")
             .extensions(["csv"]);

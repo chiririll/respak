@@ -1,7 +1,6 @@
 //! Batch requests: globs, lists, `{path, format}`, parallel outputs, composite outputs and the
 //! written-paths map.
 
-
 use std::sync::Arc;
 
 use async_trait::async_trait;

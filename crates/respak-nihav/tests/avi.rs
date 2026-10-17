@@ -10,9 +10,7 @@ use opendal::{services::Memory, Operator};
 use respak_core::capability::{
     read_all, Audio, AudioChunk, AudioTrackInfo, FrameFormat, Video, VideoFrame, VideoInfo,
 };
-use respak_core::{
-    Cx, Data, ErrorKind, FormatId, Plugin, Registry, Target, Value, ValueKey,
-};
+use respak_core::{Cx, Data, ErrorKind, FormatId, Plugin, Registry, Target, Value, ValueKey};
 use respak_nihav::NihavPlugin;
 
 const FRAMES: u32 = 8;

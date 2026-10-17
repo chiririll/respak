@@ -5,8 +5,8 @@ use std::path::Path;
 use opendal::{services::Fs, Operator};
 use respak_core::{CancellationToken, Engine};
 use respak_formats::FormatsPlugin;
-use respak_rad::RadPlugin;
 use respak_nihav::NihavPlugin;
+use respak_rad::RadPlugin;
 use respak_respawn::RespawnPlugin;
 
 use crate::{Settings, Source};

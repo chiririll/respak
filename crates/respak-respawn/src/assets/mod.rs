@@ -12,3 +12,4 @@ pub(crate) mod stlt;
 pub(crate) mod txtr;
 pub(crate) mod uiia;
 pub(crate) mod uimg;
+pub(crate) mod wrap;

@@ -257,7 +257,11 @@ impl Engine {
 
     /// Opens a path or glob on the input: one value per match (`NoMatch` if a glob matches
     /// nothing, `NotFound` for a path that is not there).
-    pub async fn open_matches(&self, path_or_glob: &str, cancel: &CancellationToken) -> Result<Vec<Value>> {
+    pub async fn open_matches(
+        &self,
+        path_or_glob: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<Value>> {
         let cx = self.cx(cancel);
         let mut values = Vec::new();
         for path in self.mediator.expand(path_or_glob, &cx).await? {

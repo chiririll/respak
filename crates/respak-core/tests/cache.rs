@@ -1,6 +1,5 @@
 //! The plugin cache (slice 13): namespaced by plugin id and `cache_version`.
 
-
 use respak_core::testing::*;
 use respak_core::{Cx, Event, Plugin, Registry};
 

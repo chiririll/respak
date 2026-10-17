@@ -87,6 +87,15 @@ rsx `ExportWrapAsset` (`wrap.cpp:191-273`): writes to `<export>/wrap/<name>`; wi
 
 Proposed respak: format `wrap` from `rpak.asset`, `provides::<dyn Blob>()` + `Metadata` (name, guid). Writing the blob gives the original file. The output name rule (swapped VM extension or original) is a target option. A `.bsp` wrap could additionally be `Container`/forwarded to `bsp` (later, bsp slice).
 
+## Observed on real files
+Checked on `mp_rr_olympus_mu3_client_perm.rpak` (Steam, 2026-10-18), six assets: two `.nut` scripts, the `.bsp`, and two lumps. Decoded bytes match the header sizes.
+- **Stored files have `cmpSize = 0`** (for example `cmp 0 / dcmp 6299`, flags `0x4`), not `cmp == dcmp`. With `shouldDecompress = cmp < dcmp` they are still not compressed because the `COMPRESSED` flag is clear: `isCompressed` needs both. Do not use `cmp < dcmp` alone.
+- Flags `0x5` with `cmp 38 > dcmp 36` (stored, 2 leading bytes skipped) gave a sane plane lump (a unit normal), which confirms the `+2` rule for non-streamed permanent data.
+- Stored paths use backslashes (`maps\mp_rr_olympus_mu3.bsp.0014.bsp_lump.client`); the VM extension `.client` follows the real file name (`.bsp_lump`, `.nut`).
+- Scripts end with one NUL, dropped. The `.bsp` wrap is the 2064-byte `rBSP` header; lumps are separate `.bsp_lump` wraps.
+- **Oodle confirmed** on `mp_rr_olympus_mu3_uh_snapback.rpak`, `resource\overviews\mp_rr_olympus_mu3_uh_snapback.txt` (flags `0x5`, `cmp 197 < dcmp 303`): decodes to 303 bytes of readable text, 302 after dropping the NUL. That pak has only this one wrap.
+- **Not seen yet:** streamed wraps.
+
 ## rsx quirks
 - Oodle call uses `bufSize = dcmpSize` as the input length while the input buffer holds `cmpSize` bytes: over-read (`utils.cpp:2261-2291`). On decode failure the compressed bytes are returned as is, with `dcmpSize` as size. respak: errors.
 - Unknown version → no extra data, later null deref.

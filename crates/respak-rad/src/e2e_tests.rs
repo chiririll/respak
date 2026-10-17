@@ -2,9 +2,7 @@
 //! converting it to WAV. No game files.
 
 use opendal::{services::Memory, Operator};
-use respak_core::{
-    CancellationToken, Cx, Engine, ErrorKind, FormatId, Registry, Target, Value,
-};
+use respak_core::{CancellationToken, Cx, Engine, ErrorKind, FormatId, Registry, Target, Value};
 use respak_formats::FormatsPlugin;
 
 use crate::mbnk::fixtures::{bank, Fx};
