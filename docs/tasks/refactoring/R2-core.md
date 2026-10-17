@@ -1,7 +1,7 @@
 # R2 · Core restructuring
-**Status:** todo · **Risk:** low–medium · **Depends on:** R1
+**Status:** in-progress · **Risk:** low–medium · **Depends on:** R1
 
-## R2.1 Split `mediator.rs` (M)
+## R2.1 Split `mediator.rs` (M) — done
 `mediator.rs` (649 lines) holds the detect/identify/convert pipeline, `Cx` (limits, cancel, cache, link state), the output-writing path (`claim`/`write`/`write_blob`/`copy_blob`) and plan/target passthroughs. `glob.rs` (`Mediator::expand`) and `resolve.rs` (`open`/`mount`/`resolve`) add more `impl Mediator`.
 - Make a `mediator/` directory: pipeline, `cx.rs`, `cx/output.rs`, and fold `glob.rs`/`resolve.rs` in as `open`/`expand`. Keep the `lib.rs` re-exports unchanged.
 

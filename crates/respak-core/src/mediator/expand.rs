@@ -8,8 +8,8 @@
 use globset::Glob;
 use opendal::Operator;
 
+use super::{Cx, Mediator};
 use crate::error::{Error, ErrorKind, Result};
-use crate::mediator::{Cx, Mediator};
 use crate::value::FileData;
 
 /// Whether `path` has glob syntax in it (otherwise it names one thing).

@@ -7,13 +7,11 @@ pub mod discover;
 pub mod engine;
 pub mod error;
 pub mod event;
-pub mod glob;
 pub mod graph;
 pub mod mediator;
 pub mod middleware;
 pub mod plugin;
 pub mod reader;
-pub mod resolve;
 pub mod target;
 pub mod value;
 pub mod volume;
@@ -33,10 +31,10 @@ pub use engine::{
 pub use error::{Error, ErrorKind, Result};
 pub use event::{Event, Events, LogSubscriber};
 pub use graph::{EdgeInfo, FormatGraph, FormatInfo, Path, Step, TargetInfo};
+pub use mediator::Mounts;
 pub use mediator::{Cx, Mediator, Target};
 pub use middleware::{Convert, Middleware, Next};
 pub use plugin::{CapId, FormatBuilder, Plugin, Registry};
-pub use resolve::Mounts;
 pub use target::TypedTarget;
 pub use value::{Data, FormatId, LazyBlob, LazyInit, LazySource, Value, ValueKey, Version};
 

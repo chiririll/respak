@@ -5,8 +5,8 @@ use std::sync::Mutex;
 
 use opendal::Operator;
 
+use super::{Cx, Mediator};
 use crate::error::{Error, ErrorKind, Result};
-use crate::mediator::{Cx, Mediator};
 use crate::value::{FileData, Value};
 
 /// Containers mounted during one `Engine` call, by the virtual path of their file. A mounted
