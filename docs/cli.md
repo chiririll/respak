@@ -41,8 +41,8 @@ Prints the entries of a container (rpak, mbnk, ...), one per line, sorted, relat
 respak --root game list paks/Win64/common.rpak
 ```
 
-### `names [--hashes FILE] [--prefix TEXT]... [--suffix TEXT]... SOURCE...`
-Looks for the names of asset guids. The wanted guids come from `FILE` (a local file; any text, each `0x<16 hex digits>` counts, so a `list` output works), or, without `--hashes`, are the assets of the sources that have no name of their own. Each `SOURCE` is a path or glob on the input (the `--root` folder or the Steam depots).
+### `names [--hashes FILE] [--prefix TEXT]... [--suffix TEXT]... [--guids] SOURCE...`
+Looks for the names of asset guids. Prints one name per line; with `--guids` each line is `0x<GUID><TAB><name>`. The wanted guids come from `FILE` (a local file; any text, each `0x<16 hex digits>` counts, so a `list` output works), or, without `--hashes`, are the assets of the sources that have no name of their own. Each `SOURCE` is a path or glob on the input (the `--root` folder or the Steam depots).
 
 Everything is read in one pass. Each pak among the sources is read like `list --names` does, its assets decoded once and several at a time, and each gives its stored name (a name in one pak often names an asset of another), the names of its dependencies, and what its format offers as possible names (a `dtbl`'s asset-path cells). A file of no known format (an executable, a script) is read as bytes and every run of printable ASCII is taken. Paks are not scanned as bytes, their data is compressed; files of a known format with no names in them (textures, video) are skipped. With `--hashes` the remaining sources are skipped once every wanted guid is named; without it everything is read, since the unnamed assets are only known at the end.
 

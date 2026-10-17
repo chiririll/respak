@@ -52,6 +52,7 @@ fn names_come_from_table_cells_and_unknown_files() {
             "--hashes".as_ref(),
             dir.path().join("hashes.txt").as_os_str(),
         ])
+        .arg("--guids")
         .args(["paks/a.rpak", "bin/*.exe"])
         .output()
         .unwrap();
@@ -110,7 +111,7 @@ fn without_a_hash_file_the_unnamed_assets_of_the_sources_are_looked_for() {
     );
     assert_eq!(
         String::from_utf8(run.stdout).unwrap(),
-        format!("0x{:016X}\t{name}\n", string_to_guid(name))
+        format!("{name}\n")
     );
     assert!(String::from_utf8_lossy(&run.stderr).contains("1 of 1 guids named"));
 }

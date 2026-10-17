@@ -22,6 +22,9 @@ pub struct NamesArgs {
     /// Also try each string with this suffix added (e.g. `.rpak`). Repeatable.
     #[arg(long, value_name = "TEXT")]
     suffix: Vec<String>,
+    /// Print each name as `0x<GUID><TAB><name>` instead of the bare name.
+    #[arg(long)]
+    guids: bool,
     /// Paths or globs relative to `--root` (or the Steam depots): paks to read, files to scan.
     #[arg(required = true)]
     sources: Vec<String>,
@@ -30,7 +33,7 @@ pub struct NamesArgs {
 /// Reads each source: a container gives, per entry, its stored name, its dependencies' names and
 /// what its format offers as possible names; a file of no known format is read for printable
 /// text; any other file holds no names and is skipped. Matches go to `out` as
-/// `0x<GUID><TAB><name>`, progress and the summary to `err`.
+/// `<name>`, or `0x<GUID><TAB><name>` with `--guids`; progress and the summary to `err`.
 pub(crate) async fn run(
     engine: &Engine,
     cancel: &CancellationToken,
@@ -133,7 +136,11 @@ pub(crate) async fn run(
     }
     finder.finish();
     for (guid, name) in finder.found() {
-        writeln!(out, "0x{guid:016X}\t{name}")?;
+        if args.guids {
+            writeln!(out, "0x{guid:016X}\t{name}")?;
+        } else {
+            writeln!(out, "{name}")?;
+        }
     }
     writeln!(
         err,
