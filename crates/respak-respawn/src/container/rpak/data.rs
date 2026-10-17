@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::{Container, Dependency, Metadata};
-use respak_core::{Data, Error, ErrorKind, FormatId, Result, Value, ValueKey, Version};
+use respak_core::{Data, Detected, Error, ErrorKind, FormatId, Result, Value, ValueKey, Version};
 
 use super::volume::Inner;
 use super::MEM;
@@ -191,4 +191,46 @@ impl Data for RpakAsset {
     fn as_metadata(&self) -> Option<&dyn Metadata> {
         Some(self)
     }
+}
+
+/// The `rpak.asset` in `source`, which must be of `kind` (`Detect::score` has answered for it,
+/// so a mismatch is a caller error).
+///
+/// # Errors
+///
+/// `Custom` when `source` is not an `rpak.asset` or has another kind.
+pub fn rpak_asset(source: &Value, kind: [u8; 4]) -> Result<&RpakAsset> {
+    let name = String::from_utf8_lossy(&kind);
+    let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
+        Error::new(ErrorKind::Custom {
+            source: None,
+            message: format!("{name} must be read from an rpak.asset"),
+        })
+    })?;
+    if asset.entry.kind != kind {
+        return Err(Error::new(ErrorKind::Custom {
+            source: None,
+            message: format!("the asset is not a {name}"),
+        }));
+    }
+    Ok(asset)
+}
+
+/// The `Detect::score` of an asset reader: an `rpak.asset` of `kind` scores 10, with the asset
+/// version as the format version.
+pub fn detect_kind(source: &Value, kind: [u8; 4]) -> Option<Detected> {
+    detect_kind_by(source, kind, |a| Some(Version::new(a.entry.version)))
+}
+
+/// Like [`detect_kind`], with the format version worked out from the asset by `version`.
+pub fn detect_kind_by(
+    source: &Value,
+    kind: [u8; 4],
+    version: impl FnOnce(&RpakAsset) -> Option<Version>,
+) -> Option<Detected> {
+    let asset = source.downcast_ref::<RpakAsset>()?;
+    (asset.entry.kind == kind).then(|| Detected {
+        score: 10,
+        version: version(asset),
+    })
 }

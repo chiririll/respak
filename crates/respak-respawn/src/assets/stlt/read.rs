@@ -9,13 +9,7 @@ pub struct StltRead;
 impl Detect for StltRead {
     /// The asset kind is `stlt`; any asset version other than 0 is `UnsupportedVersion` when read.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"stlt").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"stlt"))
     }
 }
 
@@ -195,18 +189,7 @@ pub(super) fn read_layout<'a>(
 impl ReadHandler for StltRead {
     /// Parses the header, the fields and the sub layouts.
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "stlt must be read from an rpak.asset".into(),
-            })
-        })?;
-        if asset.entry.kind != *b"stlt" {
-            return Err(Error::new(ErrorKind::Custom {
-                source: None,
-                message: "the asset is not a stlt".into(),
-            }));
-        }
+        let asset = rpak_asset(&source, *b"stlt")?;
         if asset.entry.version != 0 {
             return Err(Error::new(ErrorKind::UnsupportedVersion {
                 format: "stlt".into(),

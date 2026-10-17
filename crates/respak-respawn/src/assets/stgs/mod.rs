@@ -28,7 +28,7 @@ use serde_json::{json, Map, Value as Json};
 
 use crate::matl::{locate, pak_of};
 use crate::rmdl::reader;
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, RpakAsset, MEM};
 use crate::stlt::{FieldType, Layout, StltAsset};
 
 /// Bytes of a `SettingsMod_s`.

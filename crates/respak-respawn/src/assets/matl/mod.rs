@@ -41,7 +41,7 @@ use respak_core::{
     ValueKey, Version,
 };
 
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, MEM};
 
 /// More slots than this cannot be a material.
 const MAX_SLOTS: u64 = 128;
@@ -231,25 +231,14 @@ pub struct MatlRead;
 impl Detect for MatlRead {
     /// The asset kind is `matl` = 10.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"matl").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"matl"))
     }
 }
 
 #[async_trait]
 impl ReadHandler for MatlRead {
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "matl must be read from an rpak.asset".into(),
-            })
-        })?;
+        let asset = rpak_asset(&source, *b"matl")?;
         let header = MatlHeader::parse(asset.entry.version, &asset.read_header().await?)?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
 

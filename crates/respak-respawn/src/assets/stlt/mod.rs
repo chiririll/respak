@@ -25,7 +25,7 @@ use respak_core::{
 };
 
 use crate::rmdl::reader;
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, RpakAsset, MEM};
 
 /// Bytes of a layout header, also the stride of the sub layout array.
 const HEADER_LEN: usize = 72;

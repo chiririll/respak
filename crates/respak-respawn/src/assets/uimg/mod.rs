@@ -39,7 +39,7 @@ use respak_core::{
 use respak_formats::decode_rgba8;
 
 use crate::matl::{locate, pak_of};
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, MEM};
 
 fn unsupported(version: impl Into<String>) -> Error {
     Error::unsupported("uimg", version)

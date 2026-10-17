@@ -40,7 +40,7 @@ use respak_core::{
     ValueKey, Version,
 };
 
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, MEM};
 use crate::{oodle, rtech};
 
 fn unsupported(version: impl Into<String>) -> Error {

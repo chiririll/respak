@@ -3,16 +3,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use respak_core::{
-    Cx, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, Version,
-};
+use respak_core::{Cx, Detect, Detected, Error, FormatId, Probe, ReadHandler, Result, Value};
 
 use super::asset::RmdlAsset;
 use super::block::reader;
 use super::header::{RmdlHeader, CPU_LEN, MAX_STUDIO_LEN};
 use super::studio::Studio;
 use super::unsupported;
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, RpakAsset, MEM};
 
 const MAX_GUIDS: usize = 4096;
 
@@ -24,13 +22,7 @@ impl Detect for RmdlRead {
     /// The asset kind is `mdl_` (a container-provided kind) = 10, with the asset version as the
     /// version; the variant is worked out when the model is read.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"mdl_").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"mdl_"))
     }
 }
 
@@ -55,12 +47,7 @@ pub(crate) async fn read_guids(asset: &RpakAsset, at: Option<u64>, count: u32) -
 impl ReadHandler for RmdlRead {
     /// Parses the headers, the bones and the body part tables. Vertex data is read later, by `Mesh::read`.
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "rmdl must be read from an rpak.asset".into(),
-            })
-        })?;
+        let asset = rpak_asset(&source, *b"mdl_")?;
         let major = asset.entry.version;
         if !(16..=20).contains(&major) {
             return Err(unsupported(major.to_string()));

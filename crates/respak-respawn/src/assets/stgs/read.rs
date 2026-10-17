@@ -9,13 +9,7 @@ pub struct StgsRead;
 impl Detect for StgsRead {
     /// The asset kind is `stgs`; the header size, not the version, picks the layout.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"stgs").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"stgs"))
     }
 }
 
@@ -185,18 +179,7 @@ impl ReadHandler for StgsRead {
     /// Parses the header, the name, the value buffer and the mods, and decodes the values when the
     /// layout is found.
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "stgs must be read from an rpak.asset".into(),
-            })
-        })?;
-        if asset.entry.kind != *b"stgs" {
-            return Err(Error::new(ErrorKind::Custom {
-                source: None,
-                message: "the asset is not a stgs".into(),
-            }));
-        }
+        let asset = rpak_asset(&source, *b"stgs")?;
         let header = StgsHeader::parse(&asset.read_header().await?)?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
 

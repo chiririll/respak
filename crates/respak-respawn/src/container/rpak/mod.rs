@@ -41,7 +41,7 @@ mod rtech_read;
 mod tests;
 mod volume;
 
-pub use data::{RpakAsset, RpakData};
+pub use data::{detect_kind, detect_kind_by, rpak_asset, RpakAsset, RpakData};
 pub use handler::RpakRead;
 
 /// The flat file of all decompressed pages (not listed, but it resolves). Pointers in served

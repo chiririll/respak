@@ -50,7 +50,7 @@ use respak_core::{
 };
 use respak_formats::decode_rgba8;
 
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, RpakAsset, MEM};
 use crate::txtr::read_name;
 use crate::{oodle, rtech, snowflake};
 

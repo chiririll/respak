@@ -34,7 +34,7 @@ use respak_core::{
 
 use crate::guid::hex;
 use crate::rmdl::reader;
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind_by, rpak_asset, RpakAsset, MEM};
 
 /// Pak `createdTime` bounds (exclusive) of the V1.1 column layout.
 const CREATED_V1_1_FROM: u64 = 0x1d6_92d8_9727_5335;

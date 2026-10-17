@@ -9,13 +9,7 @@ pub struct UiiaRead;
 impl Detect for UiiaRead {
     /// The asset kind is `uiia` (a container-provided kind) = 10.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"uiia").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"uiia"))
     }
 }
 
@@ -55,12 +49,7 @@ pub(super) async fn pick_quality(
 #[async_trait]
 impl ReadHandler for UiiaRead {
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "uiia must be read from an rpak.asset".into(),
-            })
-        })?;
+        let asset = rpak_asset(&source, *b"uiia")?;
         let data_offset = asset
             .data_mem_offset
             .ok_or_else(|| Error::corrupt("uiia has no CPU data"))?;

@@ -72,12 +72,8 @@ impl Detect for DtblRead {
     /// The asset kind is `dtbl` = 10; asset versions other than 0 and 1 are `UnsupportedVersion`
     /// when read.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"dtbl").then(|| Detected {
-            score: 10,
-            version: variant(asset.entry.version, asset.pak_created_time).ok(),
+        Ok(detect_kind_by(input.source, *b"dtbl", |asset| {
+            variant(asset.entry.version, asset.pak_created_time).ok()
         }))
     }
 }
@@ -86,18 +82,7 @@ impl Detect for DtblRead {
 impl ReadHandler for DtblRead {
     /// Reads the whole table: column names, rows and the strings they point to.
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "dtbl must be read from an rpak.asset".into(),
-            })
-        })?;
-        if asset.entry.kind != *b"dtbl" {
-            return Err(Error::new(ErrorKind::Custom {
-                source: None,
-                message: "the asset is not a dtbl".into(),
-            }));
-        }
+        let asset = rpak_asset(&source, *b"dtbl")?;
         let version = variant(asset.entry.version, asset.pak_created_time)?;
         let header = DtblHeader::parse(version, &asset.read_header().await?)?;
         let volume = &asset.volume;

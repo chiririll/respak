@@ -9,13 +9,7 @@ pub struct TxtrRead;
 impl Detect for TxtrRead {
     /// The asset kind is `txtr` (a container-provided kind) = 10.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"txtr").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"txtr"))
     }
 }
 
@@ -40,12 +34,7 @@ pub(super) async fn stat_len(volume: &Operator, path: &str) -> Result<u64> {
 #[async_trait]
 impl ReadHandler for TxtrRead {
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "txtr must be read from an rpak.asset".into(),
-            })
-        })?;
+        let asset = rpak_asset(&source, *b"txtr")?;
         let header = TxtrHeader::parse(asset.entry.version, &asset.read_header().await?)?;
         let pixel = pixel_format(header.format_index).ok_or_else(|| {
             unsupported(format!(

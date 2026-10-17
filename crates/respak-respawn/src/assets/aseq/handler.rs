@@ -3,14 +3,14 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use respak_core::{
-    Cx, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value, Version,
+    Cx, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
 };
 
 use crate::anim_codec::{self};
 use crate::arig::{explicit_rig, owner_of, Owners};
 use crate::matl::pak_of;
 use crate::rmdl::read_guids;
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, MEM};
 
 use super::asset::{AseqAsset, Extra};
 use super::*;
@@ -37,13 +37,7 @@ impl Detect for AseqRead {
     /// The asset kind is `aseq` = 10, with the asset version as the version; the variant is worked
     /// out when the sequence is read.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"aseq").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"aseq"))
     }
 }
 
@@ -52,18 +46,7 @@ impl ReadHandler for AseqRead {
     /// Parses the header, the seqdesc and the animdescs, resolves the rig (`MissingDependency` if
     /// there is none) and checks that the bone weight list fits it.
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "aseq must be read from an rpak.asset".into(),
-            })
-        })?;
-        if asset.entry.kind != *b"aseq" {
-            return Err(Error::new(ErrorKind::Custom {
-                source: None,
-                message: "the asset is not an aseq".into(),
-            }));
-        }
+        let asset = rpak_asset(&source, *b"aseq")?;
         let version = variant(asset.entry.version, asset.pak_created_time)?;
         let header = AseqHeader::parse(version, &asset.read_header().await?)?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();

@@ -31,7 +31,7 @@ use crate::guid::hex;
 use crate::guid::string_to_guid;
 use crate::matl::{locate, pak_of};
 use crate::rmdl::{self, parse_bones, read_guids, reader, StudioLayout};
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, RpakAsset, MEM};
 
 fn unsupported(version: impl Into<String>) -> Error {
     Error::unsupported("arig", version)
@@ -250,13 +250,7 @@ impl ArigRead {
 impl Detect for ArigRead {
     /// The asset kind is `arig` = 10, with the asset version as the version.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"arig").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"arig"))
     }
 }
 
@@ -265,18 +259,7 @@ impl ReadHandler for ArigRead {
     /// Reads the header, the studiohdr (bones only; `numlocalseq != 0` is `Corrupt`) and the
     /// `aseq` guid list.
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "arig must be read from an rpak.asset".into(),
-            })
-        })?;
-        if asset.entry.kind != *b"arig" {
-            return Err(Error::new(ErrorKind::Custom {
-                source: None,
-                message: "the asset is not an arig".into(),
-            }));
-        }
+        let asset = rpak_asset(&source, *b"arig")?;
         let header = ArigHeader::parse(asset.entry.version, &asset.read_header().await?)?;
         let mem_len = asset.volume.stat(MEM).await?.content_length();
         if header.studio_offset >= mem_len {

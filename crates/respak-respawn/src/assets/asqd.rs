@@ -19,7 +19,7 @@ use respak_core::{
 use crate::guid::hex;
 use crate::mem::read_clamped;
 use crate::rmdl::reader;
-use crate::rpak::{RpakAsset, MEM};
+use crate::rpak::{detect_kind, rpak_asset, MEM};
 
 /// The 8-byte asset header: the page pointer to the blob.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,13 +139,7 @@ impl Detect for AsqdRead {
     /// The asset kind is `asqd` = 10, version `1.0`; any other asset version is `UnsupportedVersion`
     /// when read.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"asqd").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"asqd"))
     }
 }
 
@@ -153,18 +147,7 @@ impl Detect for AsqdRead {
 impl ReadHandler for AsqdRead {
     /// Parses the header; the blob itself is read later, by [`AsqdAsset::read`].
     async fn read(&self, source: Value, _detected: &Detected, _cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "asqd must be read from an rpak.asset".into(),
-            })
-        })?;
-        if asset.entry.kind != *b"asqd" {
-            return Err(Error::new(ErrorKind::Custom {
-                source: None,
-                message: "the asset is not an asqd".into(),
-            }));
-        }
+        let asset = rpak_asset(&source, *b"asqd")?;
         if asset.entry.version != 1 {
             return Err(Error::new(ErrorKind::UnsupportedVersion {
                 format: "asqd".into(),

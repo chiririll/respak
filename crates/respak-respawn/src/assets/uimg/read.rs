@@ -33,25 +33,14 @@ pub struct UimgRead;
 impl Detect for UimgRead {
     /// The asset kind is `uimg` (a container-provided kind) = 10.
     async fn score(&self, input: &Probe<'_>, _cx: &Cx) -> Result<Option<Detected>> {
-        let Some(asset) = input.source.downcast_ref::<RpakAsset>() else {
-            return Ok(None);
-        };
-        Ok((asset.entry.kind == *b"uimg").then(|| Detected {
-            score: 10,
-            version: Some(Version::new(asset.entry.version)),
-        }))
+        Ok(detect_kind(input.source, *b"uimg"))
     }
 }
 
 #[async_trait]
 impl ReadHandler for UimgRead {
     async fn read(&self, source: Value, _detected: &Detected, cx: &Cx) -> Result<Value> {
-        let asset = source.downcast_ref::<RpakAsset>().ok_or_else(|| {
-            Error::new(ErrorKind::Custom {
-                source: None,
-                message: "uimg must be read from an rpak.asset".into(),
-            })
-        })?;
+        let asset = rpak_asset(&source, *b"uimg")?;
         let header = UimgHeader::parse(asset.entry.version, &asset.read_header().await?)?;
         let n = u64::from(header.count);
         let mem_len = asset.volume.stat(MEM).await?.content_length();
