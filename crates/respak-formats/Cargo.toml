@@ -10,19 +10,15 @@ workspace = true
 
 [dependencies]
 respak-core.workspace = true
-png = "0.18"
-ddsfile = "0.6"
+png.workspace = true
+ddsfile.workspace = true
 bytes.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 opendal.workspace = true
-bcdec_rs = "0.2.0"
+bcdec_rs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tokio.workspace = true
-tempfile = "3"
-
-[dev-dependencies]
-tokio.workspace = true
-serde_json.workspace = true
+tempfile.workspace = true

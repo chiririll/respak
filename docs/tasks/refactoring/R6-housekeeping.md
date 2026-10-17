@@ -1,5 +1,5 @@
 # R6 · Housekeeping
-**Status:** todo · **Risk:** low · Any time.
+**Status:** done (typestate builder and `lock()` helper left as low-priority backlog) · **Risk:** low · Any time.
 
 - Move `png`, `ddsfile`, `bcdec_rs`, `tempfile` into `[workspace.dependencies]` (also used by `integration/Cargo.toml`).
 - Remove the redundant `tokio`/`serde_json` dev-dependencies in `respak-formats/Cargo.toml`; consider adding tokio's `time` feature at workspace level.

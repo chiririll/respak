@@ -30,9 +30,9 @@ steam = ["dep:respak-steam"]
 [dev-dependencies]
 respak-respawn.workspace = true
 respak-respawn-testing.workspace = true
-png = "0.18"
-ddsfile = "0.6"
-tempfile = "3"
+png.workspace = true
+ddsfile.workspace = true
+tempfile.workspace = true
 
 [[bin]]
 name = "respak"

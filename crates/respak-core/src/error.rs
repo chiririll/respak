@@ -253,8 +253,7 @@ impl Serialize for Error {
     }
 }
 
-#[allow(dead_code)]
-fn _assert_bounds() {
-    fn is<T: Clone + Send + Sync + 'static>() {}
-    is::<Error>();
-}
+const _: () = {
+    const fn assert_bounds<T: Clone + Send + Sync + 'static>() {}
+    assert_bounds::<Error>();
+};

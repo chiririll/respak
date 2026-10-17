@@ -21,7 +21,7 @@ respak-rad = { path = "crates/respak-rad" }
 # Pre-1.0: exact pin (see docs/design/project.md §3).
 opendal = { version = "=0.59.4", default-features = false, features = ["services-fs", "executors-tokio"] }
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "signal", "time"] }
 tokio-util = "0.7"
 futures = "0.3"
 async-trait = "0.1"
@@ -30,6 +30,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 bytes = "1"
+
+png = "0.18"
+ddsfile = "0.6"
+bcdec_rs = "0.2.0"
+tempfile = "3"
 
 thiserror = "2"
 # Oodle decoder (port of ooz, GPL-3.0+): decoding only, never the proprietary oo2core. Our fork: one fix on top of upstream dev.

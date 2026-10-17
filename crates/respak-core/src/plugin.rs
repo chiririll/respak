@@ -12,6 +12,10 @@ pub trait Plugin: Send + Sync {
     fn id(&self) -> &str;
     /// Version of the data this plugin keeps in the plugin cache; bump it when the cached schema
     /// changes (the cache is namespaced by plugin id and this number).
+    ///
+    /// The cache ([`PluginCache`](crate::PluginCache)) swallows its errors by design: a failed
+    /// read is a miss and a failed write is dropped, each published as a warning event, so a
+    /// plugin must never rely on the cache being available.
     fn cache_version(&self) -> u32 {
         0
     }

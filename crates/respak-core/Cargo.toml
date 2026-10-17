@@ -21,8 +21,8 @@ globset = "0.4"
 futures.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-tempfile = "3"
+tempfile.workspace = true
 
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["time"] }
+tokio.workspace = true

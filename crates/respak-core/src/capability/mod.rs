@@ -35,21 +35,19 @@ pub trait Cap {
 }
 
 // Compile-time check that every capability is object-safe.
-#[allow(dead_code, clippy::too_many_arguments)]
-fn _object_safe(
-    _: &dyn Blob,
-    _: &dyn Container,
-    _: &dyn Metadata,
-    _: &dyn Bitmap,
-    _: &dyn Mesh,
-    _: &dyn Skeleton,
-    _: &dyn Animation,
-    _: &dyn Table,
-    _: &dyn NameSource,
-    _: &dyn Audio,
-    _: &dyn Video,
-) {
-}
+const _: () = {
+    let _: Option<&dyn Blob> = None;
+    let _: Option<&dyn Container> = None;
+    let _: Option<&dyn Metadata> = None;
+    let _: Option<&dyn Bitmap> = None;
+    let _: Option<&dyn Mesh> = None;
+    let _: Option<&dyn Skeleton> = None;
+    let _: Option<&dyn Animation> = None;
+    let _: Option<&dyn Table> = None;
+    let _: Option<&dyn NameSource> = None;
+    let _: Option<&dyn Audio> = None;
+    let _: Option<&dyn Video> = None;
+};
 
 impl Cap for dyn Bitmap {
     const NAME: &'static str = "Bitmap";
