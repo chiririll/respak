@@ -1,14 +1,12 @@
 //! Looking at the input without converting it: `discover`, `list` and `inspect`.
 
-use super::{Engine, INSPECT_PROGRESS, NAME_CONCURRENCY, WORKER_CONCURRENCY};
+use super::parallel::parallel_map_ordered;
+use super::{Engine, NAME_CONCURRENCY};
 use crate::capability::Container;
-use crate::discover::{
-    Alternative, DiscoverOptions, Discovery, DiscoveryEntry, EntryInfo, ListedEntry,
-};
+use crate::discover::{DiscoverOptions, Discovery, DiscoveryEntry, EntryInfo, ListedEntry};
 use crate::error::Result;
-use crate::event::Event;
-use crate::mediator::Cx;
-use crate::value::{FormatId, Value, FILE};
+use crate::mediator::{Cx, Mounted};
+use crate::value::{Value, FILE};
 use crate::volume::list_volume;
 use crate::CancellationToken;
 
@@ -42,6 +40,14 @@ impl Engine {
         })
     }
 
+    /// Opens `path` as a container and lists its files (the start of `list` and `inspect`).
+    async fn mounted_files(&self, path: &str, cx: &Cx) -> Result<(Mounted, Vec<String>)> {
+        let value = self.mediator.open(path, cx).await?;
+        let mounted = self.mediator.mount_container(value, cx).await?;
+        let files = list_volume(&mounted.container().volume()).await?;
+        Ok((mounted, files))
+    }
+
     /// Lists the entries of the container at `path`, sorted, as paths relative to the container
     /// (`assets/some_asset.type`). Without `names` nothing is opened (no detection, no sibling
     /// files). With `names` every entry is read like `discover` does, and its `Metadata` name
@@ -55,17 +61,14 @@ impl Engine {
     ) -> Result<Vec<ListedEntry>> {
         use futures::StreamExt;
         let cx = self.cx(cancel);
-        let value = self.mediator.open(path, &cx).await?;
-        let mounted = self.mediator.mount_container(value, &cx).await?;
-        let c = mounted.container();
-        let files = list_volume(&c.volume()).await?;
+        let (mounted, files) = self.mounted_files(path, &cx).await?;
         if !names {
             return Ok(files
                 .into_iter()
                 .map(|path| ListedEntry { path, name: None })
                 .collect());
         }
-        let (cx, c) = (&cx, c);
+        let (cx, c) = (&cx, mounted.container());
         Ok(futures::stream::iter(files)
             .map(|path| async move {
                 ListedEntry {
@@ -84,71 +87,15 @@ impl Engine {
     /// time, on as many threads as there are cores (on one, in a single-threaded runtime). An entry
     /// that cannot be read is reported with its path only, and the entries come in the container's
     /// order. `NotFound` if `path` is not a container. Publishes `Progress` every
-    /// [`INSPECT_PROGRESS`] entries.
+    /// [`INSPECT_PROGRESS`](super::INSPECT_PROGRESS) entries.
     pub async fn inspect(&self, path: &str, cancel: &CancellationToken) -> Result<Vec<EntryInfo>> {
-        use futures::StreamExt;
-        use std::sync::atomic::{AtomicUsize, Ordering};
         let cx = self.cx(cancel);
-        let value = self.mediator.open(path, &cx).await?;
-        let mounted = self.mediator.mount_container(value, &cx).await?;
-        let c = mounted.container();
-        let files = list_volume(&c.volume()).await?;
-        let total = files.len();
-        let handle = tokio::runtime::Handle::current();
-        let workers = match handle.runtime_flavor() {
-            tokio::runtime::RuntimeFlavor::MultiThread => std::thread::available_parallelism()
-                .map_or(1, |n| n.get())
-                .min(total.max(1)),
-            _ => 1,
-        };
-        let (cx, c, files) = (&cx, c, &files);
-        let (next, done) = (AtomicUsize::new(0), AtomicUsize::new(0));
-        // Each worker takes the next unread entry until there are none, so a slow entry does not
-        // hold up the others.
-        let worker = || async {
-            let mut read = Vec::new();
-            let mut entries = futures::stream::iter(std::iter::from_fn(|| {
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                (i < total).then_some(i)
-            }))
-            .map(|i| async move { (i, self.entry_info(c, files[i].clone(), cx).await) })
-            .buffer_unordered(WORKER_CONCURRENCY);
-            while let Some(entry) = entries.next().await {
-                cx.check_cancelled()?;
-                read.push(entry);
-                let n = done.fetch_add(1, Ordering::Relaxed) + 1;
-                if n % INSPECT_PROGRESS == 0 {
-                    cx.mediator.publish(Event::Progress {
-                        task: format!("read {path}"),
-                        done: n as u64,
-                        total: total as u64,
-                    });
-                }
-            }
-            Ok::<_, crate::error::Error>(read)
-        };
-        let mut read: Vec<(usize, EntryInfo)> = if workers == 1 {
-            worker().await?
-        } else {
-            let results = tokio::task::block_in_place(|| {
-                std::thread::scope(|scope| {
-                    let threads: Vec<_> = (0..workers)
-                        .map(|_| scope.spawn(|| handle.block_on(worker())))
-                        .collect();
-                    threads
-                        .into_iter()
-                        .map(|t| t.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
-                        .collect::<Vec<_>>()
-                })
-            });
-            let mut all = Vec::with_capacity(total);
-            for result in results {
-                all.extend(result?);
-            }
-            all
-        };
-        read.sort_unstable_by_key(|(i, _)| *i);
-        Ok(read.into_iter().map(|(_, info)| info).collect())
+        let (mounted, files) = self.mounted_files(path, &cx).await?;
+        let (cx, c) = (&cx, mounted.container());
+        parallel_map_ordered(&files, cx, &format!("read {path}"), |file| {
+            self.entry_info(c, file.clone(), cx)
+        })
+        .await
     }
 
     /// Reads the entry `path` of `c` as far as its format is known. Whatever cannot be read is
@@ -198,51 +145,7 @@ impl Engine {
         cx: &Cx,
         out: &mut Vec<DiscoveryEntry>,
     ) -> Result<()> {
-        let version = |f: &FormatId| f.version().map(|v| v.to_string());
-        let mut hits = self.mediator.detect(value, cx).await?.into_iter();
-        let mut entry = match hits.next() {
-            Some(winner) => DiscoveryEntry {
-                path: path.to_owned(),
-                format: Some(winner.format.name().to_owned()),
-                version: version(&winner.format),
-                score: winner.score,
-                alternatives: hits
-                    .map(|h| Alternative {
-                        format: h.format.name().to_owned(),
-                        version: version(&h.format),
-                        score: h.score,
-                    })
-                    .collect(),
-                name: None,
-                kind: None,
-                targets: self.mediator.targets_from(winner.format.name()),
-            },
-            // A typed entry handed out by a container carries its own format.
-            None if value.format().name() != FILE => DiscoveryEntry {
-                path: path.to_owned(),
-                format: Some(value.format().name().to_owned()),
-                version: version(value.format()),
-                score: 10,
-                alternatives: Vec::new(),
-                name: None,
-                kind: None,
-                targets: self.mediator.targets_from(value.format().name()),
-            },
-            None => unrecognised(path),
-        };
-        if let Some(meta) = value.as_metadata() {
-            entry.name = meta.name().map(str::to_owned);
-            entry.kind = meta.kind().map(str::to_owned);
-        }
-        if options.names && entry.name.is_none() && entry.format.is_some() {
-            if let Ok(read) = self.mediator.identify(value.clone(), cx).await {
-                if let Some(meta) = read.as_metadata() {
-                    entry.name = meta.name().map(str::to_owned);
-                    entry.kind = entry.kind.or_else(|| meta.kind().map(str::to_owned));
-                }
-            }
-        }
-
+        let entry = self.describe_item(value, path, options, cx).await?;
         let opens = depth > 0
             && entry
                 .format
@@ -252,6 +155,53 @@ impl Engine {
             out.push(entry);
             return Ok(());
         }
+        self.describe_children(value, options, depth, cx, out).await
+    }
+
+    /// The entry for the item itself: detected (or typed, or unrecognised), with its metadata.
+    async fn describe_item(
+        &self,
+        value: &Value,
+        path: &str,
+        options: &DiscoverOptions,
+        cx: &Cx,
+    ) -> Result<DiscoveryEntry> {
+        let mut hits = self.mediator.detect(value, cx).await?.into_iter();
+        let mut entry = match hits.next() {
+            Some(winner) => {
+                let targets = self.mediator.targets_from(winner.format.name());
+                DiscoveryEntry::from_detected(path, winner, hits, targets)
+            }
+            // A typed entry handed out by a container carries its own format.
+            None if value.format().name() != FILE => DiscoveryEntry::typed(
+                path,
+                value.format(),
+                self.mediator.targets_from(value.format().name()),
+            ),
+            None => DiscoveryEntry::unrecognised(path),
+        };
+        if let Some(meta) = value.as_metadata() {
+            entry.apply_meta(meta);
+        }
+        if options.names && entry.name.is_none() && entry.format.is_some() {
+            if let Ok(read) = self.mediator.identify(value.clone(), cx).await {
+                if let Some(meta) = read.as_metadata() {
+                    entry.apply_meta(meta);
+                }
+            }
+        }
+        Ok(entry)
+    }
+
+    /// Describes every entry of the container `value`, `depth - 1` levels deep.
+    async fn describe_children(
+        &self,
+        value: &Value,
+        options: &DiscoverOptions,
+        depth: u32,
+        cx: &Cx,
+        out: &mut Vec<DiscoveryEntry>,
+    ) -> Result<()> {
         let mounted = self.mediator.mount_container(value.clone(), cx).await?;
         let c = mounted.container();
         let mount_path = c.mount_path().to_owned();
@@ -265,23 +215,10 @@ impl Engine {
                 }
                 Err(error) => {
                     cx.warn(format!("cannot describe {child_path}: {error}"));
-                    out.push(unrecognised(&child_path));
+                    out.push(DiscoveryEntry::unrecognised(&child_path));
                 }
             }
         }
         Ok(())
-    }
-}
-
-fn unrecognised(path: &str) -> DiscoveryEntry {
-    DiscoveryEntry {
-        path: path.to_owned(),
-        format: None,
-        version: None,
-        score: 0,
-        alternatives: Vec::new(),
-        name: None,
-        kind: None,
-        targets: Vec::new(),
     }
 }

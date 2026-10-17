@@ -10,7 +10,7 @@
 - Six `.expect("mount checks this")` calls (`inspect.rs:60,94,256`, `glob.rs:154`, `resolve.rs:105,151,171`): add a typed accessor (e.g. `Mediator::mount_container(file, cx) -> Result<Mounted>`).
 - `LinkedValue` lives in `engine` but is used by `mediator.rs:457`: move it to core.
 
-## R2.3 Break up `engine/inspect.rs` (M)
+## R2.3 Break up `engine/inspect.rs` (M) — done
 Check first that `tests/batch.rs` and `tests/containers.rs` cover ordering and cancellation.
 - Extract `parallel_map_ordered(files, f)` from `inspect()` (worker pool inline).
 - `describe()`: add `DiscoveryEntry::from_detected`, `apply_meta`, separate `describe_children`.

@@ -2,6 +2,7 @@
 
 mod convert;
 mod inspect;
+mod parallel;
 mod request;
 
 use std::sync::Arc;
