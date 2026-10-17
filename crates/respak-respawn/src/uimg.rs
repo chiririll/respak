@@ -24,6 +24,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::{Bitmap, BitmapInfo, Dependency, Metadata, PixelFormat};
+use respak_core::reader::Reader;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
     ValueKey, Version,
@@ -43,18 +44,6 @@ const DIMENSION_LEN: u64 = 4;
 const BOUNDS_LEN: u64 = 16;
 /// The longest sprite path read from the names blob (as `txtr::read_name`).
 const NAME_MAX: u64 = 512;
-
-fn le16(b: &[u8], at: usize) -> u16 {
-    u16::from_le_bytes([b[at], b[at + 1]])
-}
-
-fn le32(b: &[u8], at: usize) -> u32 {
-    u32::from_le_bytes(b[at..at + 4].try_into().expect("4 bytes"))
-}
-
-fn f32s<const N: usize>(b: &[u8]) -> [f32; N] {
-    std::array::from_fn(|i| f32::from_le_bytes(b[4 * i..4 * i + 4].try_into().expect("4 bytes")))
-}
 
 /// The decoded header of a UI image atlas.
 #[derive(Debug, Clone, PartialEq)]
@@ -94,24 +83,25 @@ impl UimgHeader {
             )));
         }
         // Null is all ones after relocation.
-        let ptr = |at: usize| {
-            let v = u64::from_le_bytes(h[at..at + 8].try_into().expect("8 bytes"));
-            (v != u64::MAX).then_some(v)
+        let r = Reader::new("uimg", h);
+        let ptr = |at: usize| -> Result<Option<u64>> {
+            let v = r.u64(at)?;
+            Ok((v != u64::MAX).then_some(v))
         };
         let header = Self {
             version,
-            width_ratio: f32::from_le_bytes(h[0..4].try_into().expect("4 bytes")),
-            height_ratio: f32::from_le_bytes(h[4..8].try_into().expect("4 bytes")),
-            width: u32::from(le16(h, 0x08)),
-            height: u32::from(le16(h, 0x0A)),
-            count: u32::from(le16(h, 0x0C)),
-            unk_count: u32::from(le16(h, 0x0E)),
-            atlas_guid: u64::from_le_bytes(h[0x38..0x40].try_into().expect("8 bytes")),
-            offsets: ptr(0x10),
-            dimensions: ptr(0x18),
-            hashes: ptr(0x28),
+            width_ratio: r.f32(0)?,
+            height_ratio: r.f32(4)?,
+            width: u32::from(r.u16(0x08)?),
+            height: u32::from(r.u16(0x0A)?),
+            count: u32::from(r.u16(0x0C)?),
+            unk_count: u32::from(r.u16(0x0E)?),
+            atlas_guid: r.u64(0x38)?,
+            offsets: ptr(0x10)?,
+            dimensions: ptr(0x18)?,
+            hashes: ptr(0x28)?,
             // A names pointer of 0 is a slot that was never a pointer.
-            names: ptr(0x30).filter(|&v| v != 0),
+            names: ptr(0x30)?.filter(|&v| v != 0),
         };
         if header.width == 0 || header.height == 0 {
             return Err(Error::corrupt("uimg has a zero dimension"));
@@ -392,14 +382,20 @@ impl ReadHandler for UimgRead {
         let entries: Vec<(u32, usize)> = hashes
             .chunks_exact(stride)
             .map(|e| {
+                let e = Reader::new("uimg", e);
                 let at = if header.version == 10 {
-                    u32::from(le16(e, 6))
+                    u32::from(e.u16(6)?)
                 } else {
-                    le32(e, 4)
+                    e.u32(4)?
                 };
-                (le32(e, 0), at as usize)
+                Ok((e.u32(0)?, at as usize))
             })
-            .collect();
+            .collect::<Result<_>>()?;
+        let (offsets_r, dims_r, bounds_r) = (
+            Reader::new("uimg", &offsets),
+            Reader::new("uimg", &dims),
+            Reader::new("uimg", &bounds),
+        );
         // One read for all names: up to the last start plus the longest path.
         let names = match header.names {
             Some(at) if !entries.is_empty() => {
@@ -417,16 +413,16 @@ impl ReadHandler for UimgRead {
             .map(|(i, &(hash, at))| {
                 let named = names.as_deref().and_then(|blob| cstr(blob, at));
                 missing += usize::from(named.is_none());
-                Sprite {
+                Ok(Sprite {
                     named: named.is_some(),
                     path: named.unwrap_or_else(|| format!("0x{hash:08X}")),
                     hash,
-                    uv: f32s(&bounds[i * 16..i * 16 + 16]),
-                    layout: f32s(&offsets[i * 32..i * 32 + 32]),
-                    render: [le16(&dims, i * 4), le16(&dims, i * 4 + 2)],
-                }
+                    uv: bounds_r.floats(i * 16)?,
+                    layout: offsets_r.floats(i * 32)?,
+                    render: [dims_r.u16(i * 4)?, dims_r.u16(i * 4 + 2)?],
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
         if missing > 0 && names.is_some() {
             cx.warn(format!(
                 "uimg {:#018x}: {missing} sprite name(s) are not readable; their hashes are used",

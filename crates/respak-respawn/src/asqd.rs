@@ -17,7 +17,7 @@ use respak_core::{
 };
 
 use crate::matl_json::hex;
-use crate::rmdl::B;
+use crate::rmdl::reader;
 use crate::rpak::{RpakAsset, MEM};
 
 /// The 8-byte asset header: the page pointer to the blob.
@@ -36,7 +36,7 @@ impl AsqdHeader {
                 header.len()
             )));
         }
-        let at = B(header).u64(0)?;
+        let at = reader(header).u64(0)?;
         Ok(Self {
             data_offset: (at != 0 && at != u64::MAX).then_some(at),
         })

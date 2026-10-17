@@ -34,6 +34,7 @@ use respak_core::capability::{
     Bone, Dependency, MaterialTexture, Mesh, MeshInfo, MeshMaterial, MeshModel, MeshPart, Metadata,
     ModelInfo, Skeleton,
 };
+use respak_core::reader::Reader;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
     ValueKey, Version,
@@ -121,69 +122,24 @@ pub fn variant(
     }
 }
 
-/// Bounds-checked little-endian reads from a block.
-pub(crate) struct B<'a>(pub(crate) &'a [u8]);
+/// A bounds-checked reader over an rmdl-family block (also used by the other animation
+/// formats, which share its layout).
+pub(crate) fn reader(buf: &[u8]) -> Reader<'_> {
+    Reader::new("rmdl", buf)
+}
 
-impl<'a> B<'a> {
-    pub(crate) fn get(&self, at: usize, len: usize) -> Result<&'a [u8]> {
-        at.checked_add(len)
-            .and_then(|end| self.0.get(at..end))
-            .ok_or_else(|| {
-                Error::corrupt(format!(
-                    "rmdl: {len} bytes at {at:#x} are outside a block of {} bytes",
-                    self.0.len()
-                ))
-            })
-    }
-    pub(crate) fn u8(&self, at: usize) -> Result<u8> {
-        Ok(self.get(at, 1)?[0])
-    }
-    pub(crate) fn u16(&self, at: usize) -> Result<u16> {
-        Ok(u16::from_le_bytes(
-            self.get(at, 2)?.try_into().expect("2 bytes"),
-        ))
-    }
-    pub(crate) fn i16(&self, at: usize) -> Result<i16> {
-        Ok(self.u16(at)? as i16)
-    }
-    pub(crate) fn u32(&self, at: usize) -> Result<u32> {
-        Ok(u32::from_le_bytes(
-            self.get(at, 4)?.try_into().expect("4 bytes"),
-        ))
-    }
-    pub(crate) fn i32(&self, at: usize) -> Result<i32> {
-        Ok(self.u32(at)? as i32)
-    }
-    pub(crate) fn u64(&self, at: usize) -> Result<u64> {
-        Ok(u64::from_le_bytes(
-            self.get(at, 8)?.try_into().expect("8 bytes"),
-        ))
-    }
-    pub(crate) fn f32(&self, at: usize) -> Result<f32> {
-        Ok(f32::from_bits(self.u32(at)?))
-    }
-    pub(crate) fn floats<const N: usize>(&self, at: usize) -> Result<[f32; N]> {
-        let mut out = [0.0; N];
-        for (i, v) in out.iter_mut().enumerate() {
-            *v = self.f32(at + 4 * i)?;
-        }
-        Ok(out)
-    }
-    /// A NUL-terminated string that ends within `max` bytes.
-    pub(crate) fn cstr(&self, at: usize, max: usize) -> Result<String> {
-        let end = at.saturating_add(max).min(self.0.len());
-        let bytes = self.0.get(at..end).ok_or_else(|| {
-            Error::corrupt(format!("rmdl: string at {at:#x} is outside its block"))
-        })?;
-        let nul = bytes
-            .iter()
-            .position(|&b| b == 0)
-            .ok_or_else(|| Error::corrupt(format!("rmdl: string at {at:#x} has no end")))?;
-        Ok(String::from_utf8_lossy(&bytes[..nul]).into_owned())
-    }
+/// Reads of `FIX_OFFSET` fields.
+pub(crate) trait FixedOffset {
     /// `base + FIX_OFFSET(u16 at field)`, bounds are checked by the reader that uses it.
-    pub(crate) fn fixed(&self, base: usize, field: usize) -> Result<usize> {
-        Ok(base + fix_offset(self.u16(field)?) as usize)
+    fn fixed(&self, base: usize, field: usize) -> Result<usize>;
+}
+
+impl FixedOffset for Reader<'_> {
+    fn fixed(&self, base: usize, field: usize) -> Result<usize> {
+        usize::try_from(fix_offset(self.u16(field)?))
+            .ok()
+            .and_then(|off| base.checked_add(off))
+            .ok_or_else(|| Error::corrupt(format!("rmdl: offset at {field:#x} overflows")))
     }
 }
 
@@ -237,7 +193,7 @@ impl RmdlHeader {
                 cpu.len()
             )));
         }
-        let (h, c) = (B(header), B(cpu));
+        let (h, c) = (reader(header), reader(cpu));
         let ptr = |at: usize| -> Result<Option<u64>> {
             let v = h.u64(at)?;
             Ok((v != u64::MAX && v != 0).then_some(v))
@@ -340,7 +296,7 @@ pub struct Studio {
 
 /// The bones of a studio block (`major` 16 to 20): the split form up to 18, the linear-bone form
 /// from 19. Shared with `arig`, whose block is a cut-down studiohdr.
-pub(crate) fn parse_bones(b: &B, major: u32, layout: StudioLayout) -> Result<Vec<Bone>> {
+pub(crate) fn parse_bones(b: &Reader, major: u32, layout: StudioLayout) -> Result<Vec<Bone>> {
     let shift = layout.shift();
     let bone_count = usize::from(b.u16(0x74)?);
     if bone_count > MAX_BONES {
@@ -408,7 +364,7 @@ pub(crate) fn parse_bones(b: &B, major: u32, layout: StudioLayout) -> Result<Vec
 impl Studio {
     /// Parses a studio block of `major` version (16 to 20) with the given layout.
     pub fn parse(major: u32, layout: StudioLayout, blob: &[u8]) -> Result<Self> {
-        let b = B(blob);
+        let b = reader(blob);
         let shift = layout.shift();
         let flags = b.i32(0)?;
         let name = b.cstr(0x0A, 33)?;
@@ -579,7 +535,7 @@ struct VgMesh {
 
 /// The mesh headers of LOD `lod_in_group` of a decompressed rev4 group.
 fn vg_meshes(group: &[u8], lod_in_group: u32) -> Result<Vec<VgMesh>> {
-    let b = B(group);
+    let b = reader(group);
     let lod = 4 + b.u32(4)? as usize + lod_in_group as usize * 8;
     let mesh_count = usize::from(b.u8(lod)?);
     let first = lod + 4 + b.u32(lod + 4)? as usize;
@@ -681,15 +637,15 @@ impl DecodeCx<'_> {
 /// Decodes one VG mesh into a part.
 fn decode_mesh(group: &[u8], m: &VgMesh, material: u64, d: &DecodeCx) -> Result<MeshPart> {
     let layout = vertex_layout(m.flags, m.stride)?;
-    let b = B(group);
+    let b = reader(group);
     let verts = b.get(
         m.verts,
         m.vert_count
             .checked_mul(m.stride)
             .ok_or_else(|| Error::corrupt("rmdl: vertex buffer size overflows"))?,
     )?;
-    let extra = B(b.get(m.extra, m.extra_len)?);
-    let v = B(verts);
+    let extra = reader(b.get(m.extra, m.extra_len)?);
+    let v = reader(verts);
 
     let n = m.vert_count;
     let mut part = MeshPart {
@@ -938,7 +894,7 @@ impl RmdlAsset {
 
     /// Hitboxes (`mstudiobbox_v16_t`) as JSON.
     fn hitboxes(&self) -> Result<Vec<Json>> {
-        let b = B(&self.studio_blob);
+        let b = reader(&self.studio_blob);
         let sets = usize::from(b.u8(0x36)?);
         let base = b.fixed(0, 0x34)?;
         let mut out = Vec::new();
@@ -966,7 +922,7 @@ impl RmdlAsset {
 
     /// Attachments (56 bytes each) as JSON.
     fn attachments(&self) -> Result<Vec<Json>> {
-        let b = B(&self.studio_blob);
+        let b = reader(&self.studio_blob);
         let count = usize::from(b.u8(0x83)?);
         let base = b.fixed(0, 0x84)?;
         (0..count)
@@ -1330,15 +1286,15 @@ impl ReadHandler for RmdlRead {
             .data_mem_offset
             .ok_or_else(|| Error::corrupt("rmdl has no CPU data pointer"))?;
         let cpu = asset.read_mem(data_at, CPU_LEN as u64).await?;
-        let studio_at = B(&header_bytes).u64(0)?;
-        let studio_len = u64::from(B(&cpu).u32(12)?);
+        let studio_at = reader(&header_bytes).u64(0)?;
+        let studio_len = u64::from(reader(&cpu).u32(12)?);
         if studio_len == 0 || studio_len > MAX_STUDIO_LEN {
             return Err(Error::corrupt(format!(
                 "rmdl studio block of {studio_len} bytes is not usable"
             )));
         }
         let studio_blob = asset.read_mem(studio_at, studio_len).await?;
-        let source_filename_offset = B(&studio_blob).u16(0xD8).ok();
+        let source_filename_offset = reader(&studio_blob).u16(0xD8).ok();
         let header = RmdlHeader::parse(
             major,
             &header_bytes,

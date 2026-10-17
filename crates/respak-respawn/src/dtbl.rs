@@ -26,7 +26,7 @@ use respak_core::{
 };
 
 use crate::matl_json::hex;
-use crate::rmdl::B;
+use crate::rmdl::reader;
 use crate::rpak::{RpakAsset, MEM};
 
 /// Pak `createdTime` bounds (exclusive) of the V1.1 column layout.
@@ -86,7 +86,7 @@ impl DtblHeader {
                 h.len()
             )));
         }
-        let b = B(h);
+        let b = reader(h);
         let count = |at: usize, what: &str| -> Result<u32> {
             u32::try_from(b.i32(at)?).map_err(|_| Error::corrupt(format!("dtbl: negative {what}")))
         };
@@ -332,7 +332,7 @@ impl ReadHandler for DtblRead {
         let mut columns = Vec::with_capacity(header.num_columns as usize);
         let mut offsets = Vec::with_capacity(header.num_columns as usize);
         for record in records.chunks_exact(col_size as usize) {
-            let b = B(record);
+            let b = reader(record);
             let index = columns.len();
             let raw = b.i32(type_at)?;
             let ty = column_type(raw).ok_or_else(|| {
@@ -364,7 +364,7 @@ impl ReadHandler for DtblRead {
         .await?;
         let mut rows = Vec::with_capacity(header.num_rows as usize);
         for i in 0..header.num_rows as usize {
-            let row = B(&block[i * stride..(i + 1) * stride]);
+            let row = reader(&block[i * stride..(i + 1) * stride]);
             let mut cells = Vec::with_capacity(columns.len());
             for (column, &at) in columns.iter().zip(&offsets) {
                 cells.push(match column.ty {

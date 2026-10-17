@@ -9,7 +9,7 @@
 
 use respak_core::{Error, Result};
 
-use crate::rmdl::B;
+use crate::rmdl::reader;
 
 /// `FIXED_ROT_SCALE`: radians per unit of a rotation track.
 pub(crate) const ROT_SCALE: f32 = 0.000_191_753_45;
@@ -48,7 +48,7 @@ pub(crate) fn flag_array_size(bones: usize, width: FlagWidth) -> usize {
 
 /// The flag entry of `bone` in the array `flags` (little-endian; masked `0x0F` or `0x3F`).
 pub(crate) fn bone_flags(flags: &[u8], bone: usize, width: FlagWidth) -> Result<u8> {
-    let b = B(flags);
+    let b = reader(flags);
     match width {
         FlagWidth::Four => Ok((b.u8(bone / 2)? >> (4 * (bone % 2))) & 0x0F),
         FlagWidth::Six => {
@@ -75,7 +75,7 @@ pub(crate) struct RleHeader {
 impl RleHeader {
     /// Parses the header at `at`.
     pub(crate) fn parse(block: &[u8], at: usize) -> Result<Self> {
-        let v = B(block).u16(at)?;
+        let v = reader(block).u16(at)?;
         let size = v & 0x1FFF;
         if size < 2 {
             return Err(Error::corrupt(format!(
@@ -103,7 +103,7 @@ pub(crate) struct ValuePtr {
 impl ValuePtr {
     /// Parses the pointer at `at` (its offset is relative to `at`).
     pub(crate) fn parse(block: &[u8], at: usize) -> Result<Self> {
-        let b = B(block);
+        let b = reader(block);
         let v = b.u16(at)?;
         Ok(Self {
             base: at + usize::from(v & 0x1FFF),
@@ -146,7 +146,7 @@ pub(crate) fn block_units(valid: u8, total: u8) -> Result<usize> {
 /// then decodes by `valid` (raw `i16`, base plus signed bytes, polynomial plus 2/4-bit residuals;
 /// `ExtractAnimValue`). A chain that leaves the block or never reaches the frame is `Corrupt`.
 pub(crate) fn decode_track(block: &[u8], at: usize, frame: u32, scale: f32) -> Result<f32> {
-    let b = B(block);
+    let b = reader(block);
     let (mut at, mut f) = (at, frame as usize);
     let (valid, total) = loop {
         let valid = b.u8(at)?;
@@ -353,7 +353,7 @@ pub(crate) fn decode_bone(
     frame: u32,
     default_euler: [f32; 3],
 ) -> Result<BoneFrame> {
-    let b = B(block);
+    let b = reader(block);
     let end = (at + usize::from(header.size)).saturating_sub(2);
     let mut cursor = at;
     let mut out = BoneFrame::default();

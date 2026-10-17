@@ -5,7 +5,8 @@
 
 use nihav_rad::BinkAudioBlocks;
 use respak_core::capability::AudioChunk;
-use respak_core::detect::{magic, u16le, u32le};
+use respak_core::detect::{magic, u16le};
+use respak_core::reader::Reader;
 use respak_core::{Error, ErrorKind, Result};
 
 /// Most channels accepted. rsx sizes its per-stream arrays for 8 sub-streams but its decoder
@@ -49,18 +50,19 @@ impl Bcf1Header {
         if header.len() < BCF1_HEADER_LEN || !Self::has_magic(header) {
             return Err(Error::corrupt("bcf1: not a BCF1 header"));
         }
-        let version = header[4];
+        let r = Reader::new("bcf1", header);
+        let version = r.u8(4)?;
         if !(1..=2).contains(&version) {
             return Err(Error::new(ErrorKind::UnsupportedVersion {
                 format: "bcf1".into(),
                 version: version.to_string(),
             }));
         }
-        let channels = header[5];
+        let channels = r.u8(5)?;
         if channels == 0 || channels > MAX_CHANNELS {
             return Err(Error::corrupt(format!("bcf1: {channels} channels")));
         }
-        let entries = u32le(header, 0x14).expect("length checked");
+        let entries = r.u32(0x14)?;
         // v1: the whole word is the count; v2: the low half (the high half is unknown).
         let seek_entries = if version == 1 {
             u16::try_from(entries)
@@ -71,10 +73,10 @@ impl Bcf1Header {
         Ok(Self {
             version,
             channels,
-            sample_rate: u16le(header, 6).expect("length checked"),
-            sample_count: u32le(header, 8).expect("length checked"),
-            max_comp_space: u32le(header, 0xC).expect("length checked"),
-            file_size: u32le(header, 0x10).expect("length checked"),
+            sample_rate: r.u16(6)?,
+            sample_count: r.u32(8)?,
+            max_comp_space: r.u32(0xC)?,
+            file_size: r.u32(0x10)?,
             seek_entries,
         })
     }

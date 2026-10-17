@@ -30,6 +30,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use respak_core::capability::{Dependency, Metadata};
+use respak_core::reader::Reader;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
     ValueKey, Version,
@@ -78,29 +79,16 @@ struct Layout {
     glue: usize,
 }
 
-fn le<const N: usize>(h: &[u8], at: usize) -> Result<[u8; N]> {
-    h.get(at..at + N)
-        .and_then(|b| b.try_into().ok())
-        .ok_or_else(|| Error::corrupt("matl header is too short"))
-}
-fn u16_at(h: &[u8], at: usize) -> Result<u16> {
-    Ok(u16::from_le_bytes(le(h, at)?))
-}
-fn u32_at(h: &[u8], at: usize) -> Result<u32> {
-    Ok(u32::from_le_bytes(le(h, at)?))
-}
-fn u64_at(h: &[u8], at: usize) -> Result<u64> {
-    Ok(u64::from_le_bytes(le(h, at)?))
-}
 /// A relocated pointer slot: all ones or zero = null.
-fn ptr_at(h: &[u8], at: usize) -> Result<Option<u64>> {
-    let v = u64_at(h, at)?;
+fn ptr_at(h: Reader, at: usize) -> Result<Option<u64>> {
+    let v = h.u64(at)?;
     Ok((v != u64::MAX && v != 0).then_some(v))
 }
 
 impl MatlHeader {
     /// Parses a header of asset `version`; `h` is the whole header as served by the volume.
     pub fn parse(version: u32, h: &[u8]) -> Result<Self> {
+        let h = Reader::new("matl", h);
         let unsupported = |why: String| {
             Error::new(ErrorKind::UnsupportedVersion {
                 format: "matl".into(),
@@ -140,7 +128,7 @@ impl MatlHeader {
         };
         let mut depth = [0u64; 5];
         for (i, d) in depth.iter_mut().enumerate() {
-            *d = u64_at(h, 0x30 + 8 * i)?;
+            *d = h.u64(0x30 + 8 * i)?;
         }
         Ok(Self {
             version: if variant == 0 {
@@ -148,17 +136,17 @@ impl MatlHeader {
             } else {
                 Version::with_minor(version, variant)
             },
-            guid: u64_at(h, 0x10)?,
-            snapshot: if layout.snapshot { u64_at(h, 0x08)? } else { 0 },
+            guid: h.u64(0x10)?,
+            snapshot: if layout.snapshot { h.u64(0x08)? } else { 0 },
             name_at: ptr_at(h, 0x18)?,
             surface_prop_at: ptr_at(h, 0x20)?,
             surface_prop2_at: ptr_at(h, 0x28)?,
             depth,
-            shader_set: u64_at(h, 0x58)?,
-            size: [u16_at(h, 0x72)?, u16_at(h, 0x74)?, u16_at(h, 0x76)?],
-            samplers: le(h, 0x78)?,
-            features: u32_at(h, 0x80)?,
-            glue: [u32_at(h, layout.glue)?, u32_at(h, layout.glue + 4)?],
+            shader_set: h.u64(0x58)?,
+            size: [h.u16(0x72)?, h.u16(0x74)?, h.u16(0x76)?],
+            samplers: h.get(0x78, 4)?.try_into().expect("4 bytes"),
+            features: h.u32(0x80)?,
+            glue: [h.u32(layout.glue)?, h.u32(layout.glue + 4)?],
             textures_at: ptr_at(h, 0x60)?,
             slots: {
                 let (tex, streaming) = (ptr_at(h, 0x60)?, ptr_at(h, 0x68)?);

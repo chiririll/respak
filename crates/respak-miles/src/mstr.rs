@@ -2,7 +2,8 @@
 //! by the bank (`docs/formats/miles.md`, "MSTR header").
 
 use async_trait::async_trait;
-use respak_core::detect::{magic, u16le, u32le};
+use respak_core::detect::magic;
+use respak_core::reader::Reader;
 use respak_core::value::FileData;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
@@ -43,7 +44,8 @@ impl MstrHeader {
         if header.len() < MSTR_HEADER_LEN || !Self::has_magic(header) {
             return Err(Error::corrupt("mstr: not a CSTR header"));
         }
-        let version = u16le(header, 4).expect("length checked");
+        let r = Reader::new("mstr", header);
+        let version = r.u16(4)?;
         if version != 2 {
             return Err(Error::new(ErrorKind::UnsupportedVersion {
                 format: "mstr".into(),
@@ -51,10 +53,10 @@ impl MstrHeader {
             }));
         }
         Ok(Self {
-            language_idx: u16le(header, 6).expect("length checked"),
-            stream_data_offset: u32le(header, 8).expect("length checked"),
-            patch_idx: u32le(header, 0xC).expect("length checked") as i32,
-            build_tag: u32le(header, 0x10).expect("length checked"),
+            language_idx: r.u16(6)?,
+            stream_data_offset: r.u32(8)?,
+            patch_idx: r.i32(0xC)?,
+            build_tag: r.u32(0x10)?,
         })
     }
 }

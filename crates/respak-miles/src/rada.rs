@@ -2,7 +2,8 @@
 //! closed library, so a source with this codec reports its shape and `samples()` gives
 //! `UnsupportedVersion` (`docs/formats/miles-codecs.md`, "RADA").
 
-use respak_core::detect::{magic, u32le};
+use respak_core::detect::magic;
+use respak_core::reader::Reader;
 use respak_core::{Error, Result};
 
 /// Bytes of the `RadAFileHeader`.
@@ -38,27 +39,24 @@ impl RadaHeader {
         if header.len() < RADA_HEADER_LEN || !Self::has_magic(header) {
             return Err(Error::corrupt("rada: not a RADA header"));
         }
-        let channels = header[9];
+        let r = Reader::new("rada", header);
+        let channels = r.u8(9)?;
         if channels == 0 || channels > MAX_CHANNELS {
             return Err(Error::corrupt(format!("rada: {channels} channels")));
         }
-        let sample_rate = match header[0x0F] {
+        let sample_rate = match r.u8(0x0F)? {
             0 => 24000,
             1 => 32000,
             2 => 44100,
             3 => 48000,
             other => return Err(Error::corrupt(format!("rada: sample rate code {other}"))),
         };
-        let u64le = |at: usize| {
-            u64::from(u32le(header, at).expect("length checked"))
-                | u64::from(u32le(header, at + 4).expect("length checked")) << 32
-        };
         Ok(Self {
-            version: header[8],
+            version: r.u8(8)?,
             channels,
             sample_rate,
-            frame_count: u64le(0x10),
-            file_size: u64le(0x18),
+            frame_count: r.u64(0x10)?,
+            file_size: r.u64(0x18)?,
         })
     }
 }

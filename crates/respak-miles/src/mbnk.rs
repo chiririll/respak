@@ -22,6 +22,7 @@ use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::Container;
 use respak_core::detect::{magic, u32le};
+use respak_core::reader::Reader;
 use respak_core::value::FileData;
 use respak_core::volume::{volume_operator, VolumeEntry, VolumeSource, VolumeStat};
 use respak_core::{
@@ -193,24 +194,6 @@ impl SourceEntry {
     }
 }
 
-fn at<const N: usize>(b: &[u8], off: usize) -> [u8; N] {
-    b[off..off + N]
-        .try_into()
-        .expect("slice length checked by the caller")
-}
-
-fn u16_at(b: &[u8], off: usize) -> u16 {
-    u16::from_le_bytes(at(b, off))
-}
-
-fn u32_at(b: &[u8], off: usize) -> u32 {
-    u32::from_le_bytes(at(b, off))
-}
-
-fn u64_at(b: &[u8], off: usize) -> u64 {
-    u64::from_le_bytes(at(b, off))
-}
-
 /// The fields of one entry, whatever its layout.
 struct RawEntry {
     name_offset: u64,
@@ -223,49 +206,49 @@ struct RawEntry {
     data_offset: u64,
 }
 
-fn read_entry(source: u8, e: &[u8]) -> RawEntry {
-    match source {
+fn read_entry(source: u8, e: Reader) -> Result<RawEntry> {
+    Ok(match source {
         13 => RawEntry {
-            name_offset: u64::from(u32_at(e, 0x10)),
-            language: u16_at(e, 0x50),
-            patch: u16_at(e, 0x52),
-            sample_rate: u16_at(e, 0x14),
-            sample_count: u64::from(u32_at(e, 0x34)),
-            header_size: u32_at(e, 0x30),
-            header_offset: u64_at(e, 0x38),
-            data_offset: u64_at(e, 0x40),
+            name_offset: u64::from(e.u32(0x10)?),
+            language: e.u16(0x50)?,
+            patch: e.u16(0x52)?,
+            sample_rate: e.u16(0x14)?,
+            sample_count: u64::from(e.u32(0x34)?),
+            header_size: e.u32(0x30)?,
+            header_offset: e.u64(0x38)?,
+            data_offset: e.u64(0x40)?,
         },
         28 => RawEntry {
-            name_offset: u64::from(u32_at(e, 0x10)),
-            language: u16_at(e, 0x0C),
-            patch: u16_at(e, 0x0E),
-            sample_rate: u16_at(e, 0x14),
-            sample_count: u64::from(u32_at(e, 0x34)),
-            header_size: u32_at(e, 0x30),
-            header_offset: u64_at(e, 0x38),
-            data_offset: u64_at(e, 0x40),
+            name_offset: u64::from(e.u32(0x10)?),
+            language: e.u16(0x0C)?,
+            patch: e.u16(0x0E)?,
+            sample_rate: e.u16(0x14)?,
+            sample_count: u64::from(e.u32(0x34)?),
+            header_size: e.u32(0x30)?,
+            header_offset: e.u64(0x38)?,
+            data_offset: e.u64(0x40)?,
         },
         39 => RawEntry {
-            name_offset: u64::from(u32_at(e, 0)),
-            language: u16_at(e, 4),
-            patch: u16_at(e, 6),
-            sample_rate: u16_at(e, 0x0C),
-            sample_count: u64::from(u32_at(e, 0x24)),
-            header_size: u32_at(e, 0x20),
-            header_offset: u64_at(e, 0x28),
-            data_offset: u64_at(e, 0x30),
+            name_offset: u64::from(e.u32(0)?),
+            language: e.u16(4)?,
+            patch: e.u16(6)?,
+            sample_rate: e.u16(0x0C)?,
+            sample_count: u64::from(e.u32(0x24)?),
+            header_size: e.u32(0x20)?,
+            header_offset: e.u64(0x28)?,
+            data_offset: e.u64(0x30)?,
         },
         _ => RawEntry {
-            name_offset: u64_at(e, 0),
-            language: u16_at(e, 8),
-            patch: u16_at(e, 0x0A),
-            sample_rate: u16_at(e, 0x10),
-            sample_count: u64_at(e, 0x28),
-            header_size: u32_at(e, 0x24),
-            header_offset: u64_at(e, 0x30),
-            data_offset: u64_at(e, 0x38),
+            name_offset: e.u64(0)?,
+            language: e.u16(8)?,
+            patch: e.u16(0x0A)?,
+            sample_rate: e.u16(0x10)?,
+            sample_count: e.u64(0x28)?,
+            header_size: e.u32(0x24)?,
+            header_offset: e.u64(0x30)?,
+            data_offset: e.u64(0x38)?,
         },
-    }
+    })
 }
 
 /// The NUL-terminated string at `off`.
@@ -299,13 +282,14 @@ impl Bank {
         if !magic(bytes, 0, MAGIC) || bytes.len() < 12 {
             return Err(Error::corrupt("mbnk: not a CBNK file"));
         }
-        let version = u32le(bytes, 4).expect("length checked") as i32;
+        let version = Reader::new("mbnk", bytes).i32(4)?;
         let layout = BankLayout::for_version(version).ok_or_else(|| {
             Error::new(ErrorKind::UnsupportedVersion {
                 format: "mbnk".into(),
                 version: version.to_string(),
             })
         })?;
+        let r = Reader::new("mbnk", bytes);
         let h = header_fields(layout.header);
         if bytes.len() < h.len {
             return Err(Error::corrupt(format!(
@@ -314,14 +298,14 @@ impl Bank {
             )));
         }
         let sources_at = if h.sources_wide {
-            u64_at(bytes, h.sources)
+            r.u64(h.sources)?
         } else {
-            u64::from(u32_at(bytes, h.sources))
+            u64::from(r.u32(h.sources)?)
         };
-        let strings_at = u64_at(bytes, h.strings);
-        let unlocalised = u64::from(u32_at(bytes, h.unlocalised));
-        let localised = u64::from(u32_at(bytes, h.localised));
-        let build_tag = u32_at(bytes, h.build_tag);
+        let strings_at = r.u64(h.strings)?;
+        let unlocalised = u64::from(r.u32(h.unlocalised)?);
+        let localised = u64::from(r.u32(h.localised)?);
+        let build_tag = r.u32(h.build_tag)?;
 
         let languages = layout.languages.len() as u64;
         let count = localised
@@ -346,7 +330,10 @@ impl Bank {
         let mut first_name = None;
         for i in 0..count {
             let at = (sources_at + i * size) as usize;
-            let raw = read_entry(layout.source, &bytes[at..at + size as usize]);
+            let raw = read_entry(
+                layout.source,
+                Reader::new("mbnk", r.get(at, size as usize)?),
+            )?;
             // Bank v48 keeps the names in a block of their own right after the table.
             let name_at = if layout.source == 48 {
                 let first = *first_name.get_or_insert(raw.name_offset);

@@ -11,12 +11,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use respak_core::capability::{Dependency, Metadata};
+use respak_core::reader::Reader;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
     ValueKey, Version,
 };
 
-use crate::rmdl::B;
+use crate::rmdl::reader;
 use crate::rpak::{RpakAsset, MEM};
 
 /// Bytes of a layout header, also the stride of the sub layout array.
@@ -216,7 +217,7 @@ struct Pointers<'a> {
 }
 
 impl Pointers<'_> {
-    fn get(&self, h: &B<'_>, at: usize) -> Result<Option<u64>> {
+    fn get(&self, h: &Reader<'_>, at: usize) -> Result<Option<u64>> {
         let slot: [u8; 8] = h.get(at, 8)?.try_into().expect("8 bytes");
         if self.relocated {
             let v = u64::from_le_bytes(slot);
@@ -259,7 +260,7 @@ fn read_layout<'a>(
         if depth > DEPTH {
             return Err(Error::corrupt("stlt: sub layouts nest too deep"));
         }
-        let h = B(&header);
+        let h = reader(&header);
         let p = Pointers { asset, relocated };
         let name_at = p.get(&h, 0x00)?;
         let field_data = p.get(&h, 0x08)?;
@@ -314,7 +315,7 @@ fn read_layout<'a>(
         // Alignment and the sub layout count come from every slot, empty ones included.
         let mut alignment = 1;
         let mut highest = 0u8;
-        let slots = B(&table);
+        let slots = reader(&table);
         for i in 0..table_size as usize {
             let ty = slots.u16(i * 8)?;
             if let Some(a) = FieldType::from_u16(ty).and_then(FieldType::alignment) {
@@ -323,7 +324,7 @@ fn read_layout<'a>(
             highest = highest.max(slots.get(i * 8 + 7, 1)?[0]);
         }
 
-        let entries = B(&map);
+        let entries = reader(&map);
         let mut fields = Vec::with_capacity(field_count as usize);
         for i in 0..field_count as usize {
             let bucket = entries.u16(i * 4)? as usize;

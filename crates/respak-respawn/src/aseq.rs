@@ -37,6 +37,7 @@ use opendal::Operator;
 use respak_core::capability::{
     Animation, AnimationInfo, Bone, BoneSample, BoneTrack, Dependency, Metadata, Track,
 };
+use respak_core::reader::Reader;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
     ValueKey, Version,
@@ -49,7 +50,7 @@ use crate::anim_codec::{
 use crate::arig::{explicit_rig, owner_of, Owners};
 use crate::asqd::AsqdAsset;
 use crate::matl_json::{hex, locate, pak_of};
-use crate::rmdl::{fix_offset, read_guids, B};
+use crate::rmdl::{fix_offset, read_guids, reader, FixedOffset};
 use crate::rpak::{RpakAsset, MEM};
 
 fn unsupported(version: impl Into<String>) -> Error {
@@ -167,7 +168,7 @@ impl AseqHeader {
                 header.len()
             )));
         }
-        let h = B(header);
+        let h = reader(header);
         let ptr = |at: usize| -> Result<Option<u64>> {
             let v = h.u64(at)?;
             Ok((v != u64::MAX && v != 0).then_some(v))
@@ -215,7 +216,7 @@ pub struct SeqDesc {
 impl SeqDesc {
     /// Parses the seqdesc at `at` in `block` for a rig of `bone_count` bones.
     pub fn parse(block: &[u8], at: usize, bone_count: usize) -> Result<Self> {
-        let b = B(block);
+        let b = reader(block);
         let label = b.cstr(b.fixed(at, at)?, 256)?;
         let flags = b.i32(at + 0x04)?;
         let group_size = [b.u8(at + 0x54)?, b.u8(at + 0x55)?];
@@ -280,7 +281,7 @@ pub struct FrameMovement {
 }
 
 impl FrameMovement {
-    fn parse(b: &B, at: usize, frame_count: u32) -> Result<Self> {
+    fn parse(b: &Reader, at: usize, frame_count: u32) -> Result<Self> {
         let scale = b.floats::<4>(at)?;
         let section_frames = b.i32(at + 0x10)?;
         let count = if section_frames > 0 {
@@ -359,7 +360,7 @@ pub struct AnimDesc {
 impl AnimDesc {
     /// Parses the animdesc at `at` in `block` (offsets inside it are relative to `at`).
     pub fn parse(block: &[u8], at: usize) -> Result<Self> {
-        let b = B(block);
+        let b = reader(block);
         let fps = b.f32(at)?;
         let flags = b.i32(at + 0x04)?;
         let frames = b.i32(at + 0x08)?;

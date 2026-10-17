@@ -13,6 +13,7 @@ use futures::stream::{BoxStream, StreamExt};
 use respak_core::capability::{
     Audio, AudioChunk, AudioTrackInfo, FrameFormat, Video, VideoFrame, VideoInfo,
 };
+use respak_core::reader::Reader;
 use respak_core::value::FileData;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
@@ -61,31 +62,29 @@ impl BikHeader {
     /// Parses a Bink header (`KB2x` or `BIKx`, `x` a lower-case letter); `None` if it is not one
     /// or its fields are not plausible (no frames, a zero or huge size, a zero frame rate).
     pub fn parse(header: &[u8]) -> Option<Self> {
-        let header = header.get(..Self::LEN)?;
-        let major = match &header[..3] {
+        let r = Reader::new("bik", header.get(..Self::LEN)?);
+        let major = match r.try_get(0, 3)? {
             b"KB2" => 2,
             b"BIK" => 1,
             _ => return None,
         };
-        let revision = header[3];
+        let revision = r.try_u8(3)?;
         if !revision.is_ascii_lowercase() {
             return None;
         }
-        let field = |at: usize| {
-            u32::from_le_bytes([header[at], header[at + 1], header[at + 2], header[at + 3]])
-        };
+        let field = |at: usize| r.try_u32(at);
         let parsed = Self {
             major,
             revision,
-            size: field(4),
-            frame_count: field(8),
-            largest_frame: field(12),
-            width: field(20),
-            height: field(24),
-            fps_num: field(28),
-            fps_den: field(32),
-            flags: field(36),
-            audio_tracks: field(40),
+            size: field(4)?,
+            frame_count: field(8)?,
+            largest_frame: field(12)?,
+            width: field(20)?,
+            height: field(24)?,
+            fps_num: field(28)?,
+            fps_den: field(32)?,
+            flags: field(36)?,
+            audio_tracks: field(40)?,
         };
         let size_ok = |n: u32| (1..=Self::MAX_DIMENSION).contains(&n);
         let plausible = parsed.frame_count > 0

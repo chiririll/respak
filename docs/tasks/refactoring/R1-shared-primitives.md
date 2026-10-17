@@ -10,14 +10,15 @@
 ## R1.2 `Error::msg` (S) — done for the core sites (typed kinds not added)
 `ErrorKind::Custom { source: None, message }` is built by hand at `mediator.rs:536`, `plugin.rs:131`, `engine/convert.rs:133`, `engine/mod.rs:104`, `value/lazy.rs:103,168`. Add `Error::msg(impl Into<String>)`. Consider typed kinds for the registry validation (`plugin.rs:131`) and missing-operator (`engine/mod.rs:104`) cases.
 
-## R1.3 Shared checked byte reader (M)
+## R1.3 Shared checked byte reader (M) — done (module is `reader`, not `bytes`)
 Hand-rolled little-endian readers: `core/detect.rs:58-72`, `miles/mbnk.rs:197-214`, `nihav/bik.rs:81`, `formats/bc.rs:93-115`, `formats/cast.rs:829` (tests), `miles/e2e_tests.rs`, and in respawn `dxbc.rs`, `matl.rs:88-100`, `pak.rs:62-109`, `rmdl.rs:136-200` (`B`), `uimg.rs`, `stlt.rs`, `dtbl.rs`, `rtech.rs`.
 - New module in `respak-core` (`bytes`): checked `Reader`/`Cursor`, `u8/u16/u32/u64/i16/i32/i64/f32/cstr`, returning `Result`, plus an `Option` variant for detection. Use `rmdl::B` as the base.
 - Rewrite `detect::u16le/u32le` on top of it.
 - Each format keeps a thin wrapper mapping to its own `corrupt`.
 
-## R1.4 Migrate parsers to the reader (M)
+## R1.4 Migrate parsers to the reader (M) — done in one pass, except the items listed below
 One crate per commit, in this order: `miles`, `nihav`, `formats` (`bc`), `respawn` (`pak` first, then `matl`, `dxbc`, `rmdl`, cstr readers in `uimg`/`stlt`/`dtbl`).
+Left as is: `bc.rs` (`chunks_exact` already guarantees the lengths), the Option-returning cstr readers in `uimg`/`stlt`/`dtbl` (different semantics from `Reader::cstr`), `rtech.rs` and test helpers.
 
 ## R1.5 Remove panic risks on untrusted data (S–M)
 - `pak.rs:99-109` `le_*` index directly; `matl.rs:88` `at + N` can overflow; `B::fixed` (`rmdl.rs:195`) adds without `checked_add`.

@@ -12,6 +12,7 @@
 
 use std::collections::BTreeMap;
 
+use respak_core::reader::Reader;
 use respak_core::{Error, ErrorKind, Result};
 
 const SIT_TEXTURE: u32 = 2;
@@ -24,13 +25,7 @@ fn corrupt(what: &str) -> Error {
 }
 
 fn u32_at(buf: &[u8], offset: usize) -> Result<u32> {
-    let end = offset
-        .checked_add(4)
-        .ok_or_else(|| corrupt("offset overflow"))?;
-    let bytes = buf
-        .get(offset..end)
-        .ok_or_else(|| corrupt("read past the end"))?;
-    Ok(u32::from_le_bytes(bytes.try_into().expect("4 bytes")))
+    Reader::new("DXBC", buf).u32(offset)
 }
 
 /// Bind point -> variable name of every texture the blob's RDEF chunk declares.

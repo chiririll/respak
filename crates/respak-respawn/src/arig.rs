@@ -26,7 +26,7 @@ use tokio::sync::OnceCell;
 
 use crate::guid::string_to_guid;
 use crate::matl_json::{hex, locate, pak_of};
-use crate::rmdl::{self, parse_bones, read_guids, StudioLayout, B};
+use crate::rmdl::{self, parse_bones, read_guids, reader, StudioLayout};
 use crate::rpak::{RpakAsset, MEM};
 
 fn unsupported(version: impl Into<String>) -> Error {
@@ -94,7 +94,7 @@ impl ArigHeader {
                 header.len()
             )));
         }
-        let h = B(header);
+        let h = reader(header);
         let ptr = |at: usize| -> Result<Option<u64>> {
             let v = h.u64(at)?;
             Ok((v != u64::MAX && v != 0).then_some(v))
@@ -136,7 +136,7 @@ pub fn studio_variant(
             if let Some(v) = sibling {
                 return Ok((v.major, StudioLayout::for_version(v)?));
             }
-            let b = B(studio);
+            let b = reader(studio);
             let unknown = || {
                 unsupported("studio layout (no model beside the rig and the block does not say; set `studio`)")
             };
@@ -312,7 +312,7 @@ impl ReadHandler for ArigRead {
             StudioSelect::Layout(_) => None,
         };
         let (major, layout) = studio_variant(&self.studio, sibling, &studio)?;
-        let b = B(&studio);
+        let b = reader(&studio);
         let local = b.u16(0x7A)?;
         if local != 0 {
             return Err(Error::corrupt(format!(
@@ -512,7 +512,7 @@ async fn sequences_of(asset: &Value) -> Option<(&'static str, Vec<u64>)> {
                 .anim_seqs,
         ),
         b"mdl_" if (16..=20).contains(&asset.entry.version) && header.len() == 96 => {
-            let b = B(&header);
+            let b = reader(&header);
             let at = b.u64(0x50).ok()?;
             (
                 "rmdl",
@@ -537,11 +537,11 @@ async fn sibling_model(name: &str, origin: &str, cx: &Cx) -> Option<Version> {
         .ok()?;
     let m = model.downcast_ref::<RpakAsset>()?;
     let header = m.read_header().await.ok()?;
-    let studio_at = B(&header).u64(0).ok()?;
+    let studio_at = reader(&header).u64(0).ok()?;
     let source_filename_offset = m
         .read_mem(studio_at, 0xDA)
         .await
         .ok()
-        .and_then(|b| B(&b).u16(0xD8).ok());
+        .and_then(|b| reader(&b).u16(0xD8).ok());
     rmdl::variant(m.entry.version, m.pak_created_time, source_filename_offset).ok()
 }

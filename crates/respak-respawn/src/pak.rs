@@ -34,6 +34,7 @@
 //! stream (`patchDataStreamSize` bytes), then the data of pages `patchPageCount..` only; the
 //! earlier pages are rebuilt from the lower files by the edit stream (see `patch.rs`).
 
+use respak_core::reader::{Cursor, Reader};
 use respak_core::{Error, ErrorKind, Result};
 
 /// Flag: the body is RTech-compressed.
@@ -49,59 +50,6 @@ const SEGMENT_LEN: u64 = 0x10;
 const PAGE_LEN: u64 = 0xC;
 const PATCH_DATA_HDR_LEN: u64 = 8;
 const PATCH_FILE_HDR_LEN: u64 = 16;
-
-/// A reader over a byte slice that fails with `Corrupt` instead of panicking.
-struct Cursor<'a> {
-    buf: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
-        let end = self.pos.checked_add(n).filter(|&e| e <= self.buf.len());
-        let end = end.ok_or_else(|| Error::corrupt("rpak table runs past the end of the data"))?;
-        let s = &self.buf[self.pos..end];
-        self.pos = end;
-        Ok(s)
-    }
-
-    fn u32(&mut self) -> Result<u32> {
-        Ok(u32::from_le_bytes(
-            self.take(4)?.try_into().expect("4 bytes"),
-        ))
-    }
-
-    fn i32(&mut self) -> Result<i32> {
-        Ok(self.u32()? as i32)
-    }
-
-    fn u64(&mut self) -> Result<u64> {
-        Ok(u64::from_le_bytes(
-            self.take(8)?.try_into().expect("8 bytes"),
-        ))
-    }
-
-    fn i64(&mut self) -> Result<i64> {
-        Ok(self.u64()? as i64)
-    }
-
-    fn skip(&mut self, n: usize) -> Result<()> {
-        self.take(n).map(|_| ())
-    }
-}
-
-fn le_u16(b: &[u8], at: usize) -> u16 {
-    u16::from_le_bytes([b[at], b[at + 1]])
-}
-fn le_i16(b: &[u8], at: usize) -> i16 {
-    le_u16(b, at) as i16
-}
-fn le_i32(b: &[u8], at: usize) -> i32 {
-    i32::from_le_bytes(b[at..at + 4].try_into().expect("4 bytes"))
-}
-fn le_i64(b: &[u8], at: usize) -> i64 {
-    i64::from_le_bytes(b[at..at + 8].try_into().expect("8 bytes"))
-}
 
 /// A non-negative count from a signed header field.
 fn count(v: i64, what: &str) -> Result<u64> {
@@ -172,7 +120,8 @@ impl PakHeader {
         if data.len() < 8 || &data[..4] != MAGIC {
             return Err(Error::new(ErrorKind::UnknownFormat));
         }
-        let version = le_u16(data, 4);
+        let d = Reader::new("rpak", data);
+        let version = d.u16(4)?;
         let unsupported = |what: String| {
             Error::new(ErrorKind::UnsupportedVersion {
                 format: "rpak".into(),
@@ -183,76 +132,72 @@ impl PakHeader {
         if data.len() < header_len {
             return Err(Error::corrupt("rpak file is shorter than its header"));
         }
-        let flags = le_u16(data, 6);
+        let flags = d.u16(6)?;
         let c = |v: i32, w: &str| count(i64::from(v), w);
 
         let mut h = match version {
             6 => {
-                let size = count(le_i64(data, 0x18), "size")?;
+                let size = count(d.i64(0x18)?, "size")?;
                 Self {
                     version,
                     flags,
                     header_len,
                     compressed_size: size,
                     decompressed_size: size,
-                    starpak_buf: c(le_i32(data, 0x30), "starpak buffer size")?,
+                    starpak_buf: c(d.i32(0x30)?, "starpak buffer size")?,
                     opt_starpak_buf: 0,
-                    num_segments: c(le_i32(data, 0x34), "segment count")?,
-                    num_pages: c(le_i32(data, 0x38), "page count")?,
+                    num_segments: c(d.i32(0x34)?, "segment count")?,
+                    num_pages: c(d.i32(0x38)?, "page count")?,
                     patch_count: 0,
-                    num_pointers: c(le_i32(data, 0x3C), "pointer count")?,
-                    num_assets: c(le_i32(data, 0x40), "asset count")?,
-                    num_guid_refs: c(le_i32(data, 0x44), "guid ref count")?,
-                    num_dependencies: c(le_i32(data, 0x48), "dependency count")?,
-                    num_external_refs: c(le_i32(data, 0x4C), "external ref count")?,
-                    external_refs_size: c(le_i32(data, 0x50), "external refs size")?,
+                    num_pointers: c(d.i32(0x3C)?, "pointer count")?,
+                    num_assets: c(d.i32(0x40)?, "asset count")?,
+                    num_guid_refs: c(d.i32(0x44)?, "guid ref count")?,
+                    num_dependencies: c(d.i32(0x48)?, "dependency count")?,
+                    num_external_refs: c(d.i32(0x4C)?, "external ref count")?,
+                    external_refs_size: c(d.i32(0x50)?, "external refs size")?,
                     unknown_data: 0,
-                    created_time: le_i64(data, 0x08) as u64,
+                    created_time: d.i64(0x08)? as u64,
                 }
             }
             7 => Self {
                 version,
                 flags,
                 header_len,
-                compressed_size: count(le_i64(data, 0x18), "compressed size")?,
-                decompressed_size: count(le_i64(data, 0x28), "decompressed size")?,
-                starpak_buf: c(i32::from(le_i16(data, 0x38)), "starpak buffer size")?,
+                compressed_size: count(d.i64(0x18)?, "compressed size")?,
+                decompressed_size: count(d.i64(0x28)?, "decompressed size")?,
+                starpak_buf: c(i32::from(d.i16(0x38)?), "starpak buffer size")?,
                 opt_starpak_buf: 0,
-                num_segments: u64::from(le_u16(data, 0x3A)),
-                num_pages: u64::from(le_u16(data, 0x3C)),
-                patch_count: c(i32::from(le_i16(data, 0x3E)), "patch count")?,
-                num_pointers: c(le_i32(data, 0x40), "pointer count")?,
-                num_assets: c(le_i32(data, 0x44), "asset count")?,
-                num_guid_refs: c(le_i32(data, 0x48), "guid ref count")?,
-                num_dependencies: c(le_i32(data, 0x4C), "dependency count")?,
-                num_external_refs: c(le_i32(data, 0x50), "external ref count")?,
-                external_refs_size: c(le_i32(data, 0x54), "external refs size")?,
+                num_segments: u64::from(d.u16(0x3A)?),
+                num_pages: u64::from(d.u16(0x3C)?),
+                patch_count: c(i32::from(d.i16(0x3E)?), "patch count")?,
+                num_pointers: c(d.i32(0x40)?, "pointer count")?,
+                num_assets: c(d.i32(0x44)?, "asset count")?,
+                num_guid_refs: c(d.i32(0x48)?, "guid ref count")?,
+                num_dependencies: c(d.i32(0x4C)?, "dependency count")?,
+                num_external_refs: c(d.i32(0x50)?, "external ref count")?,
+                external_refs_size: c(d.i32(0x54)?, "external refs size")?,
                 unknown_data: 0,
-                created_time: le_i64(data, 0x08) as u64,
+                created_time: d.i64(0x08)? as u64,
             },
             _ => Self {
                 version,
                 flags,
                 header_len,
-                compressed_size: count(le_i64(data, 0x18), "compressed size")?,
-                decompressed_size: count(le_i64(data, 0x30), "decompressed size")?,
-                starpak_buf: c(i32::from(le_i16(data, 0x48)), "starpak buffer size")?,
-                opt_starpak_buf: c(
-                    i32::from(le_i16(data, 0x4A)),
-                    "optional starpak buffer size",
-                )?,
-                num_segments: u64::from(le_u16(data, 0x4C)),
-                num_pages: u64::from(le_u16(data, 0x4E)),
-                patch_count: c(i32::from(le_i16(data, 0x50)), "patch count")?,
-                num_pointers: c(le_i32(data, 0x54), "pointer count")?,
-                num_assets: c(le_i32(data, 0x58), "asset count")?,
-                num_guid_refs: c(le_i32(data, 0x5C), "guid ref count")?,
-                num_dependencies: c(le_i32(data, 0x60), "dependency count")?,
-                num_external_refs: c(le_i32(data, 0x64), "external ref count")?,
-                external_refs_size: c(le_i32(data, 0x68), "external refs size")?,
-                unknown_data: u64::from(le_i32(data, 0x74) as u32)
-                    + u64::from(le_i32(data, 0x78) as u32),
-                created_time: le_i64(data, 0x08) as u64,
+                compressed_size: count(d.i64(0x18)?, "compressed size")?,
+                decompressed_size: count(d.i64(0x30)?, "decompressed size")?,
+                starpak_buf: c(i32::from(d.i16(0x48)?), "starpak buffer size")?,
+                opt_starpak_buf: c(i32::from(d.i16(0x4A)?), "optional starpak buffer size")?,
+                num_segments: u64::from(d.u16(0x4C)?),
+                num_pages: u64::from(d.u16(0x4E)?),
+                patch_count: c(i32::from(d.i16(0x50)?), "patch count")?,
+                num_pointers: c(d.i32(0x54)?, "pointer count")?,
+                num_assets: c(d.i32(0x58)?, "asset count")?,
+                num_guid_refs: c(d.i32(0x5C)?, "guid ref count")?,
+                num_dependencies: c(d.i32(0x60)?, "dependency count")?,
+                num_external_refs: c(d.i32(0x64)?, "external ref count")?,
+                external_refs_size: c(d.i32(0x68)?, "external refs size")?,
+                unknown_data: u64::from(d.i32(0x74)? as u32) + u64::from(d.i32(0x78)? as u32),
+                created_time: d.i64(0x08)? as u64,
             },
         };
         if h.flags & FLAG_ZSTD != 0 {
@@ -462,12 +407,11 @@ impl Tables {
     pub fn parse(header: &PakHeader, body: &[u8]) -> Result<Self> {
         let len = usize::try_from(header.tables_len())
             .map_err(|_| Error::corrupt("rpak tables are too large"))?;
-        let mut r = Cursor {
-            buf: body
-                .get(..len)
+        let mut r = Cursor::new(
+            "rpak",
+            body.get(..len)
                 .ok_or_else(|| Error::corrupt("rpak tables run past the data"))?,
-            pos: 0,
-        };
+        );
         let patch = if header.patch_count > 0 {
             let (stream_size, patch_pages) = (r.i32()?, r.i32()?);
             let stream_size = count(i64::from(stream_size), "patch stream size")?;
@@ -476,9 +420,7 @@ impl Tables {
             let files = (0..n)
                 .map(|_| Ok((r.i64()?, r.i64()?)))
                 .collect::<Result<Vec<_>>>()?;
-            let indices = (0..n)
-                .map(|_| Ok(u16::from_le_bytes(r.take(2)?.try_into().expect("2 bytes"))))
-                .collect::<Result<Vec<_>>>()?;
+            let indices = (0..n).map(|_| r.u16()).collect::<Result<Vec<_>>>()?;
             if patch_pages > header.num_pages {
                 return Err(Error::corrupt(
                     "rpak: the patch block claims more patched pages than the pak has",
@@ -526,7 +468,7 @@ impl Tables {
         let mut assets = Vec::with_capacity(header.num_assets as usize);
         for _ in 0..header.num_assets {
             let entry = r.take(header.asset_entry_len() as usize)?;
-            assets.push(Self::asset(header.version, entry));
+            assets.push(Self::asset(header.version, entry)?);
         }
         let mut guid_refs = Vec::with_capacity(header.num_guid_refs as usize);
         for _ in 0..header.num_guid_refs {
@@ -582,40 +524,43 @@ impl Tables {
     }
 
     /// Reads one asset entry. `e` is exactly the entry size of `version`.
-    fn asset(version: u16, e: &[u8]) -> AssetEntry {
-        let u32_at = |at: usize| u32::from_le_bytes(e[at..at + 4].try_into().expect("4 bytes"));
-        let ptr_at = |at: usize| PagePtr {
-            page: u32_at(at),
-            offset: u32_at(at + 4),
+    fn asset(version: u16, e: &[u8]) -> Result<AssetEntry> {
+        let e = Reader::new("rpak", e);
+        let ptr_at = |at: usize| -> Result<PagePtr> {
+            Ok(PagePtr {
+                page: e.u32(at)?,
+                offset: e.u32(at + 4)?,
+            })
         };
-        let kind = |at: usize| [e[at], e[at + 1], e[at + 2], e[at + 3]];
-        if version >= 8 {
+        let kind =
+            |at: usize| -> Result<[u8; 4]> { Ok(e.get(at, 4)?.try_into().expect("4 bytes")) };
+        Ok(if version >= 8 {
             AssetEntry {
-                guid: u64::from_le_bytes(e[..8].try_into().expect("8 bytes")),
-                head: ptr_at(0x10),
-                data: ptr_at(0x18),
-                starpak: le_i64(e, 0x20),
-                opt_starpak: le_i64(e, 0x28),
-                dependencies_index: u32_at(0x38),
-                dependencies_count: u32::from(le_u16(e, 0x40)),
-                header_size: u32_at(0x44),
-                version: u32::from(e[0x48]),
-                kind: kind(0x4C),
+                guid: e.u64(0)?,
+                head: ptr_at(0x10)?,
+                data: ptr_at(0x18)?,
+                starpak: e.i64(0x20)?,
+                opt_starpak: e.i64(0x28)?,
+                dependencies_index: e.u32(0x38)?,
+                dependencies_count: u32::from(e.u16(0x40)?),
+                header_size: e.u32(0x44)?,
+                version: u32::from(e.u8(0x48)?),
+                kind: kind(0x4C)?,
             }
         } else {
             AssetEntry {
-                guid: u64::from_le_bytes(e[..8].try_into().expect("8 bytes")),
-                head: ptr_at(0x10),
-                data: ptr_at(0x18),
-                starpak: le_i64(e, 0x20),
+                guid: e.u64(0)?,
+                head: ptr_at(0x10)?,
+                data: ptr_at(0x18)?,
+                starpak: e.i64(0x20)?,
                 opt_starpak: -1,
-                dependencies_index: u32_at(0x30),
-                dependencies_count: u32_at(0x38),
-                header_size: u32_at(0x3C),
-                version: u32_at(0x40),
-                kind: kind(0x44),
+                dependencies_index: e.u32(0x30)?,
+                dependencies_count: e.u32(0x38)?,
+                header_size: e.u32(0x3C)?,
+                version: e.u32(0x40)?,
+                kind: kind(0x44)?,
             }
-        }
+        })
     }
 
     /// Total size of the pages: the length of the flat `.mem` file.
@@ -649,9 +594,10 @@ impl Tables {
                 break;
             }
             let at = (slot.offset - base) as usize;
+            let slot_bytes = Reader::new("rpak", raw);
             let target = PagePtr {
-                page: u32::from_le_bytes(raw[at..at + 4].try_into().expect("4 bytes")),
-                offset: u32::from_le_bytes(raw[at + 4..at + 8].try_into().expect("4 bytes")),
+                page: slot_bytes.u32(at)?,
+                offset: slot_bytes.u32(at + 4)?,
             };
             let value = if target.is_null() {
                 u64::MAX

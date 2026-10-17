@@ -12,6 +12,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use respak_core::capability::{Dependency, Metadata, NameSource};
+use respak_core::reader::Reader;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
     ValueKey, Version,
@@ -19,7 +20,7 @@ use respak_core::{
 use serde_json::{json, Map, Value as Json};
 
 use crate::matl_json::{locate, pak_of};
-use crate::rmdl::B;
+use crate::rmdl::reader;
 use crate::rpak::{RpakAsset, MEM};
 use crate::stlt::{FieldType, Layout, StltAsset};
 
@@ -74,7 +75,7 @@ impl StgsHeader {
                 }))
             }
         };
-        let h = B(header);
+        let h = reader(header);
         let ptr = |at: usize| -> Result<Option<u64>> {
             let v = h.u64(at)?;
             Ok((v != u64::MAX && v != 0).then_some(v))
@@ -284,7 +285,7 @@ fn number(v: f32) -> Json {
 /// pointer of a string, asset or asset_noprecache value into its text.
 fn decode(
     layout: &Layout,
-    values: &B<'_>,
+    values: &Reader<'_>,
     base: usize,
     strings: &mut dyn FnMut([u8; 8]) -> Option<String>,
     depth: usize,
@@ -320,7 +321,7 @@ fn decode(
                     let count = values.i32(at)?.max(0) as usize;
                     (values.u32(at + 4)? as usize, count)
                 };
-                if stride.saturating_mul(count) > values.0.len() {
+                if stride.saturating_mul(count) > values.len() {
                     return Err(Error::corrupt(format!(
                         "stgs: array `{}` of {count} elements does not fit",
                         f.name
@@ -468,7 +469,7 @@ impl ReadHandler for StgsRead {
                 return Err(Error::corrupt("stgs: the mods are outside the pak's data"));
             }
             let table = asset.read_mem(at, bytes).await?;
-            let b = B(&table);
+            let b = reader(&table);
             for i in 0..n as usize {
                 let base = i * MOD_LEN;
                 let kind = ModType::from_u16(b.u16(base + 2)?);
@@ -497,7 +498,7 @@ impl ReadHandler for StgsRead {
                 .ok_or_else(|| Error::corrupt("stgs: the layout is not a stlt"))?;
             layout_name = stlt.layout().name.clone();
             // First pass collects the pointers of the text values, the second uses their text.
-            let view = B(&values);
+            let view = reader(&values);
             let mut slots: Vec<[u8; 8]> = Vec::new();
             decode(
                 stlt.layout(),
@@ -609,7 +610,7 @@ mod tests {
         buf[24..28].copy_from_slice(&7i32.to_le_bytes());
         buf[28] = 1;
         buf[32..36].copy_from_slice(&(-3i32).to_le_bytes());
-        let json = decode(&root, &B(&buf), 0, &mut |_| Some("txt".into()), 0).unwrap();
+        let json = decode(&root, &reader(&buf), 0, &mut |_| Some("txt".into()), 0).unwrap();
         assert_eq!(
             json,
             json!({
@@ -633,6 +634,6 @@ mod tests {
         let mut buf = vec![0u8; 8];
         buf[0..4].copy_from_slice(&1000i32.to_le_bytes());
         buf[4..8].copy_from_slice(&8u32.to_le_bytes());
-        assert!(decode(&root, &B(&buf), 0, &mut |_| None, 0).is_err());
+        assert!(decode(&root, &reader(&buf), 0, &mut |_| None, 0).is_err());
     }
 }

@@ -12,6 +12,7 @@ pub mod graph;
 pub mod mediator;
 pub mod middleware;
 pub mod plugin;
+pub mod reader;
 pub mod resolve;
 pub mod target;
 pub mod value;
