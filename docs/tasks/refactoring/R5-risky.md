@@ -5,7 +5,7 @@
 `miles/asrc.rs` and `nihav/bik.rs` hand-roll the same blocking-pool decode → `mpsc` → `blocking_send` → cancel check → `Err(Cancelled)` last item. Extract e.g. `respak_core::stream::blocking_stream(cancel, |emit| ..)`. Concurrency code: run the `bik.rs` cancel tests and `formats/tests/cancel.rs` first.
 
 ## R5.2 Codec splits (M each, only with the vector tests green)
-- `snowflake.rs` (1334 lines): `run` (~440 lines), `literals` (~185), `c880` (~159); 95 `as` casts and a 0x25000 flat state block addressed by raw offsets. Move the SIMD constants to a table, name the state offsets (accessors or a `#[repr]` struct), split into `snowflake/{state,bits,model,literals,run}.rs`.
+- ✅ done (`codec/snowflake/`, longest fn `run` 160 lines; real-block hashes in an ignored test, run with `SNOWFLAKE_VECTORS=<dir of NNNN.in>`): `snowflake.rs` (1334 lines): `run` (~440 lines), `literals` (~185), `c880` (~159); 95 `as` casts and a 0x25000 flat state block addressed by raw offsets. Move the SIMD constants to a table, name the state offsets (accessors or a `#[repr]` struct), split into `snowflake/{state,bits,model,literals,run}.rs`.
 - `rtech.rs`: `run` (156 lines), `decode` (131 lines). Optional.
 - Long read handlers: `stgs.rs`, `uiia.rs`, `rpak.rs` `oodle_read`. Check for a shared "parse asset then Value" skeleton across `stgs`, `uiia`, `uimg`, `stlt`, `matl`.
 
