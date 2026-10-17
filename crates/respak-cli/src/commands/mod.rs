@@ -4,6 +4,7 @@ mod convert;
 mod copy;
 mod discover;
 mod dump;
+mod failures;
 mod formats;
 mod list;
 mod names;

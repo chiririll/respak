@@ -325,7 +325,6 @@ pub async fn run(
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> anyhow::Result<ExitCode> {
-    let out_dir = cli.out.clone();
     match cli.command {
         #[cfg(feature = "steam")]
         Command::Steam { command } => run_steam(command, out).await,
@@ -335,7 +334,7 @@ pub async fn run(
         Command::Names(args) => commands::names(engine, cancel, args, out, err).await,
         Command::Convert(args) => commands::convert(engine, cancel, args, out, err).await,
         Command::Copy(args) => commands::copy(engine, cancel, args, out, err).await,
-        Command::Dump(args) => commands::dump(engine, cancel, out_dir, args, out, err).await,
+        Command::Dump(args) => commands::dump(engine, cancel, args, out, err).await,
         Command::Run(args) => commands::request(engine, cancel, args, out, err).await,
         Command::Profile(_) => {
             anyhow::bail!("the profile was not resolved; use `Cli::try_parse_args`")

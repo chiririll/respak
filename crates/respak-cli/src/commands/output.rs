@@ -5,6 +5,8 @@ use std::process::ExitCode;
 
 use respak_core::{ConvertReport, OutputResult};
 
+use super::failures::Failures;
+
 /// Prints the report as JSON, each failure on `err`; non-zero exit if any output failed.
 pub(super) fn report(
     report: ConvertReport,
@@ -13,16 +15,11 @@ pub(super) fn report(
 ) -> anyhow::Result<ExitCode> {
     serde_json::to_writer_pretty(&mut *out, &report)?;
     writeln!(out)?;
-    let mut failed = false;
+    let mut failures = Failures::default();
     for output in &report.outputs {
         if let OutputResult::Err { error } = &output.result {
-            writeln!(err, "{}: {error}", output.from)?;
-            failed = true;
+            failures.report(err, &output.from, error)?;
         }
     }
-    Ok(if failed {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(failures.exit_code())
 }

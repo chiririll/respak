@@ -1,26 +1,28 @@
 # R3 · CLI cleanup
-**Status:** partly done (R3.1, R3.2 and the tail of R3.4 left) · **Risk:** low–medium · **Depends on:** R2
+**Status:** done · **Risk:** low–medium · **Depends on:** R2
 
 Goal: shorter, more readable commands. Flags may go after the subcommand, a project config / profile supplies the defaults (`respak apex convert ...`), and bare `respak convert` prints help for `convert`.
 
-Order: R3.0 → R3.3 → R3.4 → R3.5 → R3.6 → R3.7 → R3.8 → R3.9. R3.1 and R3.2 are independent and not required for the config work.
+Order: R3.0 → R3.3 → R3.4 → R3.5 → R3.6 → R3.7 → R3.8 → R3.9. R3.1 and R3.2 are independent and were done last.
 
 ## R3.0 CLI unit tests (S, do first) — **done**
 No tests exist for `parse_size` (`lib.rs`) and `event_line`. Add table-driven tests before touching them.
 
-## R3.1 Move engine logic out of the CLI (M, after R2.3)
+## R3.1 Move engine logic out of the CLI (M, after R2.3) — **done**
+Done: `Engine::write(dest, &dyn Data, cancel)` (chunked write through the output operator; `dump` builds a `FileData` over the pak volume per part, so `--out` is no longer read by `dump`), `Engine::content(path)` → `Content::{Container, Unrecognized, Opaque}` (the inspect → discover fallback of `names`), `names::run` split into `read_wanted` / `feed_entry` / loop, `dump` reports a path that opens to other than one value. Deviation: `Engine::write` does not track paths across calls (each call has its own `Cx`), so a conflict is only detected within one request; `dump` writes distinct paths, so it does not matter. Cancellation is checked once per file, not per chunk.
 - `commands/dump.rs` does its own chunked volume copy with blocking `std::fs`, duplicating `Mediator::copy_blob` and `Engine::read_file`. Add `Engine::dump(path)` that writes through the output operator, so `--out` shares conflict handling and events.
 - `commands/names.rs` drives the whole scan loop (expand → inspect → discover fallback → read as text). Add an `Engine` name-scan API or a visitor. `names::run` is ~120 lines with deeply nested arms; split into probe / feed / report steps.
 - `dump` silently `continue`s when `open` doesn't return exactly one value; report it.
 
-## R3.2 Deduplicate command boilerplate (S–M)
+## R3.2 Deduplicate command boilerplate (S–M) — **done**
+Done: `commands/failures.rs` (`Failures::report` / `exit_code`) used by `list`, `discover`, `names`, `dump`, `output::report`. `version: 1`, `file_target` and `skip_assets` were already gone (R2.5). Not done: `copy` as a form of `convert --to file` (left as is).
 `list`, `discover`, `names`, `dump` and `output::report` repeat the `failed`/`ExitCode` loop. Add a `Failures` collector and an exit-code helper. Consider making `copy` a form of `convert --to file`; drop `output::file_target` once R2.5 lands. Replace the magic `version: 1` in the convert/copy requests with a constructor. Simplify the nested `matches!` in `output::skip_assets`.
 
 ## R3.3 One event printer (S) — **done**
 `lib.rs:156-195` (`run_with_events`) duplicates the match arms of the `recv()` loop in the `try_recv()` tail loop (and the Lagged message); `main.rs:60-68` adds a second subscriber for Steam events. Extract `print_event` and use it for both.
 
-## R3.4 Tidy `main.rs` and dispatch (S–M) — **mostly done**
-Done: `main()` split (`init_logging`, `spawn_ctrl_c`, `open_report`; `open_input` and `build_engine` live in `setup.rs`), one `cfg(steam)` input block, the Steam subscriber uses `print_events_to_stderr`. Not done: the error convention (`core::Error` vs `anyhow`). Skipped: `RespawnOptions` (the plugin now takes four options, all in `Settings`); the `Command::Steam` arm of `run` stays, since `run` handles every command and `main` just short-circuits it. `parse_size` / `event_line` stay `pub` (integration tests use them).
+## R3.4 Tidy `main.rs` and dispatch (S–M) — **done**
+Done: `main()` split (`init_logging`, `spawn_ctrl_c`, `open_report`; `open_input` and `build_engine` live in `setup.rs`), one `cfg(steam)` input block, the Steam subscriber uses `print_events_to_stderr`. Error convention: request problems (`--to`, request file, `--hashes`) are `core::Error`; `anyhow` stays for the CLI's own config / settings errors and at `main`. Skipped: `RespawnOptions` (the plugin now takes four options, all in `Settings`); the `Command::Steam` arm of `run` stays, since `run` handles every command and `main` just short-circuits it. `parse_size` / `event_line` stay `pub` (integration tests use them).
 - `Command::Steam` is handled in `main.rs:30-33` and again in `lib.rs:208`: remove the dead arm.
 - Split `main()` (~110 lines): `init_logging`, `spawn_ctrl_c`, `open_input`, `build_engine`, `open_report`. Merge the two `cfg(feature = "steam")` blocks that build `input`.
 - Move engine assembly to `respak_cli::build_engine(&Settings, ..)` (R3.5); check that `integration/tests/*.rs` don't re-assemble it.

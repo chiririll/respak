@@ -25,8 +25,8 @@ pub use discover::{
     Alternative, DiscoverOptions, Discovery, DiscoveryEntry, EntryInfo, ListedEntry,
 };
 pub use engine::{
-    ConvertReport, ConvertRequest, Engine, EngineBuilder, FromSpec, OutputReport, OutputRequest,
-    OutputResult, SourceSpec, TargetSpec,
+    Content, ConvertReport, ConvertRequest, Engine, EngineBuilder, FromSpec, OutputReport,
+    OutputRequest, OutputResult, SourceSpec, TargetSpec,
 };
 pub use error::{Error, ErrorKind, Result};
 pub use event::{Event, Events, LogSubscriber};

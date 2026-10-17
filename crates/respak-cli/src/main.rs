@@ -47,7 +47,7 @@ fn open_report(path: Option<&Path>) -> anyhow::Result<Box<dyn Write>> {
 #[tokio::main]
 async fn main() -> anyhow::Result<ExitCode> {
     init_logging();
-    let mut cli = Cli::parse_args();
+    let cli = Cli::parse_args();
     #[cfg(feature = "steam")]
     if let respak_cli::Command::Steam { command } = cli.command {
         return respak_cli::run_steam(command, &mut std::io::stdout()).await;
@@ -56,8 +56,6 @@ async fn main() -> anyhow::Result<ExitCode> {
         eprintln!("warning: --config is given, so the profile is ignored");
     }
     let settings = Settings::resolve(&cli, load_config(&cli, &std::env::current_dir()?)?)?;
-    // `dump` still reads the output directory from the command line.
-    cli.out = Some(settings.out.clone());
     let cancel = CancellationToken::new();
     spawn_ctrl_c(&cancel);
     let input = open_input(&settings, &cancel).await?;
