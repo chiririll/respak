@@ -20,7 +20,7 @@ Status values: `todo` · `in-progress` · `blocked` · `done`. Update the status
 ## Phases
 | # | Phase | Risk | Depends on | Status |
 |---|---|---|---|---|
-| R1 | [Shared primitives](R1-shared-primitives.md): errors, byte reader, panic fixes | low | | todo |
+| R1 | [Shared primitives](R1-shared-primitives.md): errors, byte reader, panic fixes | low | | done |
 | R2 | [Core restructuring](R2-core.md): mediator, engine, request types | low–medium | R1 | todo |
 | R3 | [CLI cleanup](R3-cli.md) | low–medium | R2 | todo |
 | R4 | [Large file splits](R4-splits.md): cast, mbnk, testing, rmdl, rpak | low–medium | R1 | todo |

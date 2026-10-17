@@ -103,4 +103,12 @@ mod tests {
         assert!(RadaHeader::parse(&header(3, 32, 1, 1)).is_ok());
         assert!(RadaHeader::parse(&header(3, 2, 1, 1)[..39]).is_err());
     }
+
+    #[test]
+    fn every_truncated_header_is_corrupt() {
+        let h = header(3, 2, 96_000, 5000);
+        for n in 0..RADA_HEADER_LEN {
+            assert!(RadaHeader::parse(&h[..n]).is_err(), "{n} bytes");
+        }
+    }
 }

@@ -1,5 +1,5 @@
 # R1 · Shared primitives
-**Status:** todo · **Risk:** low
+**Status:** done · **Risk:** low
 
 ## R1.1 Shared error helpers (S) — done (MAX_* shared limit check deferred)
 `corrupt(context)` is copy-pasted ~19 times in `respak-respawn` (`anim_codec`, `arig`, `aseq`, `asqd`, `dtbl`, `matl`, `pak`, `patch`, `rmdl`, `rpak`, `shader`, `starpak`, `stgs`, `stlt`, `txtr`, `uiia`, `uimg`) and 5 more times elsewhere (`formats/lib.rs`, `formats/bc.rs`, `miles/lib.rs`, `nihav/bik.rs`, `nihav/bik_decode.rs`). `unsupported` has three signatures (`bc.rs`, `formats/lib.rs`, `bik_decode.rs`) and `dxbc.rs` prefixes "DXBC: ".
@@ -20,10 +20,12 @@ Hand-rolled little-endian readers: `core/detect.rs:58-72`, `miles/mbnk.rs:197-21
 One crate per commit, in this order: `miles`, `nihav`, `formats` (`bc`), `respawn` (`pak` first, then `matl`, `dxbc`, `rmdl`, cstr readers in `uimg`/`stlt`/`dtbl`).
 Left as is: `bc.rs` (`chunks_exact` already guarantees the lengths), the Option-returning cstr readers in `uimg`/`stlt`/`dtbl` (different semantics from `Reader::cstr`), `rtech.rs` and test helpers.
 
-## R1.5 Remove panic risks on untrusted data (S–M)
+## R1.5 Remove panic risks on untrusted data (S–M) — done except the `as usize` sweep and the optional lint (see notes)
 - `pak.rs:99-109` `le_*` index directly; `matl.rs:88` `at + N` can overflow; `B::fixed` (`rmdl.rs:195`) adds without `checked_add`.
 - `bcf1.rs`, `mstr.rs`, `rada.rs`: `u32le(..).expect("length checked")` per field. Read the fixed header once through the reader.
 - Verify `videofile.rs:234` (`tracks[t as usize]`) is validated first.
 - Replace the many `as usize` in readers with `usize::try_from` where the value comes from the file.
 - Add truncated-input tests per parser touched.
 - Optional: warn on `clippy::unwrap_used`/`expect_used` in `[workspace.lints]`, allowed in tests.
+
+Notes (R1.5): `videofile.rs:234` was already guarded by the bounds check above it. Truncation tests added for `bcf1`, `mstr`, `rada`, `matl` and the rpak container. `unwrap_used`/`expect_used` lint not enabled: the production code still has ~70 `expect`s (mostly lock poisoning and length-checked slices), so it needs its own pass. `as usize` on file-supplied values was not swept.

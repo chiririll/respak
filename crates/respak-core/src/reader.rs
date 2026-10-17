@@ -92,7 +92,8 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn array<const N: usize>(&self, at: usize) -> Result<[u8; N]> {
+    /// `N` bytes at `at` as an array.
+    pub fn array<const N: usize>(&self, at: usize) -> Result<[u8; N]> {
         let mut out = [0; N];
         out.copy_from_slice(self.get(at, N)?);
         Ok(out)

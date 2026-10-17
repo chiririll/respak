@@ -653,3 +653,17 @@ mod real {
         eprintln!("{kinds:?}");
     }
 }
+
+#[test]
+fn every_truncation_of_a_pak_is_an_error_or_ok_never_a_panic() {
+    for version in [6u16, 7, 8] {
+        let pak = build_pak(version, &assets());
+        for n in 0..pak.len() {
+            let Ok(header) = PakHeader::parse(&pak[..n]) else {
+                continue;
+            };
+            let body = &pak[header.header_len.min(n)..n];
+            let _ = Tables::parse(&header, body);
+        }
+    }
+}

@@ -188,4 +188,12 @@ mod tests {
         assert!(!MstrHeader::has_magic(&b));
         assert!(MstrHeader::parse(&b"RTSC\x02\x00"[..]).is_err());
     }
+
+    #[test]
+    fn every_truncated_header_is_corrupt() {
+        let h = header_bytes(2, 0, 0, 0, 0);
+        for n in 0..MSTR_HEADER_LEN {
+            assert!(MstrHeader::parse(&h[..n]).is_err(), "{n} bytes");
+        }
+    }
 }

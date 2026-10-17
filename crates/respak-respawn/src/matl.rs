@@ -144,7 +144,7 @@ impl MatlHeader {
             depth,
             shader_set: h.u64(0x58)?,
             size: [h.u16(0x72)?, h.u16(0x74)?, h.u16(0x76)?],
-            samplers: h.get(0x78, 4)?.try_into().expect("4 bytes"),
+            samplers: h.array(0x78)?,
             features: h.u32(0x80)?,
             glue: [h.u32(layout.glue)?, h.u32(layout.glue + 4)?],
             textures_at: ptr_at(h, 0x60)?,
@@ -376,5 +376,15 @@ mod tests {
     #[test]
     fn a_short_header_is_corrupt_not_a_panic() {
         assert!(MatlHeader::parse(16, &[0; 0x20]).is_err());
+    }
+
+    #[test]
+    fn every_truncation_of_a_header_is_an_error_or_ok_never_a_panic() {
+        for (version, len) in [(15, 0x100), (16, 240), (22, 256)] {
+            let h = header(len, false);
+            for n in 0..len {
+                let _ = MatlHeader::parse(version, &h[..n]);
+            }
+        }
     }
 }

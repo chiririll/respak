@@ -303,7 +303,7 @@ fn decode(
             FieldType::Float2 => Json::Array(values.floats::<2>(at)?.map(number).to_vec()),
             FieldType::Float3 => Json::Array(values.floats::<3>(at)?.map(number).to_vec()),
             FieldType::String | FieldType::Asset | FieldType::AssetNoPrecache => {
-                let slot: [u8; 8] = values.get(at, 8)?.try_into().expect("8 bytes");
+                let slot: [u8; 8] = values.array(at)?;
                 strings(slot).map_or(Json::Null, Json::String)
             }
             FieldType::Array | FieldType::DynamicArray => {

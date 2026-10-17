@@ -532,8 +532,7 @@ impl Tables {
                 offset: e.u32(at + 4)?,
             })
         };
-        let kind =
-            |at: usize| -> Result<[u8; 4]> { Ok(e.get(at, 4)?.try_into().expect("4 bytes")) };
+        let kind = |at: usize| -> Result<[u8; 4]> { e.array(at) };
         Ok(if version >= 8 {
             AssetEntry {
                 guid: e.u64(0)?,

@@ -347,4 +347,12 @@ mod tests {
         );
         assert!(Bcf1Frame::parse(&[0x99], &h).is_err());
     }
+
+    #[test]
+    fn every_truncated_header_is_corrupt() {
+        let h = header_bytes(1, 2, 44100, 0x1000, 3);
+        for n in 0..BCF1_HEADER_LEN.min(h.len()) {
+            assert!(Bcf1Header::parse(&h[..n]).is_err(), "{n} bytes");
+        }
+    }
 }

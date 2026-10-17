@@ -218,7 +218,7 @@ struct Pointers<'a> {
 
 impl Pointers<'_> {
     fn get(&self, h: &Reader<'_>, at: usize) -> Result<Option<u64>> {
-        let slot: [u8; 8] = h.get(at, 8)?.try_into().expect("8 bytes");
+        let slot: [u8; 8] = h.array(at)?;
         if self.relocated {
             let v = u64::from_le_bytes(slot);
             Ok((v != 0 && v != u64::MAX).then_some(v))

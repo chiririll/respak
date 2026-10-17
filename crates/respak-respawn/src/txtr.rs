@@ -31,6 +31,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Operator;
 use respak_core::capability::{Bitmap, BitmapInfo, Dependency, Metadata, PixelFormat};
+use respak_core::reader::Reader;
 use respak_core::{
     Cx, Data, Detect, Detected, Error, ErrorKind, FormatId, Probe, ReadHandler, Result, Value,
     ValueKey, Version,
@@ -126,14 +127,15 @@ impl TxtrHeader {
                 h.len()
             )));
         }
-        let ptr = |at: usize| {
-            let v = u64::from_le_bytes(h[at..at + 8].try_into().expect("8 bytes"));
+        let r = Reader::new("txtr", h);
+        let ptr = |at: usize| -> Result<Option<u64>> {
+            let v = r.u64(at)?;
             // Null is all ones after relocation, or zero when the slot was never a pointer.
-            (v != u64::MAX && v != 0).then_some(v)
+            Ok((v != u64::MAX && v != 0).then_some(v))
         };
         let (name_offset, w, ht, fmt, array, swizzle, perm, streamed, opt) = if version == 8 {
             (
-                ptr(8),
+                ptr(8)?,
                 le16(h, 0x10),
                 le16(h, 0x12),
                 le16(h, 0x16),
@@ -145,7 +147,7 @@ impl TxtrHeader {
             )
         } else {
             (
-                ptr(0),
+                ptr(0)?,
                 le16(h, 0x0A),
                 le16(h, 0x0C),
                 le16(h, 0x08),

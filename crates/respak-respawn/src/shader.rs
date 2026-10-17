@@ -16,6 +16,7 @@
 //! | 15 | 0x48 (rsx never resolves it) |
 
 use bytes::Bytes;
+use respak_core::reader::Reader;
 use respak_core::{Error, ErrorKind, Result};
 
 use crate::rpak::{RpakAsset, MEM};
@@ -42,10 +43,7 @@ pub fn pixel_shader_guid(version: u32, header: &[u8]) -> Result<u64> {
             }))
         }
     };
-    let bytes = header
-        .get(at..at + 8)
-        .ok_or_else(|| Error::corrupt("shds header is too short"))?;
-    Ok(u64::from_le_bytes(bytes.try_into().expect("8 bytes")))
+    Reader::new("shds", header).u64(at)
 }
 
 /// The DXBC bytecode of the first variant of a `shdr` asset.
@@ -61,8 +59,9 @@ pub async fn bytecode(asset: &RpakAsset) -> Result<Bytes> {
             .filter(|at| at + ENTRY_SIZE <= mem_len);
         let at = at.ok_or_else(|| Error::corrupt("shdr entry is outside the pak's pages"))?;
         let raw = asset.read_mem(at, ENTRY_SIZE).await?;
-        let slot: [u8; 8] = raw[..8].try_into().expect("8 bytes");
-        let size = i32::from_le_bytes(raw[8..12].try_into().expect("4 bytes"));
+        let raw = Reader::new("shdr", &raw);
+        let slot: [u8; 8] = raw.array(0)?;
+        let size = raw.i32(8)?;
         Ok::<_, Error>((slot, size))
     };
 
