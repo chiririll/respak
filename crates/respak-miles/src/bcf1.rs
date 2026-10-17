@@ -1,7 +1,7 @@
 //! Bink Audio (`BCF1`): the container side. The header, the seek table and the frame framing
 //! live here; the DCT decoder is the `chiririll/nihav` fork's `binkaud.rs` (Bink Audio 2,
 //! more than 2 channels and a raw-block entry point are added there, added when the decoder
-//! is wired in). See `todo/formats/miles-codecs.md`, "BCF1".
+//! is wired in). See `docs/formats/miles-codecs.md`, "BCF1".
 
 use nihav_rad::BinkAudioBlocks;
 use respak_core::capability::AudioChunk;

@@ -1,5 +1,5 @@
 //! The merged file tree of the `--depot` list: `/` separators, original case, case-insensitive
-//! lookups, and on a collision the depot later in the list wins (STEAM.md §3).
+//! lookups, and on a collision the depot later in the list wins (docs/design/steam.md §3).
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;

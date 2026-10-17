@@ -1,4 +1,4 @@
-//! Discovery: what is this, and what can it become (PROJECT.md §8). Slice 06: files only.
+//! Discovery: what is this, and what can it become (docs/design/project.md §8). Slice 06: files only.
 
 use serde::Serialize;
 

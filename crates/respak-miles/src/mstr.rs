@@ -1,5 +1,5 @@
 //! `mstr`: a Miles stream file. Only the 20-byte header is read; the audio bytes are addressed
-//! by the bank (`todo/formats/miles.md`, "MSTR header").
+//! by the bank (`docs/formats/miles.md`, "MSTR header").
 
 use async_trait::async_trait;
 use respak_core::detect::{magic, u16le, u32le};

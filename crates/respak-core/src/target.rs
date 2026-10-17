@@ -1,4 +1,4 @@
-//! Typed target options (PROJECT.md §5.5).
+//! Typed target options (docs/design/project.md §5.5).
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;

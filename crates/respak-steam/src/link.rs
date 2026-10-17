@@ -27,7 +27,7 @@ use crate::error::{Error, Result};
 use crate::store::{ChunkStore, Stats};
 use crate::tree::{DepotFile, DepotTree};
 
-/// Parallel chunk fetches (STEAM.md §6).
+/// Parallel chunk fetches (docs/design/steam.md §6).
 const PARALLEL_FETCHES: usize = 8;
 
 /// One `--depot ID[=MANIFEST]`.

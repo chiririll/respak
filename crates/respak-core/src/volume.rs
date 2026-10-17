@@ -1,5 +1,5 @@
 //! Containers as OpenDAL services: [`VolumeSource`] is the small read-only trait a container
-//! implements, and [`volume_operator`] turns it into an [`Operator`] (PROJECT.md §6).
+//! implements, and [`volume_operator`] turns it into an [`Operator`] (docs/design/project.md §6).
 
 use std::fmt;
 use std::ops::Range;
@@ -36,7 +36,7 @@ pub struct VolumeEntry {
 /// and have no leading or trailing slash; the empty path is the root directory.
 ///
 /// Implementations answer from tables they already hold. `read` should touch only the bytes
-/// of `range` (PROJECT.md §6).
+/// of `range` (docs/design/project.md §6).
 #[async_trait]
 pub trait VolumeSource: Send + Sync + 'static {
     /// Metadata of `path`; `NotFound` if there is no such path.

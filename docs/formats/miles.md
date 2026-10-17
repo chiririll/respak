@@ -534,7 +534,7 @@ parse(sel, root = sel):
 - Preview only: playback, markers, BPM, play-action source trees and pitch/volume graphs.
 
 **Proposed respak:**
-- Crate `respak-miles` (planned in `todo/tasks/14-backlog.md`), plugin id `miles`. Codecs: per [miles-codecs.md](miles-codecs.md) (same crate or a codec edge).
+- Crate `respak-miles` (planned in `../tasks/backlog.md`), plugin id `miles`. Codecs: per [miles-codecs.md](miles-codecs.md) (same crate or a codec edge).
 - Formats and edges:
   ```rust
   r.format("mbnk").label("Miles sound bank").from("file", MbnkRead).extensions(["mbnk"]).provides::<dyn Container>();

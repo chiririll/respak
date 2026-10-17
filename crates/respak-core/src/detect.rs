@@ -1,4 +1,4 @@
-//! Detection: score functions that decide which format an input is (PROJECT.md §5.3).
+//! Detection: score functions that decide which format an input is (docs/design/project.md §5.3).
 
 use async_trait::async_trait;
 

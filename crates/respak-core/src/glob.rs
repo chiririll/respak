@@ -1,4 +1,4 @@
-//! Globs over virtual paths (PROJECT.md §6).
+//! Globs over virtual paths (docs/design/project.md §6).
 //!
 //! A pattern is split into `/` segments and matched segment by segment. A glob descends into a
 //! container only where a pattern segment matches the container's file and more segments

@@ -2,7 +2,7 @@
 //!
 //! Ported from rsx `src/game/rtech/cpakfile.{h,cpp}` (`PakHdr_v6_t`/`v7`/`v8`, `PakAsset_v6_t`/`v8`,
 //! `PakSegmentHdr_t`, `PakPageHdr_t`, `PagePtr_t`, `LoadNonPatched`, `GetHeaderSize`). See the
-//! rsx review in `todo/tasks/07-slice-rpak-listing.md` for what was kept and what was changed.
+//! rsx review in `docs/tasks/07-slice-rpak-listing.md` for what was kept and what was changed.
 //!
 //! # File layout
 //! The header is never compressed (0x58 bytes for v6/v7, 0x80 for v8). Everything after it, the

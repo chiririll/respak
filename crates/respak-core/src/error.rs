@@ -36,7 +36,7 @@ impl Error {
     }
 }
 
-/// What went wrong. See PROJECT.md §9.
+/// What went wrong. See docs/design/project.md §9.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ErrorKind {

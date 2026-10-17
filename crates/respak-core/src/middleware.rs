@@ -1,4 +1,4 @@
-//! Middleware around every conversion request (PROJECT.md §5.6).
+//! Middleware around every conversion request (docs/design/project.md §5.6).
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -292,7 +292,7 @@ impl Middleware for EventsMiddleware {
     }
 }
 
-/// The built-ins in their fixed order (PROJECT.md §5.6).
+/// The built-ins in their fixed order (docs/design/project.md §5.6).
 pub(crate) fn builtins() -> Vec<Arc<dyn Middleware>> {
     vec![
         Arc::new(CancellationMiddleware),

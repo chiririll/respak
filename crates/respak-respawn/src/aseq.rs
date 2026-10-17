@@ -6,7 +6,7 @@
 //! `src/core/mdl/animdata.{h,cpp}` (seqdesc/animdesc parsing, `Stall_2` section lookup,
 //! `ParseAnimation`, `ParseAnimDesc_Origin`) and `studio_r5_v16.h` (`mstudioseqdesc_v18_t`,
 //! `mstudioanimdesc_v19_1_t`, `mstudioframemovement_t`, `FIX_OFFSET`). Offsets are in
-//! `todo/formats/aseq.md`; they were computed by hand from the rsx structs.
+//! `docs/formats/aseq.md`; they were computed by hand from the rsx structs.
 //!
 //! # Variants
 //! `Version { major: asset version, minor }`: 12.0 and 12.1 are told apart by the pak's creation

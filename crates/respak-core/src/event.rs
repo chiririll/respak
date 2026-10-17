@@ -1,4 +1,4 @@
-//! Events (PROJECT.md §5.7): a broadcast stream of what the engine is doing.
+//! Events (docs/design/project.md §5.7): a broadcast stream of what the engine is doing.
 //!
 //! Lagging subscribers may miss events; anything that matters is in the returned report.
 

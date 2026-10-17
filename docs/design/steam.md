@@ -1,19 +1,17 @@
 # respak — Steam input
 
-The respak CLI can read game files straight from Steam depots. It downloads only the byte ranges a request needs, and caches what it downloads. This document is the design. It is built as tasks [11a](tasks/done/11a-slice-steam-login.md) and [11b](tasks/done/11b-slice-steam-depot.md), which come **before task 12**; they let the existing pipeline run on real game files. Task [11c](tasks/done/11c-slice-oodle.md) (Oodle) follows them, so the current Apex version works too. Slices work as described in [`tasks/README.md`](tasks/README.md): sketch, gate (the user agrees on the tests), TDD, demo.
-
-**Status:** planned.
+The respak CLI can read game files straight from Steam depots. It downloads only the byte ranges a request needs, and caches what it downloads. This document is the design of the `respak-steam` crate; the user guide is [`../steam.md`](../steam.md).
 
 ---
 
 ## 1. Rules
-- **Steam code lives only in `respak-steam`**, an optional dependency of `respak-cli` behind the cargo feature `steam` (**on by default**). This is the one exception to PROJECT.md §1 "No Steam or downloader code". Core and the plugin crates never depend on it and know nothing about Steam.
-- **For core, Steam is just an input `Operator`.** Existing commands (`discover`, `convert`, `run`) work on it unchanged. The I/O rules (PROJECT.md §6) apply: sizes come from `stat`, every read is ranged, and nothing is read ahead beyond the chunks that cover the range.
+- **Steam code lives only in `respak-steam`**, an optional dependency of `respak-cli` behind the cargo feature `steam` (**on by default**). This is the one exception to project.md §1 "No Steam or downloader code". Core and the plugin crates never depend on it and know nothing about Steam.
+- **For core, Steam is just an input `Operator`.** Existing commands (`discover`, `convert`, `run`) work on it unchanged. The I/O rules (project.md §6) apply: sizes come from `stat`, every read is ranged, and nothing is read ahead beyond the chunks that cover the range.
 - **No trait over the Steam client.** `respak-steam` uses `steamroom` directly; replacing it means changing this crate only.
 - **The account must own the game.** There is no anonymous login and no third-party key or request-code service (tek-s3).
 - **State lives in `.respak/` in the working directory**, like DepotDownloader. It is listed in `.gitignore`, because it holds a plaintext token.
 - **Steam is input only.** Output always goes to the local `--out`.
-- **Out of scope:** rpak patches (`name(NN).rpak`, `patch_master.rpak`; also out of scope for respak in general, PROJECT.md §11), branch passwords, depot listing commands, OS keyring storage and token encryption.
+- **Out of scope:** branch passwords, depot listing commands, OS keyring storage and token encryption.
 
 ## 2. Crate and dependencies
 ```
@@ -24,7 +22,7 @@ crates/respak-steam/   # login, token file, PICS, depot keys, manifests, CDN chu
 | Steam CM, auth, PICS, CDN, manifest parsing, chunk decoding | `steamroom` | MIT/Apache. Pinned to a **git rev**: the auth fix "mobile confirmation alongside Steam Guard codes" (Aug 2026) is not released yet (0.3.0). Young, single author. |
 | QR code in the terminal | `qrcode` (`unicode::Dense1x2` renderer) | |
 | Password prompt | `rpassword` | Only during `steam login --user`. |
-| Storage | `opendal` (workspace pin) | The depot is a read-only OpenDAL service (PROJECT.md §6 "Read-only service"). |
+| Storage | `opendal` (workspace pin) | The depot is a read-only OpenDAL service (project.md §6 "Read-only service"). |
 
 ## 3. CLI
 ```
@@ -79,7 +77,7 @@ The Steam connection is opened **lazily**, only when something isn't cached. Wit
 - **Read back:** a cached chunk is checked (size + Adler32); a bad one is deleted and downloaded again.
 - **Eviction:** LRU by file modification time (a cache hit updates it). The cap is **8 GiB**, set with `--steam-cache-size`. The chunk directory is scanned once when the volume opens; after that the size is tracked in memory, never by walking the tree on every write.
 - **Known cost:** a compressed `.rpak` body is one RTech stream of output chunks (about 4 MiB each), decoded front to back. respak decodes only as far as a read needs (`rtech::decompress_prefix`): listing a pak reads the start of the file (a few MB), reading a page near the end reads most of it. Chunks already downloaded stay in the chunk cache. Starpaks stay ranged. (Before this, the whole `.rpak` was downloaded: 885 MB for `common.rpak`.)
-- **Reporting:** events and progress come in task 12. Until then, downloads show only as `tracing` logs, plus a summary at the end of each run: chunks downloaded, bytes downloaded, cache hits.
+- **Reporting:** downloads show as `tracing` logs, plus a summary at the end of each run: chunks downloaded, bytes downloaded, cache hits.
 - Steam and CDN errors reach core as `opendal::Error` (→ `Storage`), with a message that names the depot, manifest and file.
 
 ## 7. Lessons from the rsx fork
@@ -94,19 +92,12 @@ The rsx fork (`../rsx`, `src/core/steam/`, `src/game/rtech/steam_starpak_source.
 | Cached chunks are not verified; the whole cache tree is walked on every write | Size + Adler32 check; size tracked in memory |
 | A cached manifest still makes network calls for the key and server list | Lazy connection; works offline when everything is cached |
 | One depot chosen by a heuristic; starpaks in other depots are missed; basename lookups "first wins" | The user lists the depots; one merged tree; full paths only |
-| Whole rpaks and their patch chains downloaded into the cache as files | Ranged reads through the Operator; patches out of scope |
+| Whole rpaks and their patch chains downloaded into the cache as files | Ranged reads through the Operator, patch chains included |
 | Token stored next to the exe | `.respak/account.json` in the working directory |
 
-## 8. Slices
-| # | Slice | Demo |
-|---|---|---|
-| 11a | `respak-steam` crate and the `steam` feature; `steam login --qr / --user`, `.respak/account.json`, token logon, renewal, `steam logout` | Log in once; a new shell reuses the token without a prompt; a QR login survives a challenge URL rotation |
-| 11b | `--steam/--branch/--depot`: PICS, depot keys, manifests, the chunk Operator, the cache | On an Apex version from before Oodle compression (pinned with `--depot ID=MANIFEST`): `discover paks/Win64/common.rpak --depth 1`, then convert a texture with streamed mips; the summary shows only a few MB downloaded, and a second run downloads nothing |
+## 8. Tests
+Unit tests use synthetic data, not Steam: range -> chunk mapping, cache store, verify, evict and rescan, the tree merge (order, case, `/`), token file and expiry handling. Live Steam tests are integration tests (`crates/respak-steam/tests/live.rs`) on the user's account: they are `#[ignore]`d and also need `RESPAK_STEAM_LIVE=1`, they never run in CI, and **they (and any other command that talks to Steam) are never run without a need and the user's explicit permission**. They run with `--test-threads=1`: Steam allows one session per account. `cargo build -p respak-cli --no-default-features` must build without Steam code.
 
-- **Why the demo uses an older version:** respak can't decompress Oodle yet (`pak.rs`, `txtr.rs`), and current Apex probably uses it. Task 11c adds Oodle (`oozextract`) and repeats the demo on the current version.
-- **Tests:** proposed in each slice's sketch and agreed at the gate. Unit tests use synthetic data, not Steam: range → chunk mapping, cache store, verify, evict and rescan, the tree merge (order, case, `/`), token file and expiry handling. Live Steam tests are integration tests (`crates/respak-steam/tests/live.rs`) on the user's account: they are `#[ignore]`d and also need `RESPAK_STEAM_LIVE=1`, they never run in CI, and **they (and any other command that talks to Steam) are never run without a need and the user's explicit permission**. They also run with `--test-threads=1`: Steam allows one session per account.
-- Each slice ends with the usual checks (`clippy -D warnings`, `cargo test --workspace`), and `cargo build -p respak-cli --no-default-features` must build without Steam code.
-
-## 9. To verify during the slices
-- **11a:** the refresh token's lifetime and renewal call; that a token logon via `access_token` works with steamroom; how QR rotation is handled.
-- **11b:** steamroom's manifest magic constants differ from SteamKit2's (`0x1B81B817` / end `0xD64BF064` vs signature `0x1B81B817` / end `0x32C415AB`), so check them against a real manifest. Also: where steamroom unwraps the manifest zip; whether the Adler32 check covers decompressed data; that request codes for old manifests are still granted (they work in rsx today).
+## 9. Known pitfalls
+- steamroom's manifest magic constants differ from SteamKit2's (`0x1B81B817` / end `0xD64BF064` vs signature `0x1B81B817` / end `0x32C415AB`); check them against a real manifest.
+- Request codes for old manifests are still granted (they work in rsx).

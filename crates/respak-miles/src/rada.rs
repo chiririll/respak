@@ -1,6 +1,6 @@
 //! RAD Audio (`RADA`, Apex Season 24+): header only. Decoding is not possible without RAD's
 //! closed library, so a source with this codec reports its shape and `samples()` gives
-//! `UnsupportedVersion` (`todo/formats/miles-codecs.md`, "RADA").
+//! `UnsupportedVersion` (`docs/formats/miles-codecs.md`, "RADA").
 
 use respak_core::detect::{magic, u32le};
 use respak_core::Result;

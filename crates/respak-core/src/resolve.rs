@@ -1,4 +1,4 @@
-//! Virtual paths: `paks/Win64/common.rpak/texture/foo.txtr` (PROJECT.md §6).
+//! Virtual paths: `paks/Win64/common.rpak/texture/foo.txtr` (docs/design/project.md §6).
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -10,7 +10,7 @@ use crate::mediator::{Cx, Mediator};
 use crate::value::{FileData, Value};
 
 /// Containers mounted during one `Engine` call, by the virtual path of their file. A mounted
-/// volume lives until the call ends (PROJECT.md §5.6, §7).
+/// volume lives until the call ends (docs/design/project.md §5.6, §7).
 #[derive(Default)]
 pub struct Mounts {
     containers: Mutex<HashMap<String, Value>>,

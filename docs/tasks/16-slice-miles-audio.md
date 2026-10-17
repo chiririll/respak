@@ -1,5 +1,5 @@
 # 16 · Slice: Miles banks → WAV
-**Status:** in-progress (built and tested on synthetic data; real-file check and demo pending) · **Depends on:** 15 (the `Audio` capability and the `wav` edge) · **See:** PROJECT.md §5.4, §6, §12, [`../formats/miles.md`](../formats/miles.md), [`../formats/miles-codecs.md`](../formats/miles-codecs.md)
+**Status:** in-progress (built and tested on synthetic data; real-file check and demo pending) · **Depends on:** 15 (the `Audio` capability and the `wav` edge) · **See:** project.md §5.4, §6, §12, [`../formats/miles.md`](../formats/miles.md), [`../formats/miles-codecs.md`](../formats/miles-codecs.md)
 
 ## Goal
 Apex and Titanfall 2 sound banks open as volumes, and a source converts to WAV, on Windows and Linux, without RAD's libs or DLLs:

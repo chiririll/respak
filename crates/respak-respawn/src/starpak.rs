@@ -3,7 +3,7 @@
 //!
 //! Ported from rsx `src/game/rtech/starpak_source.h` and `cpakfile.{h,cpp}`
 //! (`CPakFile::LoadStarpakEntries`, the starpak offset encoding). See the rsx review in
-//! `todo/tasks/10-slice-streamed-mips.md`.
+//! `docs/tasks/10-slice-streamed-mips.md`.
 //!
 //! # File layout
 //! No header and no magic. The **table of contents** is at the end of the file: the last 8

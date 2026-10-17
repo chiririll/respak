@@ -2,23 +2,19 @@
 
 respak is a Rust library, plus a separate CLI, that reads files from Respawn games and converts their contents into usable formats (e.g. an `.rpak` texture to PNG/DDS, a model to Cast), and later back into Respawn formats. Its architecture is designed from scratch. Format code (pak loading, codecs, asset parsing) is **ported from the C++ tool rsx** (`C:\Users\chiririll\Projects\rsx`) and fitted into that architecture; rsx's own architecture is not carried over (§12). Version coverage = whatever rsx supports.
 
-**Status:** foundation done (workspace, errors, values, capabilities); slices 05 (PNG ↔ DDS), 06 (`formats`, `discover`), 07 (rpak listing), 08 (rpak texture → DDS) 09 (BC decoding, `TypedTarget` options), 10 (streamed mips, starpaks) and 11 (batch requests, globs, composite outputs) done; now building vertical slices. The task list is in [`tasks/`](tasks/README.md).
+**Status:** built through slice 19; the task list is in [`../tasks/`](../tasks/README.md). User guides: [`../cli.md`](../cli.md), [`../steam.md`](../steam.md).
 
 ---
 
 ## 1. Workflow and rules
-This document is the **target design**. It is built in **vertical slices**: thin end-to-end paths (plugin → core → engine → CLI), each ending in a command the user can run. A part of the design is built only when a slice needs it. Per slice ([details](tasks/README.md)):
-1. **Sketch** the interfaces this slice needs (compiles, `todo!()` bodies) and propose test cases.
-2. **The user reviews the sketch and agrees the tests.** Never invent the test suite alone.
-3. **Implement test-first (TDD).**
-4. **The user runs the demo.** What was learned updates this document before the next slice.
+This document is the **target design**. It is built in **vertical slices** (sketch, user gate, test-first build, user demo; see [tasks/README](../tasks/README.md)). A part of the design is built only when a slice needs it, and what a slice teaches updates this document.
 
 If a slice shows that part of this design doesn't work, stop and tell the user. Don't work around it.
 
 Rules:
 - **Prefer existing, well-maintained crates.** The one agreed exception is the mediator, hand-written on purpose.
 - **Ask the user when something is unclear.** Don't guess.
-- **No Steam or downloader code.** Where bytes come from is the host's business. The one exception is the host-only crate `respak-steam` ([STEAM.md](STEAM.md)).
+- **No Steam or downloader code.** Where bytes come from is the host's business. The one exception is the host-only crate `respak-steam` ([steam.md](steam.md)).
 - **Read only the byte ranges you need** (§6).
 - **A format handler only handles its own format.** For anything else it asks the mediator: "here is a value, convert it to format X".
 - **Traits and data types:** a format may implement core traits (capabilities, §5.4) and traits of its own crate. Conversions to formats of *other* crates go only through core traits. Inside one crate, modules may share data types of each other's formats (e.g. `txtr` reads `rpak.asset`), never call each other's handlers.
@@ -31,23 +27,25 @@ Rules:
 ```
 crates/
   respak-core/      # mediator, format graph, scoring, capabilities, volumes, Engine, errors
-  respak-respawn/   # Respawn formats incl. Respawn's flavours: rpak, starpak, txtr, matl, rmdl, aseq,
-                    # arig, dtbl, uimg, shaders, Respawn VPK, … Read now, write later.
-  respak-formats/   # common formats: png, dds (read + write); later cast, smd, csv/json, audio
+  respak-respawn/   # Respawn formats: rpak, starpak, txtr, matl, rmdl, aseq, arig, dtbl, uimg, stgs, stlt, ...
+  respak-formats/   # common formats: png, dds, wav, cast (read + write where needed)
+  respak-miles/     # Miles audio banks (mbnk, mstr, asrc)
+  respak-nihav/     # video (Bink and others) through NihAV
+  respak-steam/     # Steam depot input, host only (steam.md)
   respak-cli/       # host: registers plugins, CLI commands
-# later: respak-miles (mbnk, mstr). Not planned: respak-source (Valve Source MDL/VPK).
+# Not planned: respak-source (Valve Source MDL/VPK).
 ```
 
 ## 3. Dependencies
 | Purpose | Crate | Note |
 |---|---|---|
-| Storage (input, output, cache) | `opendal` | Pre-1.0: **pinned `=0.59.4`** (latest stable, checked in task 01), `default-features = false`, features `services-fs`, `executors-tokio`. `services::Fs` for disk, `services::Memory` for tests (always available, lives in `opendal-core`). API notes below. |
+| Storage (input, output, cache) | `opendal` | Pre-1.0: **pinned `=0.59.4`**, `default-features = false`, features `services-fs`, `executors-tokio`. `services::Fs` for disk, `services::Memory` for tests (always available, lives in `opendal-core`). API notes below. |
 | Async | `tokio`, `tokio-util` (`CancellationToken`), `async-trait`, `futures` (`Shared`) | tokio is a direct dependency of core |
 | Data | `serde`, `serde_json`, `bytes` | requests, targets, reports, discovery are JSON |
 | Errors / logs | `thiserror`, `tracing` | |
 | CLI | `clap` (derive), `anyhow` | CLI crate only |
-| Oodle decoding | `oozextract` | `respak-respawn`, task 11c. Pure-Rust port of ooz (reverse-engineered, GPL-3.0+; the crate says MIT, treated as GPL-3.0+, compatible with AGPL). Decoder only. The proprietary Oodle library (oo2core) is never linked. |
-| Candidates | `globset` (path globs), `moka` (in-memory cache, later) | added when needed |
+| Oodle decoding | `oozextract` | `respak-respawn`. Pure-Rust port of ooz (reverse-engineered, GPL-3.0+; the crate says MIT, treated as GPL-3.0+, compatible with AGPL). Decoder only. The proprietary Oodle library (oo2core) is never linked. |
+| Candidate | `moka` (in-memory cache, later) | added when needed |
 
 Rejected, don't reopen without asking: a home-made filesystem replacing OpenDAL; `object_store`; `vfs`; `tower` for the mediator; a message broker; first-match `can_handle` routing (→ scoring); shared intermediate structs such as one `Texture` for every format (→ capabilities); a declarative probe DSL (→ score functions, §5.3); a path table precomputed at build time (→ per-request path search, §5.2); format-specific fields in OpenDAL `Metadata` (→ typed container entries, §5.4).
 
@@ -117,7 +115,7 @@ r.format("png").from("file", PngRead).extensions(["png"]).provides::<dyn Bitmap>
 r.format("dds").from("file", DdsRead).extensions(["dds"]).provides::<dyn Bitmap>()
                .from_cap::<dyn Bitmap>(DdsEncode);       // BC blocks copied as-is, cost 1
 ```
-- **Path selection** happens per request, from the source value's format and declared capabilities; nothing is precomputed at build time. Cheapest path wins. Ties are broken deterministically: direct edge before capability edge, then fewer hops, then plugin registration order; the chosen path is logged as a `Warning` event. A request may pin a route with `via`: its formats must appear in the path in that order (the source and target count). The planner (slice 06) is a search over direct (`.to`) and capability edges; order of preference: cost, then fewer capability steps, then fewer hops, then registration order. The path is logged only when more than one complete path existed.
+- **Path selection** happens per request, from the source value's format and declared capabilities; nothing is precomputed at build time. Cheapest path wins. The planner searches direct (`.to`) and capability edges; preference: cost, then fewer capability steps, then fewer hops, then registration order. The path is logged as a `Warning` event only when more than one complete path existed. A request may pin a route with `via`: its formats must appear in the path in that order (the source and target count).
 
 ### 5.3 Detection by scoring
 - Each read edge has a **score function**: it looks at the input and returns `None` (not this format) or `Some(Detected { score, version })`. The version includes the layout variant (`Version.minor`), so `identify` returns the full version and handlers don't detect it again.
@@ -199,8 +197,8 @@ impl Mediator {
   - chunked with an index: only the chunks covering the range;
   - one stream (`.rpak` body; flags RTech `1<<8`, Oodle `1<<9`, zstd `1<<15`): decompress forward, keep tables and a bounded set of pages, restart only for an evicted page. Costs the `.rpak`'s size, never its starpaks'.
 - **Compression inside a format** (texture mips, model LODs) stays in that format: ranged read of the unit, then `compressed → blob`. Units are small, so cost is bounded.
-- **Codecs are shared mediator edges** (RTech, Snowflake, Oodle in respawn; zstd where first needed), so a host can also supply a licensed codec. Oodle is decoded with `oozextract` (§3), not the proprietary library. So far RTech is called directly, not as an edge; task 11c decides which way codecs go.
-- **rpak volume (proposal):**
+- **Codecs are shared mediator edges** (RTech, Snowflake, Oodle in respawn; zstd where first needed), so a host can also supply a licensed codec. Oodle is decoded with `oozextract` (§3), not the proprietary library. RTech is currently called directly, not as an edge.
+- **rpak volume:**
   ```
   common.rpak/
     texture/foo.txtr          asset header, pointers relocated (below)
@@ -261,29 +259,15 @@ impl Mediator {
 - `Storage(opendal::Error)`, `MissingDependency{item, file}`, `DependencyCycle{chain}`, `Corrupt{context}`, `Cancelled`, `Custom{source, message}`.
 
 ## 10. CLI (`respak-cli`)
-- `lib.rs`: `async fn run(cli, engine, out) -> Result<ExitCode>`, testable in-process with `services::Memory`.
-- `main.rs`: `services::Fs` operators from `--root`, `--out`, optional `--cache`; `--search <glob>...` for GUID lookup; registers plugins; events to stderr; Ctrl-C → cancel.
-- `formats` · `discover <path>... [--depth N]` · `run <request.json | ->` · `convert <path|glob> --to '<json>' [--path P]`. Non-zero exit if any output failed.
+`lib.rs` has `async fn run(cli, engine, out) -> Result<ExitCode>`, testable in-process with `services::Memory`; `main.rs` builds the `services::Fs` operators, registers plugins, prints events to stderr and turns Ctrl-C into a cancel. The commands and options are in [`../cli.md`](../cli.md). Non-zero exit if any output failed.
 
-## 11. Open questions (decide with the user)
-- ~~License~~ decided (the user delegated all remaining decisions): respak is **AGPL-3.0-only**, because it ports AGPL-3.0 rsx code. `LICENSE` and the workspace `license` field say so. Reversible only if the rsx authors grant otherwise.
-- ~~First milestone~~ decided: port rsx, covering every game and pak version it supports; first formats txtr → png/dds.
-- ~~rpak patches~~ built in slice 17 ([`tasks/17-slice-rpak-patches.md`](tasks/17-slice-rpak-patches.md)): opening `common.rpak` beside a `patch_master.rpak` opens its newest patch; the patched `.mem` is a map into the chain files; `--no-patches` / `RespawnPlugin::ignore_patches` turn it off.
-- Raw-byte / chunk caching of the input operator (the user asked to revisit; matters for remote inputs).
-- In-memory cache design (§7).
-- Slice 07 findings: the `VolumeSource` -> `Operator` adapter is ~150 lines (`Operator::from_parts(OperationContext::default(), Arc::new(service))`; a lister, a `StreamRead` reader, rest `()`). OpenDAL rejects an explicit range past the end (`RangeNotSatisfied`), so callers clamp. A compressed rpak is one RTech stream; it was first decompressed whole on first use, now (slice 11b) only as far as the reads need: the decoder stops at an output chunk boundary and the input is read in growing ranges (`rtech::decompress_prefix`, `Body::decoded`).
-- OpenDAL pin (`=0.59.4`, API names verified from source in task 01). Still open: size of the generic service adapter; is a host ranged-read backend (e.g. Steam depot) practical? Verified API, and where it differs from older docs:
-  - Present: `Operator`, `stat`, `exists`, `read`, `read_with(p).range(..)`, `reader`/`reader_with` (`Reader::read(range)`, `fetch(Vec<Range>)`), `list`/`lister`, `write` (returns `Metadata`, not `()`), `services::Fs` (feature `services-fs`, needs tokio), `services::Memory` (always available).
-  - `opendal` is a facade over `opendal-core` and per-service crates; custom-service API is under `opendal::raw`.
-  - `Access`/`Accessor` → `raw::Service` (`ServiceInfo`, dyn `ServiceDyn`, `Servicer = Arc<dyn ServiceDyn>`). Methods take `&OperationContext` first; `read`/`write`/`list`/`delete` are sync and return the reader/lister, `stat`/`create_dir` are async.
-  - Read-only service (slice 07): implement `raw::Service` with `Reader = oio::StreamReader<R>` where `R: oio::StreamRead` (one method, `open(range)`), `Lister: oio::List` (`next() -> Option<Entry>`), the rest `()`; report only `stat`/`read`/`list` in `capability()` (use `..Default::default()`); return `ErrorKind::Unsupported` otherwise. Template: `MemoryBackend` in `opendal-core`. Build with `Operator::new(Builder)` (needs `Builder` + `Configurator`) or `Operator::from_inner(Arc<dyn ServiceDyn>)`.
-  - `Layer` has a new shape (`apply_service`, `apply_context`); `Operator::new` has no `.finish()`; `Scheme` enum is replaced by string schemes; option structs grow fields, never use exhaustive literals.
-  - Not verified: running with `default-features = false` and no executor feature; we enable `executors-tokio`.
-- rpak volume layout (§6 proposal): built in slices 07 and 08: files `0x<GUID>.<kind>` (a name is hashed to its GUID), headers with pointers relocated to `.mem` offsets (u64, all ones = null), and a hidden `.mem`. Pages of unpatched paks are concatenated, so `.mem` offset = `page_base[page] + offset`.
-- Exact capability methods; option schemas for targets (`schemars`?).
-- FFI shape for the async API ("JSON in/out + event callback").
-- zstd-compressed paks (flagged, unsupported by rsx).
-- ~~Codec licensing (Oodle)~~ decided: `oozextract` (task 11c). That it decodes Apex data is checked first in 11c.
+## 11. Decisions and open questions
+- **License:** AGPL-3.0-only, because respak ports AGPL-3.0 rsx code. Reversible only if the rsx authors grant otherwise.
+- **Scope:** port rsx, covering every game and pak version it supports.
+- **rpak patches:** done ([`17-slice-rpak-patches.md`](../tasks/17-slice-rpak-patches.md)): opening `common.rpak` beside a `patch_master.rpak` opens its newest patch; `--no-patches` / `RespawnPlugin::ignore_patches` turn it off.
+- **rpak volume:** files are `0x<GUID>.<kind>` (a name is hashed to its GUID), headers have pointers relocated to `.mem` offsets (u64, all ones = null), and a hidden `.mem` holds the pages. Pages of unpatched paks are concatenated, so `.mem` offset = `page_base[page] + offset`. A compressed rpak is one RTech stream, decompressed only as far as the reads need (`rtech::decompress_prefix`, `Body::decoded`).
+- **OpenDAL `=0.59.4` notes:** the custom-service API is under `opendal::raw`. A read-only service implements `raw::Service` with `Reader = oio::StreamReader<R>` (`R: oio::StreamRead`, one method `open(range)`), `Lister: oio::List`, the rest `()`; it reports only `stat`/`read`/`list` and returns `ErrorKind::Unsupported` otherwise (template: `MemoryBackend` in `opendal-core`). The `VolumeSource` adapter is ~150 lines. OpenDAL rejects an explicit range past the end (`RangeNotSatisfied`), so callers clamp. `Layer` has the shape `apply_service` / `apply_context`; option structs grow fields, so never use exhaustive literals.
+- **Open:** raw-byte / chunk caching of the input operator (matters for remote inputs); the in-memory cache design (§7); exact capability methods and option schemas for targets (`schemars`?); FFI shape for the async API ("JSON in/out + event callback"); zstd-compressed paks (flagged, unsupported by rsx).
 
 ## 12. Porting from rsx
 **rsx code is reviewed before it is ported, never translated line by line.** In every slice that ports code, the sketch step includes an **rsx review**, written into the task under `## rsx review`. The user approves it at the gate, before any porting starts:

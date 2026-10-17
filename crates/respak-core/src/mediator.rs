@@ -1,4 +1,4 @@
-//! The mediator: detection, path search and conversion (PROJECT.md §5.5). No middleware yet.
+//! The mediator: detection, path search and conversion (docs/design/project.md §5.5). No middleware yet.
 
 use std::sync::Arc;
 
@@ -397,7 +397,7 @@ pub struct Cx {
     pub output: Operator,
     /// Containers mounted so far in this call.
     pub mounts: Arc<crate::resolve::Mounts>,
-    /// Output path -> key of the value written there, for the whole call (PROJECT.md §5.5).
+    /// Output path -> key of the value written there, for the whole call (docs/design/project.md §5.5).
     written: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
     /// Triggered by the host to stop the call; long handlers check it.
     pub cancel: CancellationToken,
@@ -407,7 +407,7 @@ pub struct Cx {
     linked: Arc<std::sync::Mutex<Vec<crate::engine::LinkedValue>>>,
     /// The plugin cache operator, if the host gave one.
     cache: Option<Operator>,
-    /// Requests being served on the way to this one, outermost first (PROJECT.md §5.6).
+    /// Requests being served on the way to this one, outermost first (docs/design/project.md §5.6).
     chain: Arc<Vec<String>>,
 }
 
@@ -464,7 +464,7 @@ impl Cx {
         self
     }
 
-    /// Plugin `plugin`'s part of the plugin cache (PROJECT.md §7), namespaced by its id and
+    /// Plugin `plugin`'s part of the plugin cache (docs/design/project.md §7), namespaced by its id and
     /// `cache_version`. `None` if the host configured no cache; plugins must work without it.
     pub fn cache(&self, plugin: &str) -> Option<crate::cache::PluginCache> {
         let op = self.cache.clone()?;

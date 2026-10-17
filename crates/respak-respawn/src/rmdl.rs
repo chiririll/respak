@@ -6,7 +6,7 @@
 //! and `studio.h` (studiohdr, bones, bodyparts, models, meshes, `vg::rev4`, `FIX_OFFSET`),
 //! `src/core/math/compressedvector.h` (`Vector64`, `Normal32`) and `src/core/mdl/modeldata.cpp`
 //! (`ParseModelVertexData_v16`, `ParseVertexFromVG`). Field offsets are in
-//! `todo/formats/rmdl.md`; they were computed by hand from the rsx structs.
+//! `docs/formats/rmdl.md`; they were computed by hand from the rsx structs.
 //!
 //! # Variants
 //! `Version { major: asset version, minor }`; the studiohdr layout follows from both:

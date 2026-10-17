@@ -1,5 +1,5 @@
 //! `rpak.guid -> rpak.asset`: finding an asset by guid when it lives in another pak
-//! (PROJECT.md §6).
+//! (docs/design/project.md §6).
 //!
 //! The search order is fixed, and it never scans paks on its own:
 //! 1. the pak the reference came from;

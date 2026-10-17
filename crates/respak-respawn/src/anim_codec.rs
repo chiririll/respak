@@ -5,7 +5,7 @@
 //! Ported from rsx `src/game/rtech/utils/studio/studio_r5.{h,cpp}` (`ANIM_BONEFLAG_*`,
 //! `mstudio_rle_anim_t`, `mstudioanim_valueptr_t`, `s_AnimSeekLUT`, `ExtractAnimValue`,
 //! `CalcBonePosition/Quaternion/Scale`) and `src/core/math/compressedvector.h`. Layouts and the
-//! lookup table are in `todo/formats/aseq.md`. Datapoint compression is not decoded (`aseq` rejects it).
+//! lookup table are in `docs/formats/aseq.md`. Datapoint compression is not decoded (`aseq` rejects it).
 
 use respak_core::{Error, ErrorKind, Result};
 

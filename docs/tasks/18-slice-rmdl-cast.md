@@ -1,12 +1,12 @@
 # 18 · Slice: rpak model (`mdl_`) → Cast
-**Status:** in-progress (built and tested on synthetic data and one real v20 model; Blender import check and the demo pending) · **Depends on:** 13 (`matl`), `txtr`, `png` edge · **See:** PROJECT.md §5.5, §6, §12, [`../formats/rmdl.md`](../formats/rmdl.md)
+**Status:** in-progress (built and tested on synthetic data and one real v20 model; Blender import check and the demo pending) · **Depends on:** 13 (`matl`), `txtr`, `png` edge · **See:** project.md §5.5, §6, §12, [`../formats/rmdl.md`](../formats/rmdl.md)
 
 ## Goal
 An Apex model opens from an rpak and converts to Cast, one file per (LOD, bodypart model), with its skeleton, materials and textures, for Blender and other Cast importers:
 ```
 respak convert paks/Win64/common.rpak/mdl/.../x.mdl_ --to '{"type":"cast"}'
 ```
-Output is a composite (own folder, PROJECT.md §12): `x/<bodypart>_<i>_LOD<n>.cast` + `x/textures/*.png`. A model with no LODs gets a skeleton-only `x/x.cast`. (The `.mdl_` extension is a gate question.)
+Output is a composite (own folder, project.md §12): `x/<bodypart>_<i>_LOD<n>.cast` + `x/textures/*.png`. A model with no LODs gets a skeleton-only `x/x.cast`. (The `.mdl_` extension is a gate question.)
 
 ## Decided already (user, 2026-10-15)
 - **Granularity:** one `.cast` per (LOD, model), as rsx does. The `lods` option is `0` (default), `all` or a list.

@@ -1,4 +1,4 @@
-//! The plugin cache (PROJECT.md §7): an optional `Operator` that plugins use for small,
+//! The plugin cache (docs/design/project.md §7): an optional `Operator` that plugins use for small,
 //! expensive-to-recompute data. Core never interprets the contents.
 
 use bytes::Bytes;

@@ -22,7 +22,7 @@ Respawn games ship loose Source-style files (`.bsp`, `.nut`/`.gnut` scripts, `.m
 | `0x55AA1234` | anything else (Valve v1, Valve v2, …) | | rejected: "Invalid file version" |
 
 - rsx sets each entry's version to `{2, 3}` (`vpk.cpp:42`).
-- **Proposed score (`file → vpk`)**: `u32le(0) == 0x55AA1234` → 10; `u16le(4) == 2 && u16le(6) == 3` → +2; `16 + dirTreeSize <= len` → +2; extension `vpk` → +1. Magic but other version → `UnsupportedVersion` (Valve VPKs are explicitly not planned, PROJECT.md §2). `Version { major: 2, minor: 3 }`. Header prefix: 16 bytes.
+- **Proposed score (`file → vpk`)**: `u32le(0) == 0x55AA1234` → 10; `u16le(4) == 2 && u16le(6) == 3` → +2; `16 + dirTreeSize <= len` → +2; extension `vpk` → +1. Magic but other version → `UnsupportedVersion` (Valve VPKs are explicitly not planned, project.md §2). `Version { major: 2, minor: 3 }`. Header prefix: 16 bytes.
 - An archive `_NNN.vpk` has no header (unverified): it scores `None` and is opened only through its directory.
 
 ## Layout
@@ -80,7 +80,7 @@ Not handled by rsx. Unverified expectations to confirm at the gate:
 - Whether Apex VPKs differ (Apex ships few VPKs; most loose files moved to `wrap` assets in rpaks): unknown.
 
 ## Dependencies
-None. Archives are companion files opened lazily (PROJECT.md §6); a missing one → `MissingDependency { item: <entry path>, file: <archive name> }`.
+None. Archives are companion files opened lazily (project.md §6); a missing one → `MissingDependency { item: <entry path>, file: <archive name> }`.
 
 ## Decoding
 ```
@@ -116,7 +116,7 @@ Drop all of these; keep the struct layouts, magic, version check and tree encodi
 
 ## Reuse in respak
 - Volume pattern: `starpak.rs` (`VolumeSource`, `volume_operator`, `Container`), core `volume.rs`.
-- New: tree parser, archive name mapping, chunk-to-range mapping, LZHAM decoder (codec edge `compressed{lzham} → blob` per PROJECT.md §6, or called directly like RTech).
+- New: tree parser, archive name mapping, chunk-to-range mapping, LZHAM decoder (codec edge `compressed{lzham} → blob` per project.md §6, or called directly like RTech).
 - Downstream: [bsp](bsp.md) for `.bsp`, [source-mdl](source-mdl.md) for `.mdl`.
 
 ## Tests

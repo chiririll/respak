@@ -1,4 +1,4 @@
-//! Steam access for respak: login, the stored token, logon (todo/STEAM.md). Host only; the only crate with Steam code.
+//! Steam access for respak: login, the stored token, logon (docs/design/steam.md). Host only; the only crate with Steam code.
 
 mod account;
 mod cache;

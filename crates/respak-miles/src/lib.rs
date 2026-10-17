@@ -2,7 +2,7 @@
 //!
 //! `mbnk` opens as a volume of sources (`asrc`), `mstr` is the stream file that holds their
 //! bytes, and an `asrc` is an [`Audio`](respak_core::capability::Audio). Format spec:
-//! `todo/formats/miles.md` and `todo/formats/miles-codecs.md`.
+//! `docs/formats/miles.md` and `docs/formats/miles-codecs.md`.
 
 mod asrc;
 mod bcf1;

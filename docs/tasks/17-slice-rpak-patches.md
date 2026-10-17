@@ -1,5 +1,5 @@
 # 17 · Slice: rpak patches
-**Status:** in-progress (built and tested; demo pending) · **Depends on:** 07, 08 (rpak listing and volume) · **See:** PROJECT.md §6, §11, §12, `crates/respak-respawn/src/pak.rs`
+**Status:** in-progress (built and tested; demo pending) · **Depends on:** 07, 08 (rpak listing and volume) · **See:** project.md §6, §11, §12, `crates/respak-respawn/src/pak.rs`
 
 ## Goal
 A patched pak opens like an unpatched one. The volume of `common.rpak` (or `common(NN).rpak`) lists and reads the final assets:

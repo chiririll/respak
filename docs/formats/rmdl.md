@@ -237,7 +237,7 @@ Other sizes (`VertexSizeFromFlags_V13`, `studio.cpp:269`, used by the preview): 
 ## Dependencies
 - **`matl` assets** by guid, from the studiohdr material table (`mstudiotexture_v8_t.texture` / v16+ `u64`). rsx resolves with `g_assetData.FindAssetByGUID` across all loaded paks. The material gives the texture bindings; for Cast, `ParseMaterialIntoCast` (:2816) writes the textures through the `matl` -> `txtr` chain (`albedoTexture`, `diffuseTexture`, `normalTexture`, `glossTexture`, `roughnessTexture`, `specTexture`, `emissiveTexture`, `aoTexture`, `cavityTexture` resource names -> Cast material slots). If the `matl` is not loaded, rsx writes a stub material with only the name.
 - **`arig`** (animation rigs) and **`aseq`** (sequences), by guid arrays in the asset header; only to be listed for now.
-- In respak: `Metadata::dependencies()` = the `matl` guids (via `GuidRef`/`rpak.guid`), then rigs and seqs. `rpak.asset` already carries the pak's dependency guids; the guids used by the studiohdr should be a subset (not verified). Material resolution happens in the Cast encoder (PROJECT.md §5.5), not in the read edge.
+- In respak: `Metadata::dependencies()` = the `matl` guids (via `GuidRef`/`rpak.guid`), then rigs and seqs. `rpak.asset` already carries the pak's dependency guids; the guids used by the studiohdr should be a subset (not verified). Material resolution happens in the Cast encoder (project.md §5.5), not in the read edge.
 - Skeleton for sequences: an `aseq` takes its skeleton from the model/rig; out of scope here.
 
 ## Decoding
@@ -301,12 +301,12 @@ Notes:
 - A new `rmdl` format: read edge `rpak.asset (mdl_) -> rmdl` that parses the asset header, studiohdr tables, and the VG lazily (a `RmdlAsset` with `Metadata` (name, guid, dependencies), and the new `Mesh` and `Skeleton` capabilities: these two are empty traits in `respak-core` today, so this slice defines them).
 - `Skeleton`: ordered bones `{ name, parent: Option<u32>, local_pos: [f32;3], local_rot: [f32;4] (x,y,z,w), scale: [f32;3], world_bind: Option<[f32;12]> }`.
 - `Mesh` (per LOD): groups `{ name, bodypart, model_index, lod, material: u64 guid, positions, normals, optional tangents, colors, uv layers, bone weights (per vertex: up to N (bone, weight)), triangle indices (u16 or u32) }`. Keep the stored order; document the winding convention in the trait and convert at the encoder.
-- `rmdl -> cast` convert edge (a composite output: folder `<stem>/`, `<stem>.cast`, `textures/*.png`, per PROJECT.md §5.5/§12 composite-output rules). Options: `{ "lods": "0" | "all" | [..], "skin": 0, "textures": true, "image": "png" }`. Suggested default: **LOD 0 only, all bodyparts, one `.cast` file** (rsx's per-model file split is an artefact of its exporter structure; a single `.cast` with one `mesh` node per mesh is valid Cast). Tell the user (open question).
+- `rmdl -> cast` convert edge (a composite output: folder `<stem>/`, `<stem>.cast`, `textures/*.png`, per project.md §5.5/§12 composite-output rules). Options: `{ "lods": "0" | "all" | [..], "skin": 0, "textures": true, "image": "png" }`. Suggested default: **LOD 0 only, all bodyparts, one `.cast` file** (rsx's per-model file split is an artefact of its exporter structure; a single `.cast` with one `mesh` node per mesh is valid Cast). Tell the user (open question).
 - Cast encoder: the encoder asks for each material through the mediator (`matl` -> `Metadata`/`Bitmap` pipeline already in respak), converts textures to PNG and writes them via `cx.write`; no new capability.
 - Later targets, not in the first slice: `rmdl -> hitboxes.obj`, `rmdl -> collision.stl`, `rmdl -> smd/qc`, animations through `aseq`/`arig`.
 
 ## rsx quirks
-Keep / drop / fix, listed with the behaviour change against rsx (PROJECT.md §12):
+Keep / drop / fix, listed with the behaviour change against rsx (project.md §12):
 - **Detection by pointer reads with no bounds checks**, version heuristics using `sourceFilenameOffset == header size`, a model-stride division, and the pak file's `createdTime` (19.x). Keep the rules; make all reads bounded; `createdTime` rules are date-based guesses, document them as such.
 - `GetModelVersionFromAsset` never returns `12_3`; `GetModelPakVersion` is dead code. Drop the second; keep 12.3 as a name only.
 - The 12.1 branch alternative `pMDL[41] == sizeof(studiohdr_v8_t)` is a copy-paste typo; no effect.
@@ -326,7 +326,7 @@ Keep / drop / fix, listed with the behaviour change against rsx (PROJECT.md §12
 - Empty-mesh handling: a mesh with VG `flags == 0` is dropped from its model; the *model* keeps existing, possibly with zero meshes. The Cast loop still writes a file for it unless `meshCount` is 0 (it does not skip those, `ExportModelMeshes` :3287). Respak: skip models with no meshes.
 - Skin handling: `HandleModelMaterials` runs once per export for LOD 0 meshes only and builds the material table; a mesh in a lower LOD with a material not used in LOD 0 would fail `materials->contains` (assert). Respak: build the table from all exported meshes.
 - Global state: `g_rsxSettings.exportModelSkin`, `previewedSkinIndex`, `exportMaterialTextures`, `exportModelMatsTruncated`, `exportPathsFull` drive the output. Not ported; they become target options.
-- Material textures are exported to PNG directly inside `HandleModelMaterials` (a side effect while "preparing" a model), possibly concurrently for models sharing materials. Respak linking dedupes per PROJECT.md §5.5.
+- Material textures are exported to PNG directly inside `HandleModelMaterials` (a side effect while "preparing" a model), possibly concurrently for models sharing materials. Respak linking dedupes per project.md §5.5.
 - `ExportModelStreamedData` for v16+ concatenates decompressed groups back to back in `outBuf` regardless of each group's `dataOffset`, producing a `.vg` whose layout differs from the stored one. Raw export only; drop.
 
 ## Reuse in respak

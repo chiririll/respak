@@ -4,7 +4,7 @@
 //!
 //! Ported from rsx `src/game/rtech/assets/animrig.{h,cpp}` (`AnimRigAssetHeader_v4_t/_v5_t`,
 //! `LoadAnimRigAsset`) and `model.cpp` (`GetModelVersionFromAsset`, `ParseExternalSequences`).
-//! Offsets are in `todo/formats/arig.md`. The embedded studiohdr is the `rmdl` one: the bones come
+//! Offsets are in `docs/formats/arig.md`. The embedded studiohdr is the `rmdl` one: the bones come
 //! from the same parser (`rmdl::parse_bones`).
 //!
 //! Behaviour changes against rsx: a pak without a `mdl_` is fine (rsx throws); a rig with local

@@ -1,12 +1,12 @@
 # 19 · Slice: rpak animation (`aseq`) → Cast
-**Status:** in-progress (built; pilot check done on one real aseq 14; demo pending) · **Depends on:** 18 (`Skeleton`, Cast writer, `rmdl` bone parser) · **See:** PROJECT.md §5.5, §6, §12, [`../formats/aseq.md`](../formats/aseq.md), [`../formats/arig.md`](../formats/arig.md), [`../formats/anir.md`](../formats/anir.md)
+**Status:** in-progress (built; pilot check done on one real aseq 14; demo pending) · **Depends on:** 18 (`Skeleton`, Cast writer, `rmdl` bone parser) · **See:** project.md §5.5, §6, §12, [`../formats/aseq.md`](../formats/aseq.md), [`../formats/arig.md`](../formats/arig.md), [`../formats/anir.md`](../formats/anir.md)
 
 ## Goal
 An Apex animation sequence opens from an rpak and converts to Cast animations, for Blender and other Cast importers:
 ```
 respak convert paks/Win64/common.rpak/animseq/.../x.aseq --to '{"type":"cast"}'
 ```
-Output is a composite (own folder, PROJECT.md §12): `x/<stem>_<i>.cast`, one file per blend animation. Each file carries the skeleton and per-bone position / rotation (/ scale) curves.
+Output is a composite (own folder, project.md §12): `x/<stem>_<i>.cast`, one file per blend animation. Each file carries the skeleton and per-bone position / rotation (/ scale) curves.
 
 ## Decided already (user, 2026-10-15)
 - **Root rotation:** apply it (rsx behaviour), as an option `root_fixup` = `"rsx"` (default) | `"none"`. The Blender import at the demo decides whether the default stays.

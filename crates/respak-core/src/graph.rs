@@ -1,4 +1,4 @@
-//! The format graph as data (`respak formats`) and path planning (PROJECT.md §5.2).
+//! The format graph as data (`respak formats`) and path planning (docs/design/project.md §5.2).
 
 use std::fmt;
 use std::sync::Arc;

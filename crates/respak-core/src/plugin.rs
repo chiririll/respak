@@ -1,4 +1,4 @@
-//! Plugins and the registry they fill (PROJECT.md §5.2).
+//! Plugins and the registry they fill (docs/design/project.md §5.2).
 
 use std::sync::Arc;
 

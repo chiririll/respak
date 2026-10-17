@@ -1,23 +1,19 @@
 # 14 · Backlog
 **Status:** blocked
 
-Each item becomes its own vertical slice (README: how a slice works), ending in something the user can run. Each Respawn kind's rsx code (`src/game/rtech/assets/*.cpp`) is reviewed first, then ported (PROJECT.md §12).
+Each item becomes its own vertical slice (README: how a slice works), ending in something the user can run. Each Respawn kind's rsx code (`src/game/rtech/assets/*.cpp`) is reviewed first, then ported (project.md §12).
 
 ## New asset kinds
 
 **Respawn kinds** (`respak-respawn`):
 - model (`rmdl`): asset versions 16-20 → Cast is built (slice 18). Left: asset versions 8-15 (rev1-rev3 vertex data, older studiohdr layouts, [`../formats/rmdl.md`](../formats/rmdl.md)), blend shapes, `Vector48` positions, hitboxes/physics export, SMD/QC, animations
-- ~~animation sequence (`aseq`), anim rig (`arig`) → `Animation`~~ built in slice 19 (see Follow-ups for what is left)
-- datatable (`dtbl`) → CSV/JSON → `Table`
-- UI image atlas (`uimg`, rsx `'gmiu'`, `ui_image_atlas.cpp`): atlas texture by guid + per-sprite UV rects; export as image + JSON with an option to slice into sprites
-- shaders, settings, subtitles, localization
+- shaders, subtitles, localization
 - Respawn VPK
 - … every kind rsx supports
 
 **Common formats** (`respak-formats`): Cast, SMD + QC.
 
 **Audio** (`respak-miles`):
-- ~~Miles banks (`mbnk`, `mstr`) → `Audio`~~ built in slice 16 (spec: [`../formats/miles.md`](../formats/miles.md), [`../formats/miles-codecs.md`](../formats/miles-codecs.md))
 - Third-party codec plugin for RADA (idea, 2026-10-14): a small stable C-ABI codec interface in core, loaded at runtime from a path, so a user can supply a module that wraps RAD's closed library themselves (never shipped with respak). Needs an exception to the "no RAD binaries, C, DLLs" rule and a licence check (UE EULA, AGPL boundary). It mirrors the ASI flow in miles-codecs.md (open from the header, examine a block, decode a block to planar f32) and could double as a BCF1 test oracle
 - RAD Audio (`RADA`, Apex S24+) decoder: the first Miles slice reads the header only, decoding gives `UnsupportedVersion`. No open decoder exists; the only source is RAD's SDK inside Unreal Engine (EULA, not usable). Needs a clean-room reverse engineering or a future open decoder (miles-codecs.md, open question 1)
 
@@ -31,12 +27,11 @@ Each item becomes its own vertical slice (README: how a slice works), ending in 
 ## Core features
 
 - raw dump of a pak asset with `copy` / `convert --copy`: today they skip assets (an asset is not a file: header in the rpak pages, streamed data in the starpak). A dump would write the header plus the streamed blobs as a bundle, per kind
-- the in-memory cache (PROJECT.md §7). It also fixes the dedup gap: the dedup shares only **concurrent** requests, so a texture used by two materials that do not overlap in time is decoded twice
-- ~~rpak patches (PROJECT.md §11)~~ moved to slice 17 ([`17-slice-rpak-patches.md`](17-slice-rpak-patches.md))
-- writing Respawn formats (PROJECT.md §5.8), including the `bundle` rule
+- the in-memory cache (project.md §7). It also fixes the dedup gap: the dedup shares only **concurrent** requests, so a texture used by two materials that do not overlap in time is decoded twice
+- writing Respawn formats (project.md §5.8), including the `bundle` rule
 
 ## Cleanup
 
 - a dead-code pass over everything built before the slices (the user does this after the full implementation)
 
-The open questions live in PROJECT.md §11.
+The open questions live in project.md §11.

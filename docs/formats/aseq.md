@@ -190,7 +190,7 @@ Notes:
 **Proposed respak targets:**
 - A new `aseq` format: read edge `rpak.asset (aseq) -> aseq` (`Metadata`, dependencies) plus `Animation` capability implemented per animdesc (see below). Needs the rig as a link input: `aseq -> cast` takes `{ "rig": guid | "auto" }` with `auto` = the reverse-index owner.
 - `asqd`: read edge only, bytes plus metadata, no standalone convert (rsx's `.asqd` dump is a raw copy).
-- `aseq -> cast` convert edge, composite output (per PROJECT.md §12 rules): default **all blend animdescs as one file each** named `<stem>_<i>.cast` (matches rsx), or a single file for the common 1x1 case. Options `{ "rig": ..., "blend": "all" | n }`.
+- `aseq -> cast` convert edge, composite output (per project.md §12 rules): default **all blend animdescs as one file each** named `<stem>_<i>.cast` (matches rsx), or a single file for the common 1x1 case. Options `{ "rig": ..., "blend": "all" | n }`.
 - Shared Cast writer with rmdl (Animation/Curve nodes are the only additions).
 
 ## Animation capability: fields a refined `Animation` trait needs

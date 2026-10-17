@@ -1,4 +1,4 @@
-//! `matl -> matl.json`: a material with its textures (PROJECT.md §5.5, "linking").
+//! `matl -> matl.json`: a material with its textures (docs/design/project.md §5.5, "linking").
 //!
 //! The result is a bundle the engine writes into the material's own folder:
 //! `material.json` plus `textures/<slot name>.<ext>`. Each texture is looked up by guid

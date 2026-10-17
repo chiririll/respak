@@ -1,4 +1,4 @@
-//! The public entry point (PROJECT.md §8). Slice 05: single-path `convert` only.
+//! The public entry point (docs/design/project.md §8). Slice 05: single-path `convert` only.
 
 mod convert;
 mod inspect;

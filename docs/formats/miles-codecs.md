@@ -199,7 +199,7 @@ Options for respak (the user doesn't want RAD binaries, C, or DLLs):
 |---|---|---|---|
 | a. Link/load Epic's `radaudio_decoder` lib (what rsx does) | UE EULA: **not** AGPL-compatible, binary blob | S | Rejected by the project rules |
 | b. Port UE's RAD Audio source (it is in the UE source tree under the UE EULA) | **Not allowed**: EULA code can't go into an AGPL project; reading it taints a clean-room port | M | Rejected |
-| c. Clean-room reverse engineering of the decoder from binaries plus black-box tests (the `oozextract` precedent, PROJECT.md §3) | Own code, AGPL | L–XL | The only open route; needs a spec written by someone else before a separate implementation |
+| c. Clean-room reverse engineering of the decoder from binaries plus black-box tests (the `oozextract` precedent, project.md §3) | Own code, AGPL | L–XL | The only open route; needs a spec written by someone else before a separate implementation |
 | d. Wait for a third-party open decoder (vgmstream wants proper RE for Bink Audio and has no RADA; GhostScissors' `RadA-Decoder` exists, licence and implementation unknown, probably a wrapper of the UE lib) | depends | 0 now | Re-check later |
 | e. Support RADA metadata only: header, duration, channels; decoding gives `UnsupportedVersion` | fine | S | **Recommended for now**, with (c) or (d) as a separate later decision |
 
