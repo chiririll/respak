@@ -88,6 +88,10 @@ pub struct Cli {
     #[cfg(feature = "steam")]
     #[arg(long, value_name = "SIZE", value_parser = parse_size, global = true)]
     pub steam_cache_size: Option<u64>,
+    /// Print a line per chunk request and per downloaded chunk, not only the depots and the summary.
+    #[cfg(feature = "steam")]
+    #[arg(long, global = true)]
+    pub steam_verbose: bool,
     /// Read the defaults from this file instead of searching for `respak.toml`.
     #[arg(long, value_name = "FILE", conflicts_with = "no_config", global = true)]
     pub config: Option<PathBuf>,
@@ -248,8 +252,8 @@ pub fn format_size(bytes: u64) -> String {
 }
 
 /// One line of progress for `event`, or `None` for events a person does not need to see
-/// (failures are in the report).
-pub fn event_line(event: &Event) -> Option<String> {
+/// (failures are in the report). The per-request and per-chunk Steam lines need `verbose`.
+pub fn event_line(event: &Event, verbose: bool) -> Option<String> {
     match event {
         Event::Warning { message } => Some(format!("warning: {message}")),
         Event::Progress { task, done, total } => Some(format!("[{done}/{total}] {task}")),
@@ -260,11 +264,11 @@ pub fn event_line(event: &Event) -> Option<String> {
                 "steam: depot {} manifest {} ({} files)",
                 data["depot"], data["manifest"], data["files"]
             )),
-            "request" => Some(format!(
+            "request" if verbose => Some(format!(
                 "steam: requesting {} chunks ({} so far)",
                 data["chunks"], data["total"]
             )),
-            "chunk" => Some(format!(
+            "chunk" if verbose => Some(format!(
                 "steam: {} chunks, {} downloaded",
                 data["chunks"],
                 format_size(data["bytes"].as_u64().unwrap_or(0))
@@ -277,12 +281,12 @@ pub fn event_line(event: &Event) -> Option<String> {
 
 /// Prints the engine's events to stderr from a background task, until the sender is gone.
 #[cfg(feature = "steam")]
-pub(crate) fn print_events_to_stderr(mut rx: Receiver<Event>) {
+pub(crate) fn print_events_to_stderr(mut rx: Receiver<Event>, verbose: bool) {
     tokio::spawn(async move {
         let mut events = std::io::stderr();
         loop {
             let printed = match rx.recv().await {
-                Ok(event) => print_event(&mut events, &event),
+                Ok(event) => print_event(&mut events, &event, verbose),
                 Err(RecvError::Lagged(missed)) => print_skipped(&mut events, missed),
                 Err(RecvError::Closed) => break,
             };
@@ -294,8 +298,8 @@ pub(crate) fn print_events_to_stderr(mut rx: Receiver<Event>) {
 }
 
 /// Writes the progress line of `event`, if it has one.
-fn print_event(events: &mut impl Write, event: &Event) -> std::io::Result<()> {
-    match event_line(event) {
+fn print_event(events: &mut impl Write, event: &Event, verbose: bool) -> std::io::Result<()> {
+    match event_line(event, verbose) {
         Some(line) => writeln!(events, "{line}"),
         None => Ok(()),
     }
@@ -307,10 +311,14 @@ fn print_skipped(events: &mut impl Write, missed: u64) -> std::io::Result<()> {
 }
 
 /// Prints every event waiting in `rx`; stops at the first write error.
-fn drain_events(rx: &mut Receiver<Event>, events: &mut impl Write) -> std::io::Result<()> {
+fn drain_events(
+    rx: &mut Receiver<Event>,
+    events: &mut impl Write,
+    verbose: bool,
+) -> std::io::Result<()> {
     loop {
         match rx.try_recv() {
-            Ok(event) => print_event(events, &event)?,
+            Ok(event) => print_event(events, &event, verbose)?,
             Err(TryRecvError::Lagged(missed)) => print_skipped(events, missed)?,
             Err(_) => return Ok(()),
         }
@@ -336,11 +344,11 @@ pub async fn run_with_events(
         let finished = Arc::clone(&finished);
         move || {
             while !finished.load(Ordering::Acquire) {
-                drain_events(&mut rx, &mut events)?;
+                drain_events(&mut rx, &mut events, false)?;
                 std::thread::sleep(POLL);
             }
             // Whatever was published after the last poll.
-            drain_events(&mut rx, &mut events)
+            drain_events(&mut rx, &mut events, false)
         }
     });
     let result = run(cli, engine, cancel, out, err).await;
@@ -444,8 +452,11 @@ mod tests {
             (&depot, "steam: depot 1 manifest 2 (3 files)"),
             (&chunk, "steam: 4 chunks, 5 B downloaded"),
         ] {
-            assert_eq!(event_line(event).as_deref(), Some(line));
+            assert_eq!(event_line(event, true).as_deref(), Some(line));
         }
+        assert_eq!(event_line(&request, false), None);
+        assert_eq!(event_line(&chunk, false), None);
+        assert!(event_line(&depot, false).is_some());
     }
 
     #[test]
@@ -465,8 +476,8 @@ mod tests {
             name: "depot".into(),
             data: json!({}),
         };
-        assert_eq!(event_line(&started), None);
-        assert_eq!(event_line(&other), None);
-        assert_eq!(event_line(&custom("unknown", json!({}))), None);
+        assert_eq!(event_line(&started, true), None);
+        assert_eq!(event_line(&other, true), None);
+        assert_eq!(event_line(&custom("unknown", json!({})), true), None);
     }
 }

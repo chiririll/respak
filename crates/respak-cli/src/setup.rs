@@ -64,7 +64,7 @@ pub async fn open_input(
                 options.cache_cap = cap;
             }
             let events = respak_core::Events::new(respak_core::event::DEFAULT_EVENT_CAPACITY);
-            crate::print_events_to_stderr(events.subscribe());
+            crate::print_events_to_stderr(events.subscribe(), steam.verbose);
             let opened = respak_steam::open(options, cancel, &events).await?;
             Ok(OpenedInput {
                 operator: opened.operator.clone(),

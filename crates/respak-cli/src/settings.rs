@@ -29,6 +29,8 @@ pub struct SteamSource {
     pub branch: String,
     /// Cap of the chunk cache in bytes, if not the default.
     pub cache_size: Option<u64>,
+    /// Print a line per chunk request and downloaded chunk (`--steam-verbose`).
+    pub verbose: bool,
 }
 
 /// Every option the engine is built from, with each default applied: the command line wins, then
@@ -156,6 +158,7 @@ fn source(cli: &Cli, config: &Config) -> anyhow::Result<Source> {
             .or_else(|| steam.and_then(|steam| steam.branch.clone()))
             .unwrap_or_else(|| "public".into()),
         cache_size: cli.steam_cache_size.or(config_cache),
+        verbose: cli.steam_verbose || steam.and_then(|steam| steam.verbose).unwrap_or(false),
     }))
 }
 

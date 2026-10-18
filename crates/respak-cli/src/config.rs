@@ -58,6 +58,8 @@ pub struct SteamConfig {
     pub branch: Option<String>,
     /// `--steam-cache-size`, e.g. `"8GiB"`.
     pub cache_size: Option<String>,
+    /// `--steam-verbose`.
+    pub verbose: Option<bool>,
 }
 
 /// One entry of `depots`.
