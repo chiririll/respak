@@ -267,6 +267,52 @@ impl PakBuilder {
         self.asset(guid, b"wrap", 1, h, &[(8, data_at)], None);
     }
 
+    /// A `subt` of asset `version` (0 or 1) with one slot per line: `(hash, text)`. A hash of 0
+    /// makes an empty slot (its text is not stored).
+    pub fn subt(&mut self, guid: u64, version: u32, lines: &[(u32, &str)]) {
+        let mut strings = Vec::new();
+        let mut entries = Vec::new();
+        for &(hash, text) in lines {
+            let offset = if hash == 0 { 0 } else { strings.len() as i32 };
+            if hash != 0 {
+                strings.extend_from_slice(text.as_bytes());
+                strings.push(0);
+            }
+            entries.extend_from_slice(&hash.to_le_bytes());
+            entries.extend_from_slice(&offset.to_le_bytes());
+        }
+        let occupied = lines.iter().filter(|l| l.0 != 0).count() as i32;
+        self.subt_raw(
+            guid,
+            version,
+            occupied,
+            lines.len() as i32,
+            Some(&entries),
+            Some(&strings),
+        );
+    }
+
+    /// A `subt` with the header fields and blocks given as they are; `None` leaves a pointer null.
+    pub fn subt_raw(
+        &mut self,
+        guid: u64,
+        version: u32,
+        string_count: i32,
+        entry_count: i32,
+        entries: Option<&[u8]>,
+        strings: Option<&[u8]>,
+    ) {
+        let entries_at = entries.map(|e| self.data(e));
+        let strings_at = strings.map(|s| self.data(s));
+        let mut h = vec![0u8; 0x18];
+        put(&mut h, 0x00, &string_count.to_le_bytes());
+        put(&mut h, 0x04, &entry_count.to_le_bytes());
+        let mut pointers = Vec::new();
+        pointers.extend(entries_at.map(|a| (0x08, a)));
+        pointers.extend(strings_at.map(|a| (0x10, a)));
+        self.asset(guid, b"subt", version, h, &pointers, None);
+    }
+
     /// The pak file.
     pub fn build(self, pak_version: u16) -> Vec<u8> {
         let starpaks: Vec<&str> = self.starpaks.iter().map(String::as_str).collect();

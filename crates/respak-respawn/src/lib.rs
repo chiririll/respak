@@ -11,7 +11,7 @@ mod names;
 
 use std::sync::Arc;
 
-use assets::{arig, aseq, asqd, dtbl, matl, rmdl, shader, stgs, stlt, txtr, uiia, uimg, wrap};
+use assets::{arig, aseq, asqd, dtbl, matl, rmdl, shader, stgs, stlt, subt, txtr, uiia, uimg, wrap};
 use codec::{anim_codec, dxbc, oodle, rtech, snowflake};
 use container::{locate, pak, patch, rpak, starpak};
 
@@ -43,6 +43,7 @@ pub use stgs::StgsJsonEncode;
 pub use stgs::{ModType, StgsAsset, StgsHeader, StgsMod, StgsRead};
 pub use stlt::StltJsonEncode;
 pub use stlt::{Field, FieldType, Layout, StltAsset, StltRead};
+pub use subt::{parse_color_tag, SubtAsset, SubtEntry, SubtHeader, SubtRead, SubtTxtEncode};
 pub use txtr::{pixel_format, TxtrAsset, TxtrHeader, TxtrRead};
 pub use uiia::{Quality, Resolution, UiiaAsset, UiiaHeader, UiiaRead};
 pub use uiia::{UiiaJsonEncode, UiiaJsonOptions};
@@ -223,6 +224,16 @@ impl Plugin for RespawnPlugin {
         r.format("stlt.json")
             .label("Settings layout (JSON)")
             .extensions(["json"]);
+        r.format("subt")
+            .label("Respawn subtitles")
+            .from("rpak.asset", SubtRead)
+            .extensions(["subt"])
+            .provides::<dyn Table>()
+            .provides::<dyn Metadata>()
+            .to("subt.txt", SubtTxtEncode);
+        r.format("subt.txt")
+            .label("Subtitles (text)")
+            .extensions(["txt"]);
         r.format("wrap")
             .label("Respawn wrapped file")
             .from("rpak.asset", WrapRead)

@@ -26,7 +26,7 @@ rsx = `C:\Users\chiririll\Projects\rsx`. Paths in the specs are relative to `rsx
 | [shdr](shdr.md) | `shdr` | shader (standalone) | shader | partially |
 | [shds](shds.md) | `shds` | shader set | shader | no |
 | [rson](rson.md) | `rson` | RSON | descriptor | no |
-| [subt](subt.md) | `subt` | subtitles | descriptor | no |
+| [subt](subt.md) | `subt` | subtitles | descriptor | yes |
 | [locl](locl.md) | `locl` | localization | descriptor | no |
 | [vpk](vpk.md) | `vpkf` | Respawn VPK | vpk | no |
 | [wrap](wrap.md) | `wrap` | wrap (wrapped file) | vpk | no |

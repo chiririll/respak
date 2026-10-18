@@ -168,7 +168,10 @@ async fn formats_prints_the_graph() {
         .iter()
         .map(|f| f["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["png", "dds", "png.frames", "cast", "wav"]);
+    assert_eq!(
+        names,
+        ["png", "dds", "png.frames", "table.csv", "table.json", "cast", "wav"]
+    );
 }
 
 #[tokio::test]

@@ -5,12 +5,13 @@ mod cast;
 mod dds;
 mod frames;
 mod png;
+mod table;
 mod videofile;
 mod wav;
 
 use respak_core::value::FileData;
 use respak_core::{
-    capability::{Animation, Audio, Bitmap, Mesh, Video},
+    capability::{Animation, Audio, Bitmap, Mesh, Table, Video},
     Error, ErrorKind, Plugin, Registry, Result, Value,
 };
 
@@ -22,6 +23,7 @@ pub use cast::{
 pub use dds::{DdsEncode, DdsImage, DdsOptions, DdsRead};
 pub use frames::{FramesEncode, FramesOptions};
 pub use png::{Mips, PngEncode, PngImage, PngOptions, PngRead};
+pub use table::{to_csv as table_csv, to_json as table_json, TableCsvEncode, TableJsonEncode};
 pub use videofile::{
     Codec, CodecSetup, Container, FrameEncoder, MuxSetup, Packet, PacketSink, VideoFileEncode,
     VideoFileOptions,
@@ -52,6 +54,15 @@ impl Plugin for FormatsPlugin {
         r.format("png.frames")
             .label("PNG frames")
             .from_cap::<dyn Video>(FramesEncode);
+        // Written only: CSV or JSON text from any table.
+        r.format("table.csv")
+            .label("Table (CSV)")
+            .extensions(["csv"])
+            .from_cap::<dyn Table>(TableCsvEncode);
+        r.format("table.json")
+            .label("Table (JSON)")
+            .extensions(["json"])
+            .from_cap::<dyn Table>(TableJsonEncode);
         // Written only: a Cast model (skeleton, materials, meshes) from any mesh, or Cast animations
         // (skeleton, curves) from any animation.
         r.format("cast")

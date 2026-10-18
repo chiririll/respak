@@ -9,6 +9,7 @@ pub(crate) mod rmdl;
 pub(crate) mod shader;
 pub(crate) mod stgs;
 pub(crate) mod stlt;
+pub(crate) mod subt;
 pub(crate) mod txtr;
 pub(crate) mod uiia;
 pub(crate) mod uimg;

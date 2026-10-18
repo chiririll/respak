@@ -18,8 +18,7 @@ use respak_core::value::BlobData;
 use respak_core::{
     ConvertHandler, Cx, Error, ErrorKind, FormatId, Result, Target, TypedTarget, Value, ValueKey,
 };
-use serde::ser::SerializeTuple;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 /// The CSV and JSON targets take no options.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -129,67 +128,9 @@ pub fn to_csv(table: &dyn Table) -> String {
     out
 }
 
-/// A cell as JSON; floats keep their `f32` precision.
-struct JsonCell<'a>(&'a Cell);
-
-impl Serialize for JsonCell<'_> {
-    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        match self.0 {
-            Cell::Bool(b) => s.serialize_bool(*b),
-            Cell::Int(n) => s.serialize_i32(*n),
-            Cell::Float(f) => s.serialize_f32(*f),
-            Cell::Vector(v) => {
-                let mut t = s.serialize_tuple(3)?;
-                for f in v {
-                    t.serialize_element(f)?;
-                }
-                t.end()
-            }
-            Cell::String(text) => s.serialize_str(text),
-        }
-    }
-}
-
-/// The table as respak's JSON.
+/// The table as respak's JSON: the generic `table.json` of `respak-formats`.
 pub fn to_json(table: &dyn Table) -> Result<String> {
-    let mut out = String::from("{\n  \"columns\": [");
-    for (i, c) in table.columns().iter().enumerate() {
-        out += if i > 0 { ",\n    " } else { "\n    " };
-        write!(
-            out,
-            "{{\"name\": {}, \"type\": \"{}\"}}",
-            compact(&c.name)?,
-            c.ty.name()
-        )
-        .expect("write to String");
-    }
-    out += if table.columns().is_empty() {
-        "],\n  \"rows\": ["
-    } else {
-        "\n  ],\n  \"rows\": ["
-    };
-    for (i, row) in table.rows().iter().enumerate() {
-        out += if i > 0 { ",\n    " } else { "\n    " };
-        out.push('[');
-        for (j, cell) in row.iter().enumerate() {
-            if j > 0 {
-                out += ", ";
-            }
-            out += &compact(&JsonCell(cell))?;
-        }
-        out.push(']');
-    }
-    out += if table.rows().is_empty() {
-        "]\n}\n"
-    } else {
-        "\n  ]\n}\n"
-    };
-    Ok(out)
-}
-
-/// One value as compact JSON.
-fn compact<T: Serialize + ?Sized>(v: &T) -> Result<String> {
-    serde_json::to_string(v).map_err(|e| Error::custom("dtbl.json", e))
+    respak_formats::table_json(table)
 }
 
 /// Convert edge `dtbl -> dtbl.csv`.
