@@ -29,5 +29,15 @@ Every slice ends with:
 | 18 | [rpak model → Cast](18-slice-rmdl-cast.md) | `convert …/x.mdl_ --to cast` | 13 | in-progress (built; Blender import and demo pending) |
 | 19 | [rpak animation → Cast](19-slice-aseq-cast.md) | `convert …/x.aseq --to cast` | 18 | in-progress (built on synthetic data; pilot check and demo pending) |
 | 20 | [Subtitles → table (CSV / JSON), TXT](20-slice-subt.md) | `convert …/x.subt --to '{"type":"json"}'` | 07, 08 | in-progress (built; real-file check done; demo pending) |
+| 21 | [`respak-host` crate](21-slice-host-crate.md) | `cargo test -p respak-cli` unchanged | none | todo (spec done; sketch and gate pending) |
+| 22 | [Target option schemas](22-slice-option-schemas.md) | `discover` shows a `schema` per target | none | todo (spec done; sketch and gate pending) |
+| 23 | [Web: server, settings, explorer](23-slice-web-explorer.md) | `cargo run -p respak-web`, browse a folder | 21 | todo (spec done; sketch and gate pending) |
+| 24 | [Web: viewers](24-slice-web-viewers.md) | open a texture, atlas, audio in the browser | 23 | todo (spec done; sketch and gate pending) |
+| 25 | [Web: convert, basket, jobs](25-slice-web-convert.md) | tick files, convert, download | 22, 24 | todo (spec done; sketch and gate pending) |
+| 26 | [Web: Steam login](26-slice-web-steam.md) | log in by QR, browse a depot | 23 | todo (spec done; sketch and gate pending) |
+| 27 | [Web: version catalog](27-slice-web-catalog.md) | pick "Season 20 launch" | 26 | todo (spec done; sketch and gate pending) |
+| 28 | [Web: release packaging](28-slice-web-release.md) | CI-built `respak-web` archives | 23 | todo (spec pending) |
+
+Slices 21-28 build the web UI ([webui.md](../design/webui.md)).
 
 Respawn format code comes from rsx: reviewed first, then ported (project.md §12).
