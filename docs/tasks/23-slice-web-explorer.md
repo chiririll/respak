@@ -1,5 +1,5 @@
 # 23 · Slice: web server, settings and explorer
-**Status:** todo (spec done; sketch and gate pending) · **Depends on:** 21 · **See:** [webui.md](../design/webui.md) §1-§6, §8
+**Status:** in-progress (built; demo pending) · **Depends on:** 21 · **See:** [webui.md](../design/webui.md) §1-§6, §8
 
 ## Goal
 `respak-web` starts, opens the browser, lets the user pick a **local folder**, and shows the file tree with search. Nothing converts yet.
@@ -32,3 +32,11 @@ Previews, convert, jobs, Steam login UI, version catalog, deep search, dark them
 - Search files finds by substring, case-insensitively; loaded-container scope finds only expanded paks.
 - Config: `PUT` then file on disk equals the model; unknown key → 400.
 - Frontend: component tests for the tree (virtualization) and the settings form; one end-to-end check with the browser against a synthetic root.
+
+## Built
+`crates/respak-web` (not a default member) + `web/` (Svelte 5, Vite, TypeScript, no SvelteKit; embedded with `rust-embed`, `build.rs` stops with a clear message when `web/dist` is missing).
+- Server: `GET/PUT /api/config`, `GET/POST/DELETE /api/session`, `GET /api/tree`, `GET /api/search`, `GET /api/entry`, `GET /api/fs`, `GET /api/events` (SSE), static files. Security as in webui.md §8 (`Host`, `Origin`, `Sec-Fetch-Site`, JSON-only state changes, no CORS), `--port`, `--no-open`, `--dir`.
+- Tree: lazy per level, paged (500 by default, 2000 at most), container listing cached per session; Paths / Kinds / Names views. A container's directory structure is made from the names it lists. Folders cannot be ticked in a pak whose names were read (their paths would not match the entries' real paths).
+- Search: scopes files / opened paks / both; the file index is built on the first search and kept.
+- Open questions decided: the local-folder field has a server-side folder browser (`/api/fs`); the UI's own state is only the theme and the sidebar width, in `localStorage`; profiles are not switchable.
+- Tests: `crates/respak-web/tests/web.rs` (guards, config, lazy tree, paging, search, a texture preview, jobs, downloads, frontend served).

@@ -17,8 +17,12 @@ pub use account::{
     claims, expiry, now_secs, steam_id_of, Account, AccountStore, Claims, Expiry, RENEW_WINDOW_SECS,
 };
 pub use error::{Error, Result};
-pub use login::{login_qr, login_user};
-pub use qr::{render as render_qr, run as poll_qr, PollReply, Poller, QrTokens};
+pub use login::{
+    login_qr, login_qr_with, login_user, login_user_with, CodeFuture, GuardEvent, GuardKind,
+};
+pub use qr::{
+    matrix as qr_matrix, render as render_qr, run as poll_qr, PollReply, Poller, QrMatrix, QrTokens,
+};
 pub use session::{connect, device_name, logon};
 
 pub use cache::{ChunkCache, DEFAULT_CAP};

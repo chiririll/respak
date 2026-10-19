@@ -65,6 +65,8 @@ pub(crate) struct FormatDef {
     pub provides: Vec<CapId>,
     pub read_edges: Vec<ReadEdge>,
     pub cap_edges: Vec<CapEdge>,
+    /// The default options of this format as a target (`{}` if it takes none).
+    pub defaults: serde_json::Value,
 }
 
 impl FormatDef {
@@ -121,6 +123,7 @@ impl Registry {
             provides: Vec::new(),
             read_edges: Vec::new(),
             cap_edges: Vec::new(),
+            defaults: serde_json::json!({}),
         });
         self.last_edge = None;
         FormatBuilder {
@@ -223,6 +226,16 @@ impl FormatBuilder<'_> {
         self.registry.last_edge = Some(LastEdge::Direct {
             index: self.registry.direct_edges.len() - 1,
         });
+        self
+    }
+
+    /// Declares that this format, as a target, takes the options `T`. Discovery lists `T::default()`
+    /// as the target's `defaults`, so a host can offer the options with their defaults filled in.
+    pub fn options<T: serde::Serialize + Default>(mut self) -> Self {
+        self.def().defaults = serde_json::to_value(T::default())
+            .ok()
+            .filter(serde_json::Value::is_object)
+            .unwrap_or_else(|| serde_json::json!({}));
         self
     }
 

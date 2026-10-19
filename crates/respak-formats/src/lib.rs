@@ -44,7 +44,8 @@ impl Plugin for FormatsPlugin {
             .extensions(["png"])
             .provides::<dyn Bitmap>()
             .from_cap::<dyn Bitmap>(PngEncode)
-            .cost(2);
+            .cost(2)
+            .options::<PngOptions>();
         r.format("dds")
             .from("file", DdsRead)
             .extensions(["dds"])
@@ -53,7 +54,8 @@ impl Plugin for FormatsPlugin {
         // Written only: a folder of `frame_00001.png ...` from any video.
         r.format("png.frames")
             .label("PNG frames")
-            .from_cap::<dyn Video>(FramesEncode);
+            .from_cap::<dyn Video>(FramesEncode)
+            .options::<FramesOptions>();
         // Written only: CSV or JSON text from any table.
         r.format("table.csv")
             .label("Table (CSV)")
@@ -69,12 +71,14 @@ impl Plugin for FormatsPlugin {
             .label("Cast model")
             .extensions(["cast"])
             .from_cap::<dyn Mesh>(CastEncode)
-            .from_cap::<dyn Animation>(CastAnimationEncode);
+            .from_cap::<dyn Animation>(CastAnimationEncode)
+            .options::<CastOptions>();
         // Written only: 16-bit PCM from any audio.
         r.format("wav")
             .label("WAV audio")
             .extensions(["wav"])
-            .from_cap::<dyn Audio>(WavEncode);
+            .from_cap::<dyn Audio>(WavEncode)
+            .options::<WavOptions>();
     }
 }
 

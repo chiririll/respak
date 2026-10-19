@@ -23,11 +23,13 @@ jobs:
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             bin: respak
+            web: respak-web
             archive: tar.gz
           - name: win64
             os: windows-latest
             target: x86_64-pc-windows-msvc
             bin: respak.exe
+            web: respak-web.exe
             archive: zip
     steps:
       - uses: actions/checkout@v4
@@ -38,9 +40,34 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # The web UI is built once and embedded in `respak-web`; the repo holds no built files.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the web UI
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
       # Default features include `steam`, so the Steam support stays in the release build.
       - name: Build
-        run: cargo build --release --locked -p respak-cli --target ${{ matrix.target }}
+        run: cargo build --release --locked -p respak-cli -p respak-web --target ${{ matrix.target }}
+
+      # The server must come up and answer, with the page and the API.
+      - name: Smoke test the web UI
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          "target/${{ matrix.target }}/release/${{ matrix.web }}" --no-open --port 7878 --dir "$RUNNER_TEMP" &
+          server=$!
+          for _ in $(seq 1 20); do curl -fs http://127.0.0.1:7878/api/info >/dev/null && break; sleep 0.5; done
+          curl -fs http://127.0.0.1:7878/ | grep -q 'id="app"'
+          curl -fs http://127.0.0.1:7878/api/config | grep -q '"exists"'
+          kill $server
 
       - name: Package (linux)
         if: matrix.archive == 'tar.gz'
@@ -49,6 +76,7 @@ jobs:
           name="respak-${{ github.ref_name }}-${{ matrix.name }}"
           mkdir "$name"
           cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$name/"
+          cp "target/${{ matrix.target }}/release/${{ matrix.web }}" "$name/"
           cp README* LICENSE* "$name/" 2>/dev/null || true
           tar -czf "$name.tar.gz" "$name"
           echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
@@ -60,6 +88,7 @@ jobs:
           $name = "respak-${{ github.ref_name }}-${{ matrix.name }}"
           New-Item -ItemType Directory $name | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin }}" $name
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.web }}" $name
           Get-ChildItem README*, LICENSE* -ErrorAction SilentlyContinue | Copy-Item -Destination $name
           Compress-Archive -Path $name -DestinationPath "$name.zip"
           "ASSET=$name.zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV

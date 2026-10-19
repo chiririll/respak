@@ -1,8 +1,7 @@
 //! respak-cli library: the command line and its dispatch; each command lives in `commands/`.
 mod commands;
-mod config;
-mod settings;
-mod setup;
+#[cfg(test)]
+mod resolve_tests;
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -22,11 +21,11 @@ use respak_core::{CancellationToken, Engine, Event};
 #[cfg(feature = "steam")]
 pub use commands::steam::{run_steam, SteamCommand};
 pub use commands::{ConvertArgs, CopyArgs, DiscoverArgs, DumpArgs, ListArgs, NamesArgs, RunArgs};
-pub use config::{load as load_config, Config};
 #[cfg(feature = "steam")]
-pub use settings::SteamSource;
-pub use settings::{Settings, Source};
-pub use setup::{build_engine, fs, open_input, OpenedInput};
+pub use respak_host::SteamSource;
+pub use respak_host::{
+    build_engine, format_size, fs, open_input, parse_size, Config, OpenedInput, Settings, Source,
+};
 
 /// `respak [OPTIONS] [PROFILE] <COMMAND>`: the options may also come after the command, and
 /// anything they leave out is read from `respak.toml` (or `respak-<PROFILE>.toml`).
@@ -108,6 +107,45 @@ pub struct Cli {
 }
 
 impl Cli {
+    /// The config file the command line selects.
+    pub fn config_select(&self) -> respak_host::ConfigSelect {
+        respak_host::ConfigSelect {
+            none: self.no_config,
+            file: self.config.clone(),
+            profile: self.profile.clone(),
+        }
+    }
+
+    /// Reads the config file the command line selects, searching upward from `cwd`.
+    pub fn load_config(&self, cwd: &std::path::Path) -> anyhow::Result<Config> {
+        let hint = format!(" (the commands are: {})", command_names().join(", "));
+        respak_host::load(&self.config_select(), cwd, &hint)
+    }
+
+    /// The options the command line sets, to lay over the config file.
+    pub fn overrides(&self) -> respak_host::Overrides {
+        respak_host::Overrides {
+            root: self.root.clone(),
+            out: self.out.clone(),
+            search: self.search.clone(),
+            no_patches: self.no_patches,
+            rig: self.rig.clone(),
+            studio: self.studio.clone(),
+            cache: self.cache.clone(),
+            report: self.report.clone(),
+            #[cfg(feature = "steam")]
+            steam: self.steam,
+            #[cfg(feature = "steam")]
+            branch: self.branch.clone(),
+            #[cfg(feature = "steam")]
+            depot: self.depot.clone(),
+            #[cfg(feature = "steam")]
+            steam_cache_size: self.steam_cache_size,
+            #[cfg(feature = "steam")]
+            steam_verbose: self.steam_verbose,
+        }
+    }
+
     /// Parses the process arguments; on a usage error or `--help`, prints and exits.
     pub fn parse_args() -> Self {
         Self::try_parse_args(std::env::args_os()).unwrap_or_else(|error| error.exit())
@@ -152,6 +190,14 @@ impl Cli {
         cli.profile = Some(name);
         Ok(cli)
     }
+}
+
+/// The names of the commands, for messages.
+fn command_names() -> Vec<String> {
+    Cli::command()
+        .get_subcommands()
+        .map(|command| command.get_name().to_owned())
+        .collect()
 }
 
 /// A profile name: letters, digits, `-` and `_`, so it cannot name a path.
@@ -209,48 +255,6 @@ pub enum Command {
     Profile(Vec<OsString>),
 }
 
-/// `500MiB`, `8GiB`, `2GB`, `1024` (bytes): binary units for `KiB`/`MiB`/`GiB`/`TiB`, decimal for `KB`/`MB`/`GB`/`TB`.
-pub fn parse_size(text: &str) -> Result<u64, String> {
-    let text = text.trim();
-    let split = text
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(text.len());
-    let (digits, unit) = text.split_at(split);
-    let number: u64 = digits
-        .parse()
-        .map_err(|_| format!("`{text}` is not a size (try 500MiB or 8GiB)"))?;
-    let factor: u64 = match unit.trim().to_ascii_lowercase().as_str() {
-        "" | "b" => 1,
-        "kb" => 1_000,
-        "mb" => 1_000_000,
-        "gb" => 1_000_000_000,
-        "tb" => 1_000_000_000_000,
-        "k" | "kib" => 1 << 10,
-        "m" | "mib" => 1 << 20,
-        "g" | "gib" => 1 << 30,
-        "t" | "tib" => 1 << 40,
-        other => return Err(format!("unknown size unit `{other}` in `{text}`")),
-    };
-    number
-        .checked_mul(factor)
-        .ok_or_else(|| format!("`{text}` is too large"))
-}
-
-/// `bytes` as `512 B`, `1.5 KiB`, `3.2 MiB`, ... (binary units, as `parse_size` reads them).
-pub fn format_size(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["KiB", "MiB", "GiB", "TiB", "PiB"];
-    if bytes < 1024 {
-        return format!("{bytes} B");
-    }
-    let mut value = bytes as f64 / 1024.0;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    format!("{value:.1} {}", UNITS[unit])
-}
-
 /// One line of progress for `event`, or `None` for events a person does not need to see
 /// (failures are in the report). The per-request and per-chunk Steam lines need `verbose`.
 pub fn event_line(event: &Event, verbose: bool) -> Option<String> {
@@ -281,7 +285,7 @@ pub fn event_line(event: &Event, verbose: bool) -> Option<String> {
 
 /// Prints the engine's events to stderr from a background task, until the sender is gone.
 #[cfg(feature = "steam")]
-pub(crate) fn print_events_to_stderr(mut rx: Receiver<Event>, verbose: bool) {
+pub fn print_events_to_stderr(mut rx: Receiver<Event>, verbose: bool) {
     tokio::spawn(async move {
         let mut events = std::io::stderr();
         loop {
@@ -391,30 +395,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn sizes() {
-        for (text, bytes) in [
-            ("1024", 1024),
-            ("1b", 1),
-            ("8GiB", 8 << 30),
-            ("500 MiB", 500 << 20),
-            ("2k", 2 << 10),
-            ("2KB", 2_000),
-            ("2gb", 2_000_000_000),
-            ("1TB", 1_000_000_000_000),
-            ("1tib", 1 << 40),
-        ] {
-            assert_eq!(parse_size(text), Ok(bytes), "{text}");
-        }
-    }
-
-    #[test]
-    fn bad_sizes() {
-        for text in ["", "GiB", "-1", "1.5GiB", "5 parsecs", "99999999999TiB"] {
-            assert!(parse_size(text).is_err(), "{text}");
-        }
-    }
-
     fn custom(name: &str, data: serde_json::Value) -> Event {
         Event::Custom {
             source: "steam".into(),
@@ -457,15 +437,6 @@ mod tests {
         assert_eq!(event_line(&request, false), None);
         assert_eq!(event_line(&chunk, false), None);
         assert!(event_line(&depot, false).is_some());
-    }
-
-    #[test]
-    fn sizes_are_friendly() {
-        assert_eq!(format_size(0), "0 B");
-        assert_eq!(format_size(1023), "1023 B");
-        assert_eq!(format_size(1536), "1.5 KiB");
-        assert_eq!(format_size(5 << 20), "5.0 MiB");
-        assert_eq!(format_size(3 << 30), "3.0 GiB");
     }
 
     #[test]

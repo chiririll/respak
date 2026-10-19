@@ -11,7 +11,9 @@ mod names;
 
 use std::sync::Arc;
 
-use assets::{arig, aseq, asqd, dtbl, matl, rmdl, shader, stgs, stlt, subt, txtr, uiia, uimg, wrap};
+use assets::{
+    arig, aseq, asqd, dtbl, matl, rmdl, shader, stgs, stlt, subt, txtr, uiia, uimg, wrap,
+};
 use codec::{anim_codec, dxbc, oodle, rtech, snowflake};
 use container::{locate, pak, patch, rpak, starpak};
 
@@ -137,7 +139,8 @@ impl Plugin for RespawnPlugin {
             .to("matl.json", MatlJsonEncode);
         r.format("matl.json")
             .label("Material (JSON)")
-            .extensions(["json"]);
+            .extensions(["json"])
+            .options::<assets::matl::MatlJsonOptions>();
         r.format("txtr")
             .label("Respawn texture")
             .from("rpak.asset", TxtrRead)
@@ -164,7 +167,8 @@ impl Plugin for RespawnPlugin {
             .to("uiia.json", UiiaJsonEncode);
         r.format("uiia.json")
             .label("UI image (JSON)")
-            .extensions(["json"]);
+            .extensions(["json"])
+            .options::<assets::uiia::UiiaJsonOptions>();
         r.format("uimg")
             .label("Respawn UI image atlas")
             .from("rpak.asset", UimgRead)
@@ -174,7 +178,8 @@ impl Plugin for RespawnPlugin {
             .to("uimg.json", UimgJsonEncode);
         r.format("uimg.json")
             .label("UI image atlas (JSON)")
-            .extensions(["json"]);
+            .extensions(["json"])
+            .options::<assets::uimg::UimgJsonOptions>();
         // One sprite cut out of an atlas, made by `uimg.json`.
         r.format("uimg.sprite")
             .label("UI image sprite")

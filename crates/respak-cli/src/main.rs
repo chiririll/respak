@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
 
-use respak_cli::{build_engine, load_config, open_input, run_with_events, Cli, Settings};
+use respak_cli::{build_engine, open_input, run_with_events, Cli, Settings};
 use respak_core::CancellationToken;
 
 /// Logs go to stderr; `RUST_LOG=info` shows what Steam is doing, the default is warnings only.
@@ -55,10 +55,18 @@ async fn main() -> anyhow::Result<ExitCode> {
     if cli.config.is_some() && cli.profile.is_some() {
         eprintln!("warning: --config is given, so the profile is ignored");
     }
-    let settings = Settings::resolve(&cli, load_config(&cli, &std::env::current_dir()?)?)?;
+    let settings = Settings::resolve(
+        &cli.overrides(),
+        cli.load_config(&std::env::current_dir()?)?,
+    )?;
     let cancel = CancellationToken::new();
     spawn_ctrl_c(&cancel);
-    let input = open_input(&settings, &cancel).await?;
+    let events = respak_core::Events::new(respak_core::event::DEFAULT_EVENT_CAPACITY);
+    #[cfg(feature = "steam")]
+    if let respak_cli::Source::Steam(steam) = &settings.source {
+        respak_cli::print_events_to_stderr(events.subscribe(), steam.verbose);
+    }
+    let input = open_input(&settings, &cancel, &events).await?;
     let engine = build_engine(&settings, input.operator.clone())?;
     let mut report = open_report(settings.report.as_deref())?;
     let code = run_with_events(

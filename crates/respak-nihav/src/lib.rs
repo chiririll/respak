@@ -43,7 +43,8 @@ impl Plugin for NihavPlugin {
                 r.format(name)
                     .label(label)
                     .extensions([name])
-                    .from_cap::<dyn Video>(VideoFileEncode::new(Arc::new(container), codecs()));
+                    .from_cap::<dyn Video>(VideoFileEncode::new(Arc::new(container), codecs()))
+                    .options::<respak_formats::VideoFileOptions>();
             };
         video_file("avi", "AVI video", NihavContainer::avi());
         video_file("mov", "QuickTime video", NihavContainer::mov());

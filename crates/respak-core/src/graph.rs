@@ -256,7 +256,7 @@ pub(crate) fn targets_from(reg: &Registry, from: &str) -> Vec<TargetInfo> {
         .map(|f| TargetInfo {
             format: f.name.to_owned(),
             label: f.label().to_owned(),
-            defaults: serde_json::json!({}),
+            defaults: f.defaults.clone(),
         })
         .collect()
 }

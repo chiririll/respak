@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use opendal::{services::Fs, Operator};
-use respak_core::{CancellationToken, Engine};
+use respak_core::{CancellationToken, Engine, Events};
 use respak_formats::FormatsPlugin;
 use respak_nihav::NihavPlugin;
 use respak_rad::RadPlugin;
@@ -26,6 +26,12 @@ pub struct OpenedInput {
 }
 
 impl OpenedInput {
+    /// Chunk statistics of the Steam input: requested, downloaded, bytes downloaded, cache hits.
+    #[cfg(feature = "steam")]
+    pub fn steam_stats(&self) -> Option<respak_steam::Stats> {
+        self.steam.as_ref().map(|steam| steam.stats())
+    }
+
     /// A line about what Steam did, if the input is Steam.
     pub fn summary(&self) -> Option<String> {
         #[cfg(feature = "steam")]
@@ -35,7 +41,7 @@ impl OpenedInput {
                 "steam: {} chunks requested: {} downloaded ({}), {} served from the cache",
                 s.chunks_downloaded + s.cache_hits,
                 s.chunks_downloaded,
-                crate::format_size(s.bytes_downloaded),
+                crate::size::format_size(s.bytes_downloaded),
                 s.cache_hits
             ));
         }
@@ -43,11 +49,12 @@ impl OpenedInput {
     }
 }
 
-/// Opens the input: the directory, or the Steam depots (progress goes to stderr).
+/// Opens the input: the directory, or the Steam depots (their progress is published on `events`).
 #[cfg_attr(not(feature = "steam"), allow(unused_variables))]
 pub async fn open_input(
     settings: &Settings,
     cancel: &CancellationToken,
+    events: &Events,
 ) -> anyhow::Result<OpenedInput> {
     match &settings.source {
         Source::Root(root) => Ok(OpenedInput {
@@ -63,9 +70,7 @@ pub async fn open_input(
             if let Some(cap) = steam.cache_size {
                 options.cache_cap = cap;
             }
-            let events = respak_core::Events::new(respak_core::event::DEFAULT_EVENT_CAPACITY);
-            crate::print_events_to_stderr(events.subscribe(), steam.verbose);
-            let opened = respak_steam::open(options, cancel, &events).await?;
+            let opened = respak_steam::open(options, cancel, events).await?;
             Ok(OpenedInput {
                 operator: opened.operator.clone(),
                 steam: Some(opened),
@@ -76,9 +81,18 @@ pub async fn open_input(
 
 /// The engine over `input`, writing to `settings.out`, with every plugin registered.
 pub fn build_engine(settings: &Settings, input: Operator) -> anyhow::Result<Engine> {
+    build_engine_with(settings, input, fs(&settings.out)?)
+}
+
+/// [`build_engine`] writing to `output` instead of the output directory.
+pub fn build_engine_with(
+    settings: &Settings,
+    input: Operator,
+    output: Operator,
+) -> anyhow::Result<Engine> {
     let mut builder = Engine::builder()
         .input(input)
-        .output(fs(&settings.out)?)
+        .output(output)
         .plugin(FormatsPlugin)
         .plugin(NihavPlugin)
         .plugin(RadPlugin)

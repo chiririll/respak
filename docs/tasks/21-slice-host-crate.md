@@ -1,5 +1,5 @@
 # 21 · Slice: `respak-host` crate
-**Status:** todo (spec done; sketch and gate pending) · **Depends on:** nothing · **See:** [webui.md](../design/webui.md) §3, project.md §10, [cli.md](../cli.md#config-file-and-profiles)
+**Status:** in-progress (built; demo pending) · **Depends on:** nothing · **See:** [webui.md](../design/webui.md) §3, project.md §10, [cli.md](../cli.md#config-file-and-profiles)
 
 ## Goal
 Move the code both hosts need out of `respak-cli`, so `respak-web` (slice 23) reuses it instead of copying it. **No behaviour change:** the CLI's commands, flags, messages and tests stay as they are.
@@ -33,3 +33,10 @@ Any web code. Any change to flags or file format. The version catalog.
 - Saving a config with a comment keeps the comment (if `toml_edit` is chosen).
 - Engine builds from settings with `services::Memory` operators (no disk).
 - `cargo tree -p respak-host` shows no clap.
+
+## Built
+Built as specified, without the sketch gate (the user asked for the whole web UI to be done without questions).
+- `crates/respak-host`: `config` (model, lookup, `ConfigSelect`, `load`, `load_file`, `save`), `settings` (`Overrides` instead of clap types, `Settings::resolve`), `setup` (`open_input` now takes the `Events` to publish on instead of printing to stderr itself; `build_engine_with` for a different output), `size`. Features: `steam` (default).
+- Saving keeps comments, layout and key order: `toml_edit` merges the new values into the existing document, and keys that are gone are removed.
+- `respak-cli` keeps clap, the commands, printing and Ctrl-C; `Cli::overrides()` and `Cli::load_config()` bridge to the host. The old settings tests live on as `resolve_tests.rs` and pass unchanged in substance. `cargo build -p respak-cli --no-default-features` builds without Steam.
+- Added tests: config round trip, comments kept, removed keys dropped, missing profile.

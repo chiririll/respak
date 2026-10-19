@@ -1,5 +1,5 @@
 # 27 · Slice: version catalog
-**Status:** todo (spec done; sketch and gate pending) · **Depends on:** 26 · **See:** [webui.md](../design/webui.md) §5a
+**Status:** in-progress (built; shipped catalog has no versions) · **Depends on:** 26 · **See:** [webui.md](../design/webui.md) §5a
 
 ## Goal
 The Steam settings offer named game versions (seasons, events, hotfixes) instead of manifest IDs. Picking one fills `[steam]` in `respak.toml` with concrete pinned manifests.
@@ -26,3 +26,9 @@ The Steam settings offer named game versions (seasons, events, hotfixes) instead
 - Resolve: unlisted depot uses the closest earlier manifest; ties by file order; no earlier manifest → left out and reported; a depot not selected is not resolved.
 - Ordering by TOML date; versions of different groups do not affect each other's fallback.
 - Resolved output parses as a valid `[steam]` section through `respak-host`.
+
+## Built
+`crates/respak-web/src/catalog.rs` with the TOML model of webui.md §5a, strict parsing (errors name the file, and the line when the TOML parser has one), merge of shipped + user files by id, and resolution. API: `GET /api/catalog`, `POST /api/catalog/resolve`. The picker is in the Steam settings.
+- Decided: user files are `.respak/catalog/*.toml` next to the settings; a broken user file is reported and the others still load; groups are for display only (the fallback order is by date across all versions, ties by file order).
+- Shipped data: `catalog/shipped.toml` has Apex Legends (app 1172470, depot 1172471) and Titanfall 2 (app 1237970) with **no versions**: manifest ids are collected from SteamDB by hand and none were invented.
+- Tests: parse errors, merge, resolution (fallback, left out, defaults, ties), a resolved version parses as a `[steam]` section through `respak-host`, the API.

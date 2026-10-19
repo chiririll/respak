@@ -1,7 +1,18 @@
 [workspace]
 members = ["crates/*", "integration"]
-# `cargo build` / `cargo test` without `-p` skip the integration crate.
-default-members = ["crates/*"]
+# `cargo build` / `cargo test` without `-p` skip the integration crate and `respak-web` (which
+# needs the built frontend, hence Node).
+default-members = [
+    "crates/respak-cli",
+    "crates/respak-core",
+    "crates/respak-formats",
+    "crates/respak-host",
+    "crates/respak-nihav",
+    "crates/respak-rad",
+    "crates/respak-respawn",
+    "crates/respak-respawn-testing",
+    "crates/respak-steam",
+]
 resolver = "2"
 
 [workspace.package]
@@ -17,6 +28,7 @@ respak-respawn-testing = { path = "crates/respak-respawn-testing" }
 respak-formats = { path = "crates/respak-formats" }
 respak-nihav = { path = "crates/respak-nihav" }
 respak-rad = { path = "crates/respak-rad" }
+respak-host = { path = "crates/respak-host", default-features = false }
 
 # Pre-1.0: exact pin (see docs/design/project.md §3).
 opendal = { version = "=0.59.4", default-features = false, features = ["services-fs", "executors-tokio"] }
@@ -49,6 +61,8 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+rust-embed = "8"
 
 [workspace.lints.rust]
 missing_docs = "warn"

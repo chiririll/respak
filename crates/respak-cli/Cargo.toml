@@ -11,6 +11,7 @@ respak-respawn.workspace = true
 respak-formats.workspace = true
 respak-nihav.workspace = true
 respak-rad.workspace = true
+respak-host = { path = "../respak-host", default-features = false }
 clap.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
@@ -25,7 +26,7 @@ respak-steam = { path = "../respak-steam", optional = true }
 [features]
 default = ["steam"]
 # Steam login and depot input; the only Steam code in the workspace lives in respak-steam.
-steam = ["dep:respak-steam"]
+steam = ["dep:respak-steam", "respak-host/steam"]
 
 [dev-dependencies]
 respak-respawn.workspace = true

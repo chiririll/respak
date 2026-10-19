@@ -1,0 +1,27 @@
+# The versions that ship with respak-web: games, their depots, and named versions with the
+# Steam manifests they were (taken from SteamDB). Your own files in `<settings folder>/.respak/catalog/*.toml`
+# add to this or replace entries by `id`; this file is never edited by the program.
+#
+# A version lists only the depots that CHANGED. For a depot it does not list, the closest earlier
+# version (by `date`) that lists it gives the manifest. Manifest ids are strings (they are 64-bit).
+#
+#   [[apex.versions]]
+#   id = "s20-launch"                 # a slug; a user file replaces a version by this id
+#   name = "Season 20 launch"
+#   date = 2024-02-13                 # orders the versions
+#   type = "season"                   # season | event | hotfix
+#   group = "season-20"               # optional: versions of a group are shown together
+#   manifests = [ { depot = 1172471, manifest = "7843921000000000000" } ]
+
+[apex]
+name = "Apex Legends"
+app_id = 1172470
+
+[[apex.depots]]
+id = 1172471
+name = "Apex Legends Content"
+default = true
+
+[titanfall2]
+name = "Titanfall 2"
+app_id = 1237970

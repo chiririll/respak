@@ -255,6 +255,15 @@ impl Engine {
         }
     }
 
+    /// Opens `path` and reads it as the format it is detected to be, so the value has the
+    /// capabilities of that format (an asset a container hands out is read as its kind). `path`
+    /// is a single path, not a glob. An unrecognised file is `UnknownFormat`.
+    pub async fn open_read(&self, path: &str, cancel: &CancellationToken) -> Result<Value> {
+        let cx = self.cx(cancel);
+        let value = self.mediator.open(path, &cx).await?;
+        self.mediator.identify(value, &cx).await
+    }
+
     /// Opens a path or glob on the input: one value per match (`NoMatch` if a glob matches
     /// nothing, `NotFound` for a path that is not there).
     pub async fn open_matches(

@@ -1,5 +1,5 @@
 # 25 · Slice: web convert, basket and jobs
-**Status:** todo (spec done; sketch and gate pending) · **Depends on:** 22, 24 · **See:** [webui.md](../design/webui.md) §2 step 4, §4, §7 (options forms), §10
+**Status:** in-progress (built; demo pending) · **Depends on:** 22, 24 · **See:** [webui.md](../design/webui.md) §2 step 4, §4, §7 (options forms), §10
 
 ## Goal
 Tick entries in the tree into a basket, pick a target, set options in a generated form, convert. Several jobs run at once; each shows progress and can be cancelled. Results are written to the output directory and offered for download.
@@ -26,3 +26,10 @@ Writing Respawn formats. A job history across restarts. Compare / diff of output
 - Output download: a path outside the output directory (`..`, absolute) → 404.
 - A failing output appears as an error entry while the rest succeed.
 - Form rendering from a schema: defaults shown, invalid value blocks submit (frontend test).
+
+## Built
+Basket (rows survive navigation; a folder or pak is one row, optionally filtered by a kind), convert dialog, jobs panel.
+- `POST /api/convert` takes `{items: [{from, to, path?}]}`; a job runs its rows one `convert` call each, so progress is rows done / rows and every row has its own report. `DELETE /api/jobs/{id}` cancels a running job (a `CancellationToken` child of the session's) or dismisses a finished one. Updates go over SSE. A finished job stays until dismissed.
+- Downloads are individual links per file (`GET /api/output/…`, confined to the output folder: `..`, absolute and drive paths are 404). No zip.
+- The engine's `convert` future is not provably `Send` (a closure inside it is not general over its lifetimes), so `session::detached_convert` drives it on a thread of its own; the rest of the engine's calls are fine in handlers.
+- Options form from the defaults of the target (see slice 22).

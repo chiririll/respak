@@ -2,7 +2,7 @@
 
 A browser UI for respak: choose where the game files come from (Steam or a local folder), browse every file as a tree with search, open files in a viewer, and convert them. It runs as `respak serve` and is a thin layer over the same `Engine` the CLI uses.
 
-**Status:** draft, after the first round of questions. Items marked **(?)** are open and are collected in §12. This document is the target design; it follows the slice workflow of [project.md](project.md) §1 and is built only as slices need it.
+**Status:** built (slices 21-28, see [tasks](../tasks/README.md); what was decided while building is in each task's *Built* section and in §13). Items marked **(?)** are open and are collected in §12. This document is the target design; it follows the slice workflow of [project.md](project.md) §1 and is built only as slices need it.
 
 ---
 
@@ -159,3 +159,13 @@ Decided: search scopes (§6), no UI cache (§9), output goes to the out director
 4. Release packaging (CI jobs, archive names). Platforms are decided: Windows x64 and Linux x64; macOS is not targeted.
 5. Option schemas: `schemars` or hand-written, and who owns them (core vs. plugins).
 6. Build order of slices (proposal): `respak-host` extraction → option schemas → server + settings + tree → viewers → convert + jobs → Steam login in the UI → version catalog.
+
+## 13. Decided while building
+The open items of §12 were settled without a gate, because the user asked for the whole UI at once:
+1. **Catalog:** schema as in §5a; user files in `.respak/catalog/*.toml` beside the settings; the shipped file has the games and depots and no versions (no manifest was invented).
+2. **Frontend:** Svelte 5 + Vite + TypeScript without SvelteKit; `rust-embed` (a debug build reads `web/dist` from disk); live updates over SSE.
+3. **UI state:** only the theme and the sidebar width, in `localStorage`; the Steam login state is read from `.respak/account.json` (never the token).
+4. **Release:** one archive per platform with both binaries (`respak` and `respak-web`); the workflow builds the frontend first.
+5. **Option schemas:** only `defaults` for now (`FormatBuilder::options::<T>()`), the form is made from them; JSON Schema is still to do.
+6. **Slice order** was followed, with 22 reduced to defaults.
+Also: a server-side folder browser for the source field, a small in-memory preview cache (12 entries / 64 MiB; §9 said none), hex of the first KiB as the fallback viewer, and `Engine::open_read` in core so a viewer can read an entry's capabilities.

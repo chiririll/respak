@@ -61,6 +61,28 @@ pub async fn run(
     }
 }
 
+/// A QR code as modules, for a host that draws it itself.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct QrMatrix {
+    /// Modules per side (without a quiet zone).
+    pub size: usize,
+    /// Row by row, `true` for a dark module; `size * size` entries.
+    pub dark: Vec<bool>,
+}
+
+/// The modules of the QR code of `url`.
+pub fn matrix(url: &str) -> Result<QrMatrix> {
+    let code = QrCode::new(url.as_bytes()).map_err(|e| Error::Protocol(format!("QR code: {e}")))?;
+    Ok(QrMatrix {
+        size: code.width(),
+        dark: code
+            .to_colors()
+            .into_iter()
+            .map(|c| c == qrcode::Color::Dark)
+            .collect(),
+    })
+}
+
 /// Renders a URL as a terminal QR code (two modules per character cell).
 pub fn render(url: &str) -> Result<String> {
     let code = QrCode::new(url.as_bytes()).map_err(|e| Error::Protocol(format!("QR code: {e}")))?;
@@ -81,6 +103,15 @@ mod tests {
             self.seen_ids.push(client_id);
             Ok(self.replies.remove(0))
         }
+    }
+
+    #[test]
+    fn the_matrix_is_square_and_has_both_colours() {
+        let m = matrix("https://s.team/q/1/1").unwrap();
+        assert_eq!(m.dark.len(), m.size * m.size);
+        assert!(m.dark.contains(&true) && m.dark.contains(&false));
+        // The three finder patterns start with a dark corner module.
+        assert!(m.dark[0] && m.dark[m.size - 1] && m.dark[(m.size - 1) * m.size]);
     }
 
     #[tokio::test]

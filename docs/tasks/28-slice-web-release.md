@@ -1,5 +1,5 @@
 # 28 · Slice: web release packaging
-**Status:** todo (spec pending: packaging details are open) · **Depends on:** 23 (earlier is fine) · **See:** [webui.md](../design/webui.md) §3, §12
+**Status:** in-progress (workflow edited; not run) · **Depends on:** 23 (earlier is fine) · **See:** [webui.md](../design/webui.md) §3, §12
 
 ## Goal
 CI builds the frontend and the `respak-web` binary for Windows x64 and Linux x64, with the frontend embedded, and attaches them to a release alongside the CLI.
@@ -20,3 +20,7 @@ macOS builds. Installers. Auto-update.
 ## Proposed tests (for the gate)
 - CI: the release job produces a binary that serves `/` and `/api/config` on a smoke run.
 - `cargo build` (default members) still needs no Node.
+
+## Built
+`.github/workflows/release.yml` now sets up Node, builds `web/`, builds `respak-cli` and `respak-web` for Windows x64 and Linux x64, smoke-tests the Linux server (`/`, `/api/info`, `/api/config`) and ships both binaries in the one archive per platform (`respak-<tag>-<platform>`). `docs/web.md` is the user guide and the README links to it. `cargo build` (default members) still needs no Node.
+- Open: whether the AGPL notice has to appear in the UI.

@@ -50,10 +50,17 @@ respak --steam 1172470 --depot 1172471 --out out convert "paks/Win64/common.rpak
 
 Keep the options in a `respak.toml` (or a `respak-apex.toml`, used as `respak apex convert ...`) instead of typing them every time, see the [CLI guide](docs/cli.md#config-file-and-profiles).
 
+Prefer a browser? `respak-web` serves a UI on this computer: browse the files as a tree, preview textures, atlases and sounds, tick what you want and convert it ([web guide](docs/web.md)):
+
+```sh
+respak-web
+```
+
 ## Documentation
 
 - [CLI guide](docs/cli.md): commands, options, request files, formats.
 - [Steam guide](docs/steam.md): logging in, choosing depots, cache, security.
+- [Web UI guide](docs/web.md): settings, explorer, viewers, convert, Steam login, version catalog.
 
 ## Workspace
 
@@ -65,7 +72,9 @@ Keep the options in a `respak.toml` (or a `respak-apex.toml`, used as `respak ap
 | `respak-rad` | RAD Game Tools formats: Miles banks and Bink 2 video |
 | `respak-nihav` | AVI/MOV/Y4M encoding |
 | `respak-steam` | Steam login and depot access |
+| `respak-host` | what the CLI and the web UI share: `respak.toml`, settings, building the engine |
 | `respak-cli` | the `respak` binary |
+| `respak-web` | the `respak-web` binary: local web UI (the frontend lives in `web/`) |
 
 ## License
 

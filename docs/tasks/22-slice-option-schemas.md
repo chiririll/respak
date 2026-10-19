@@ -1,5 +1,5 @@
 # 22 · Slice: target option schemas
-**Status:** todo (spec done; sketch and gate pending) · **Depends on:** nothing (can run in parallel with 21) · **See:** [webui.md](../design/webui.md) §7, project.md §8 `Discovery`, §11 open question (`schemars`?)
+**Status:** in-progress (defaults only; JSON Schema not built) · **Depends on:** nothing (can run in parallel with 21) · **See:** [webui.md](../design/webui.md) §7, project.md §8 `Discovery`, §11 open question (`schemars`?)
 
 ## Goal
 Every target a plugin offers describes its options as a JSON Schema, so a UI can render a form without knowing the format.
@@ -26,3 +26,8 @@ Any UI. Validation messages beyond what parsing already gives.
 - Per target: an option the struct rejects is also rejected by the schema (and the reverse for a sample of valid values).
 - `Discovery` JSON for a texture contains `schema` for each target.
 - No plugin-to-plugin dependency appears in `cargo tree`.
+
+## Built
+Only the part the web UI cannot do without: `FormatBuilder::options::<T>()` (core) records `T::default()` as the target's `defaults`, and `discover` / the format graph report it. Registered for `png`, `png.frames`, `cast`, `wav`, `avi` / `mov` / `y4m`, `matl.json`, `uiia.json` and `uimg.json`. The web form is generated from these defaults (booleans, numbers, strings, JSON for the rest; an optional option is empty = not sent).
+
+Not built: JSON Schema (`schemars`), so no choices, ranges or descriptions in the form, and no per-target validation beyond what parsing already says. `mips` is `"first"` / `"all"` / a number, so the form sends a numeric string as a number. When schemas come, `defaults` stays and a `schema` is added next to it.
