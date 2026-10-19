@@ -7,7 +7,7 @@ Already built, with a spec describing what respak implements: [txtr](txtr.md), [
 rsx = `C:\Users\chiririll\Projects\rsx`. Paths in the specs are relative to `rsx/src`.
 
 ## Index
-**Written so far:** miles, miles-codecs, vpk, wrap, wepn, impa, rmdl, arig, aseq, anir (plus the built-format specs above). Every other row is planned, not researched yet (the first research run stopped at the session limit). `mt4a` and `txtx` are not supported by rsx. `wrap`, `wepn` and `impa` are rpak assets, not VPK entries.
+**Written so far:** every row below (plus the built-format specs above). The specs written in the second research run (source-mdl, font, txan, txls, msnp, efct-rpsk, rlcd, ui, rtk, shdr, shds, rson, locl, rmap, odl, bpk) come from reading the rsx source; offsets are hand-computed. Checked against real Apex paks (each has a "Verified" banner): rlcd, txls, msnp, txan, rson, locl, rmap, odl (`odla`/`odlp`), shds, shdr, efct. **Not yet checked:** ui, rtk, font, odlc, rpsk (the Steam login expired mid-run; `rpsk` is in no current pak), source-mdl, bpk. `mt4a` and `txtx` are not supported by rsx. `wrap`, `wepn` and `impa` are rpak assets, not VPK entries.
 | Spec | rsx kind (FourCC) | What | Group | respak support |
 |---|---|---|---|---|
 | [rmdl](rmdl.md) | `mdl_` | rpak model (studiohdr r5, VG vertex data) | model | partially |
