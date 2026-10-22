@@ -52,7 +52,7 @@ thiserror = "2"
 # Oodle decoder (port of ooz, GPL-3.0+): decoding only, never the proprietary oo2core. Our fork: one fix on top of upstream dev.
 oozextract = { git = "https://github.com/chiririll/oozextract", rev = "4b9423158df788d7f3e5b754d37f4c8183682af9" }
 # Bink 2 demuxer and decoders (AGPL-3.0, pure Rust, not on crates.io). Our fork: upstream history plus fixes to the Bink 2 and DCT audio decoders, and a raw-block Bink Audio decoder for Miles (branch miles-bink-audio).
-nihav_core = { git = "https://github.com/chiririll/nihav", rev = "c91ea6294c92f6716d1fac69949b3920f62c50ef" }
+nihav_core = { git = "https://github.com/chiririll/nihav", rev = "eda2fb2ffb58391a4a7b0bd24d97b260e0401309" }
 nihav_rad = { git = "https://github.com/chiririll/nihav", rev = "c91ea6294c92f6716d1fac69949b3920f62c50ef", default-features = false, features = ["demuxer_bink", "decoder_bink2", "decoder_binkaud"] }
 # Video encoders and muxers (AVI + MJPEG for now), the same fork and revision.
 nihav_commonfmt = { git = "https://github.com/chiririll/nihav", rev = "c91ea6294c92f6716d1fac69949b3920f62c50ef", default-features = false, features = ["muxer_avi", "muxer_mov", "muxer_y4m", "encoder_jpeg", "encoder_cinepak", "encoder_rawvideo", "encoder_zmbv"] }
