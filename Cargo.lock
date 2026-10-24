@@ -1801,7 +1801,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 [[package]]
 name = "oozextract"
 version = "0.5.5"
-source = "git+https://github.com/chiririll/oozextract?rev=4b9423158df788d7f3e5b754d37f4c8183682af9#4b9423158df788d7f3e5b754d37f4c8183682af9"
+source = "git+https://github.com/chiririll/oozextract?rev=5ff5dc14be82160ab2c605dd844a46ba46e52d43#5ff5dc14be82160ab2c605dd844a46ba46e52d43"
 dependencies = [
  "bytemuck",
  "bytes",

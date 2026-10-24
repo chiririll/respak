@@ -50,7 +50,7 @@ tempfile = "3"
 
 thiserror = "2"
 # Oodle decoder (port of ooz, GPL-3.0+): decoding only, never the proprietary oo2core. Our fork: one fix on top of upstream dev.
-oozextract = { git = "https://github.com/chiririll/oozextract", rev = "4b9423158df788d7f3e5b754d37f4c8183682af9" }
+oozextract = { git = "https://github.com/chiririll/oozextract", rev = "5ff5dc14be82160ab2c605dd844a46ba46e52d43" }
 # Bink 2 demuxer and decoders (AGPL-3.0, pure Rust, not on crates.io). Our fork: upstream history plus fixes to the Bink 2 and DCT audio decoders, and a raw-block Bink Audio decoder for Miles (branch miles-bink-audio).
 nihav_core = { git = "https://github.com/chiririll/nihav", rev = "c91ea6294c92f6716d1fac69949b3920f62c50ef" }
 nihav_rad = { git = "https://github.com/chiririll/nihav", rev = "c91ea6294c92f6716d1fac69949b3920f62c50ef", default-features = false, features = ["demuxer_bink", "decoder_bink2", "decoder_binkaud"] }
