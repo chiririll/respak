@@ -67,6 +67,10 @@ pub struct Cli {
     /// Directory for the plugin cache (e.g. the guid -> pak index); created if missing.
     #[arg(long, value_name = "DIR", global = true)]
     pub cache: Option<PathBuf>,
+    /// Keep finished conversions in memory, up to this size, so a texture shared by several
+    /// assets is converted once, e.g. `256MiB`. Off by default; `0` is off.
+    #[arg(long, value_name = "SIZE", value_parser = parse_size, global = true)]
+    pub memory_cache: Option<u64>,
     /// Write the JSON result to this file instead of stdout (errors still go to stderr).
     #[arg(long, value_name = "FILE", global = true)]
     pub report: Option<PathBuf>,
@@ -132,6 +136,7 @@ impl Cli {
             rig: self.rig.clone(),
             studio: self.studio.clone(),
             cache: self.cache.clone(),
+            memory_cache: self.memory_cache,
             report: self.report.clone(),
             #[cfg(feature = "steam")]
             steam: self.steam,

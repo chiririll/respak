@@ -37,6 +37,7 @@ Every slice ends with:
 | 26 | [Web: Steam login](26-slice-web-steam.md) | log in by QR, browse a depot | 23 | in-progress (built; never run against Steam) |
 | 27 | [Web: version catalog](27-slice-web-catalog.md) | pick "Season 20 launch" | 26 | in-progress (built; shipped catalog has no versions) |
 | 28 | [Web: release packaging](28-slice-web-release.md) | CI-built `respak-web` archives | 23 | in-progress (workflow edited; not run) |
+| 29 | [In-memory cache (core)](29-slice-memory-cache.md) | a texture shared by two materials converts once | 13 | in-progress (built; demo pending) |
 
 Slices 21-28 build the web UI ([webui.md](../design/webui.md), guide: [../web.md](../web.md)). They were built in one go without the sketch gates, at the user's request; each task file has a `## Built` section with what was decided on the way.
 

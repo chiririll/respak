@@ -206,3 +206,23 @@ mod steam {
         .contains("cache_size"));
     }
 }
+
+#[test]
+fn the_memory_cache_is_off_unless_asked_for() {
+    let base = ["--root", "r", "--out", "o"];
+    assert_eq!(resolve(&base, "").unwrap().memory_cache, None);
+    let on = [&base[..], &["--memory-cache", "256MiB"]].concat();
+    assert_eq!(resolve(&on, "").unwrap().memory_cache, Some(256 << 20));
+    let zero = [&base[..], &["--memory-cache", "0"]].concat();
+    assert_eq!(resolve(&zero, "").unwrap().memory_cache, None);
+}
+
+#[test]
+fn the_memory_cache_can_come_from_the_config_file() {
+    let base = ["--root", "r", "--out", "o"];
+    let file = "memory_cache = \"1MiB\"";
+    assert_eq!(resolve(&base, file).unwrap().memory_cache, Some(1 << 20));
+    let cli = [&base[..], &["--memory-cache", "0"]].concat();
+    assert_eq!(resolve(&cli, file).unwrap().memory_cache, None);
+    assert!(message(&base, "memory_cache = \"lots\"").contains("memory_cache"));
+}

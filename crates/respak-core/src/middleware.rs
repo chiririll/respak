@@ -90,12 +90,33 @@ pub struct CycleGuardMiddleware;
 ///
 /// A request is identified by its source key, target format and options. While one is in
 /// flight, others for the same key join its `Shared` future; the entry is dropped when the
-/// run ends, so later requests run again. Each request records "parent waits for key" in a
+/// run ends, so later requests run again unless the memory cache is on (see
+/// [`DedupMiddleware::with_memory_cache`]). Each request records "parent waits for key" in a
 /// wait-for graph; one that would close a loop (concurrent chains A -> B and B -> A) is a
 /// `DependencyCycle` instead of a deadlock.
 #[derive(Default)]
 pub struct DedupMiddleware {
     state: Arc<Mutex<DedupState>>,
+    /// Finished results, weighted by `approx_size`; `None` when the memory cache is off.
+    done: Option<moka::sync::Cache<String, Value>>,
+}
+
+impl DedupMiddleware {
+    /// Keeps finished results of up to `bytes` (by `approx_size`), least recently used first out.
+    ///
+    /// Only successes are kept, and a value that reports no size is not kept. A cached value is
+    /// returned without running the handler again, so it is as old as its first conversion.
+    pub fn with_memory_cache(bytes: u64) -> Self {
+        let done = moka::sync::Cache::builder()
+            .max_capacity(bytes)
+            .eviction_policy(moka::policy::EvictionPolicy::lru())
+            .weigher(|_, v: &Value| u32::try_from(v.approx_size()).unwrap_or(u32::MAX))
+            .build();
+        Self {
+            done: Some(done),
+            ..Self::default()
+        }
+    }
 }
 
 type Run = Shared<BoxFuture<'static, Result<Value>>>;
@@ -201,6 +222,9 @@ impl Middleware for CycleGuardMiddleware {
 impl Middleware for DedupMiddleware {
     async fn around(&self, req: &Convert, cx: &Cx, next: Next<'_>) -> Result<Value> {
         let key = request_key(req);
+        if let Some(value) = self.done.as_ref().and_then(|done| done.get(&key)) {
+            return Ok(value);
+        }
         // The guard pushed `key`; the request that asked for it is the entry before.
         let parent = cx
             .chain()
@@ -242,14 +266,21 @@ impl Middleware for DedupMiddleware {
                         source: req.source.clone(),
                         to: req.to.clone(),
                     };
-                    let (cx, next, id, shared) = (
+                    let (cx, next, id, shared, done) = (
                         cx.clone(),
                         next.into_owned(),
                         key.clone(),
                         self.state.clone(),
+                        self.done.clone(),
                     );
                     let run = async move {
                         let result = next.run(&owned, &cx).await;
+                        if let (Some(done), Ok(value)) = (&done, &result) {
+                            if value.approx_size() > 0 {
+                                done.insert(id.clone(), value.clone());
+                                done.run_pending_tasks();
+                            }
+                        }
                         shared.lock().unwrap().in_flight.remove(&id);
                         result
                     }
@@ -293,11 +324,15 @@ impl Middleware for EventsMiddleware {
 }
 
 /// The built-ins in their fixed order (docs/design/project.md §5.6).
-pub(crate) fn builtins() -> Vec<Arc<dyn Middleware>> {
+pub(crate) fn builtins(memory_cache: Option<u64>) -> Vec<Arc<dyn Middleware>> {
+    let dedup = match memory_cache {
+        Some(bytes) => DedupMiddleware::with_memory_cache(bytes),
+        None => DedupMiddleware::default(),
+    };
     vec![
         Arc::new(CancellationMiddleware),
         Arc::new(CycleGuardMiddleware),
-        Arc::new(DedupMiddleware::default()),
+        Arc::new(dedup),
         Arc::new(TracingMiddleware),
         Arc::new(EventsMiddleware),
     ]

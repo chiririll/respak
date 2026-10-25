@@ -45,6 +45,9 @@ pub struct Mediator {
     registry: Arc<Registry>,
     events: Events,
     middleware: Arc<[Arc<dyn Middleware>]>,
+    /// Host middleware, kept so the chain can be rebuilt when the built-ins change.
+    host: Vec<Arc<dyn Middleware>>,
+    memory_cache: Option<u64>,
 }
 
 impl Mediator {
@@ -53,7 +56,9 @@ impl Mediator {
         Self {
             registry: Arc::new(registry),
             events: Events::new(DEFAULT_EVENT_CAPACITY),
-            middleware: crate::middleware::builtins().into(),
+            middleware: crate::middleware::builtins(None).into(),
+            host: Vec::new(),
+            memory_cache: None,
         }
     }
 
@@ -65,10 +70,22 @@ impl Mediator {
 
     /// Sets host middleware, run after the built-ins.
     pub(crate) fn with_middleware(mut self, middleware: Vec<Arc<dyn Middleware>>) -> Self {
-        let mut chain = crate::middleware::builtins();
-        chain.extend(middleware);
-        self.middleware = chain.into();
+        self.host = middleware;
+        self.rebuild_chain();
         self
+    }
+
+    /// Keeps finished conversions of up to `bytes` in memory (the builder's `memory_cache`).
+    pub(crate) fn with_memory_cache(mut self, bytes: u64) -> Self {
+        self.memory_cache = Some(bytes);
+        self.rebuild_chain();
+        self
+    }
+
+    fn rebuild_chain(&mut self) {
+        let mut chain = crate::middleware::builtins(self.memory_cache);
+        chain.extend(self.host.iter().cloned());
+        self.middleware = chain.into();
     }
 
     /// The `cache_version` the plugin `id` declared (0 if unknown).

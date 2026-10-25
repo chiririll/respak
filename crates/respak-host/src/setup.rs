@@ -106,5 +106,8 @@ pub fn build_engine_with(
     if let Some(dir) = &settings.cache {
         builder = builder.cache(fs(dir)?);
     }
+    if let Some(bytes) = settings.memory_cache {
+        builder = builder.memory_cache(bytes);
+    }
     Ok(builder.build()?)
 }

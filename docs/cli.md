@@ -19,6 +19,7 @@ Paths you pass to commands (`from`, `PATH`) always use `/` and are relative to `
 | `--rig AUTO\|GUID\|PATH` | The skeleton animation sequences (`aseq`) are bound to. `auto` (default) takes the `arig` (else the `mdl_`) that lists the sequence, looked for in its pak and the `common.rpak` beside it. Otherwise the guid (`0x...`) or the path of an `arig` / `mdl_` |
 | `--studio AUTO\|LAYOUT` | How the studio layout of an `arig` is found: `auto` (a `mdl_` in the same pak, else the block itself) or `v16`, `v17`, `v19_2` |
 | `--cache DIR` | Remembers where `--search` found each asset, so later runs are faster. Optional |
+| `--memory-cache SIZE` | Keep finished conversions in memory, up to `SIZE` (e.g. `256MiB`), so an asset used by several others (a texture shared by materials) is converted once. Off by default, `0` is off. Also `memory_cache` in the config file |
 | `--report FILE` | Write the JSON report to a file instead of stdout |
 | `--steam`, `--depot`, `--branch`, `--steam-cache-size` | Read from Steam, see [steam.md](steam.md) |
 | `--config FILE`, `--no-config`, `-p/--profile NAME` | Which config file supplies the defaults, see [below](#config-file-and-profiles) |
@@ -34,6 +35,7 @@ cache = ".cache"
 report = "report.json"
 search = ["paks/Win64/*.rpak"]
 no_patches = false
+memory_cache = "256MiB"
 
 [respawn]
 rig = "auto"

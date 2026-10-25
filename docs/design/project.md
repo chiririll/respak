@@ -45,7 +45,7 @@ crates/
 | Errors / logs | `thiserror`, `tracing` | |
 | CLI | `clap` (derive), `anyhow` | CLI crate only |
 | Oodle decoding | `oozextract` | `respak-respawn`. Pure-Rust port of ooz (reverse-engineered, GPL-3.0+; the crate says MIT, treated as GPL-3.0+, compatible with AGPL). Decoder only. The proprietary Oodle library (oo2core) is never linked. |
-| Candidate | `moka` (in-memory cache, later) | added when needed |
+| In-memory cache | `moka` (`sync` feature only) | `respak-core`: LRU weighted by `approx_size`, see §7 |
 
 Rejected, don't reopen without asking: a home-made filesystem replacing OpenDAL; `object_store`; `vfs`; `tower` for the mediator; a message broker; first-match `can_handle` routing (→ scoring); shared intermediate structs such as one `Texture` for every format (→ capabilities); a declarative probe DSL (→ score functions, §5.3); a path table precomputed at build time (→ per-request path search, §5.2); format-specific fields in OpenDAL `Metadata` (→ typed container entries, §5.4).
 
@@ -72,7 +72,7 @@ pub type Value = Arc<dyn Data>;
 pub trait Data: Any + Send + Sync + Debug {
     fn format(&self) -> &FormatId;                  // name + detected version, e.g. txtr@10.0
     fn key(&self) -> &ValueKey;                     // identity for dedup and cycle detection
-    fn approx_size(&self) -> usize { 0 }            // for the later in-memory cache (§7)
+    fn approx_size(&self) -> usize { 0 }            // weight in the in-memory cache (§7)
     fn as_blob(&self) -> Option<&dyn Blob> { None } // capabilities (§5.4), default: unsupported
     fn as_container(&self) -> Option<&dyn Container> { None }
     fn as_metadata(&self) -> Option<&dyn Metadata> { None }
@@ -167,7 +167,7 @@ impl Mediator {
 `async fn around(&self, req: &Convert, cx: &Cx, next: Next<'_>) -> Result<Value>`. Built-ins, in order:
 1. **Cancellation:** `Cancelled` if the token is triggered at request start. Long-running handlers check the token themselves.
 2. **Cycle guard:** a key already in the call chain → `DependencyCycle`. Also a **wait-for graph** over in-flight keys (recorded when a request joins an in-flight future), so concurrent chains A→B / B→A can't deadlock.
-3. **Dedup:** merges **concurrent** requests: in-flight map (source key, target) → `Shared` future. Removed on completion, except mounted volumes, which live until the `Engine` call ends. Non-overlapping requests for the same thing are converted again until the in-memory cache exists (§7); the written-paths map (§5.5) keeps that from writing a file twice.
+3. **Dedup:** merges **concurrent** requests: in-flight map (source key, target) → `Shared` future. Removed on completion, except mounted volumes, which live until the `Engine` call ends. Non-overlapping requests for the same thing are converted again unless the in-memory cache (§7) is on; the written-paths map (§5.5) keeps that from writing a file twice.
 4. **Tracing** span per request. 5. **Events:** started / finished / failed.
 
 - **No per-request concurrency limit** (a parent awaiting children while holding a permit deadlocks). Limits apply only to top-level outputs (`max_concurrency`) and to `cx.blocking` / `cx.io`.
@@ -223,7 +223,7 @@ impl Mediator {
 
 ## 7. Memory and caching
 - **Now:** values live only while in flight (dedup), plus mounted volumes for the `Engine` call.
-- **Later:** an in-memory cache as an optional Dedup retention policy (size-bounded LRU weighted by `approx_size`), off by default.
+- **In-memory cache** (slice 29): an optional retention policy of the Dedup middleware, off by default (`EngineBuilder::memory_cache(bytes)`, CLI `--memory-cache`). A size-bounded LRU (`moka`, `EvictionPolicy::lru()`) keyed by the Dedup request key and weighted by `approx_size`. Only successes are kept, and a value with `approx_size() == 0` is not (so mounted volumes stay outside it). It belongs to the `Engine`, not to one call. A cached result is **not refreshed when the input changes on disk** (`ValueKey::File` has no mtime); a host that needs fresh results builds a new `Engine`.
 - **Plugin cache:** optional `Operator`; each plugin gets `cx.cache() -> Option<PluginCache>` namespaced by plugin id + `Plugin::cache_version()` (default 0; bump when the cached schema changes). Methods: `get`, `put`, `remove`, `get_json`, `put_json`. Core never interprets contents (e.g. respawn: GUID → name, GUID → containing file). Plugins must work without it; cache errors become `Warning` events.
 
 ## 8. Public API (`Engine`)
@@ -267,7 +267,7 @@ impl Mediator {
 - **rpak patches:** done ([`17-slice-rpak-patches.md`](../tasks/17-slice-rpak-patches.md)): opening `common.rpak` beside a `patch_master.rpak` opens its newest patch; `--no-patches` / `RespawnPlugin::ignore_patches` turn it off.
 - **rpak volume:** files are `0x<GUID>.<kind>` (a name is hashed to its GUID), headers have pointers relocated to `.mem` offsets (u64, all ones = null), and a hidden `.mem` holds the pages. Pages of unpatched paks are concatenated, so `.mem` offset = `page_base[page] + offset`. A compressed rpak is one RTech stream, decompressed only as far as the reads need (`rtech::decompress_prefix`, `Body::decoded`).
 - **OpenDAL `=0.59.4` notes:** the custom-service API is under `opendal::raw`. A read-only service implements `raw::Service` with `Reader = oio::StreamReader<R>` (`R: oio::StreamRead`, one method `open(range)`), `Lister: oio::List`, the rest `()`; it reports only `stat`/`read`/`list` and returns `ErrorKind::Unsupported` otherwise (template: `MemoryBackend` in `opendal-core`). The `VolumeSource` adapter is ~150 lines. OpenDAL rejects an explicit range past the end (`RangeNotSatisfied`), so callers clamp. `Layer` has the shape `apply_service` / `apply_context`; option structs grow fields, so never use exhaustive literals.
-- **Open:** raw-byte / chunk caching of the input operator (matters for remote inputs); the in-memory cache design (§7); exact capability methods and option schemas for targets (`schemars`?); FFI shape for the async API ("JSON in/out + event callback"); zstd-compressed paks (flagged, unsupported by rsx).
+- **Open:** raw-byte / chunk caching of the input operator (matters for remote inputs); exact capability methods and option schemas for targets (`schemars`?); FFI shape for the async API ("JSON in/out + event callback"); zstd-compressed paks (flagged, unsupported by rsx).
 
 ## 12. Porting from rsx
 **rsx code is reviewed before it is ported, never translated line by line.** In every slice that ports code, the sketch step includes an **rsx review**, written into the task under `## rsx review`. The user approves it at the gate, before any porting starts:

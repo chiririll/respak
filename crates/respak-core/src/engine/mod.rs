@@ -44,9 +44,19 @@ pub struct EngineBuilder {
     blocking_limit: Option<usize>,
     io_limit: Option<usize>,
     event_capacity: Option<usize>,
+    memory_cache: Option<u64>,
 }
 
 impl EngineBuilder {
+    /// Keeps finished conversions in memory, up to `bytes` by `Data::approx_size` (default: off).
+    ///
+    /// The cache belongs to the engine, so a later call reuses what an earlier one converted. A
+    /// cached result is not refreshed when the input changes on disk.
+    pub fn memory_cache(mut self, bytes: u64) -> Self {
+        self.memory_cache = Some(bytes);
+        self
+    }
+
     /// How many outputs run at once (default 4, at least 1).
     pub fn max_concurrency(mut self, n: usize) -> Self {
         self.max_concurrency = Some(n.max(1));
@@ -107,12 +117,16 @@ impl EngineBuilder {
             registry.add(p.as_ref());
         }
         registry.check()?;
+        let mut mediator = Mediator::new(registry)
+            .with_events(Events::new(
+                self.event_capacity.unwrap_or(DEFAULT_EVENT_CAPACITY),
+            ))
+            .with_middleware(self.middleware);
+        if let Some(bytes) = self.memory_cache {
+            mediator = mediator.with_memory_cache(bytes);
+        }
         Ok(Engine {
-            mediator: Mediator::new(registry)
-                .with_events(Events::new(
-                    self.event_capacity.unwrap_or(DEFAULT_EVENT_CAPACITY),
-                ))
-                .with_middleware(self.middleware),
+            mediator,
             input,
             output,
             cache: self.cache,

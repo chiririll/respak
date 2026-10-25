@@ -35,6 +35,8 @@ opendal = { version = "=0.59.4", default-features = false, features = ["services
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "signal", "time"] }
 tokio-util = "0.7"
+# In-memory result cache (docs/design/project.md §7); the sync cache needs no runtime.
+moka = { version = "0.12", default-features = false, features = ["sync"] }
 futures = "0.3"
 async-trait = "0.1"
 

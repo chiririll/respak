@@ -50,6 +50,8 @@ pub struct Overrides {
     pub studio: Option<String>,
     /// `--cache`.
     pub cache: Option<PathBuf>,
+    /// `--memory-cache`.
+    pub memory_cache: Option<u64>,
     /// `--report`.
     pub report: Option<PathBuf>,
     /// `--steam`.
@@ -87,6 +89,8 @@ pub struct Settings {
     pub studio: String,
     /// `--cache`.
     pub cache: Option<PathBuf>,
+    /// `--memory-cache` (or `memory_cache` in the config file) in bytes; `None` is off (an explicit 0 is off too).
+    pub memory_cache: Option<u64>,
     /// `--report`.
     pub report: Option<PathBuf>,
 }
@@ -119,6 +123,14 @@ impl Settings {
                 .or(config.respawn.studio)
                 .unwrap_or_else(|| "auto".into()),
             cache: cli.cache.clone().or(config.cache),
+            memory_cache: match (cli.memory_cache, config.memory_cache.as_deref()) {
+                (Some(bytes), _) => Some(bytes),
+                (None, Some(text)) => Some(crate::size::parse_size(text).map_err(|error| {
+                    anyhow::anyhow!("`memory_cache` in the config file: {error}")
+                })?),
+                (None, None) => None,
+            }
+            .filter(|&bytes| bytes > 0),
             report: cli.report.clone().or(config.report),
         })
     }

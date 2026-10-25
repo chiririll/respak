@@ -66,6 +66,12 @@ impl CxBuilder {
         self
     }
 
+    /// Keeps finished conversions of up to `bytes` in memory.
+    pub fn memory_cache(mut self, bytes: u64) -> Self {
+        self.mediator = self.mediator.with_memory_cache(bytes);
+        self
+    }
+
     /// Uses `op` as the plugin cache.
     pub fn cache(mut self, op: Operator) -> Self {
         self.cache = Some(op);

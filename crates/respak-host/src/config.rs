@@ -25,6 +25,9 @@ pub struct Config {
     /// `--report`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub report: Option<PathBuf>,
+    /// `--memory-cache`, e.g. `"256MiB"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_cache: Option<String>,
     /// `--search`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search: Option<Vec<String>>,
@@ -248,6 +251,7 @@ mod tests {
             out = "out"
             search = ["a/*.rpak"]
             no_patches = true
+            memory_cache = "256MiB"
             [respawn]
             rig = "auto"
             [steam]
@@ -258,6 +262,7 @@ mod tests {
         .unwrap();
         assert_eq!(config.search.as_deref(), Some(&["a/*.rpak".to_owned()][..]));
         assert_eq!(config.no_patches, Some(true));
+        assert_eq!(config.memory_cache.as_deref(), Some("256MiB"));
         let steam = config.steam.unwrap();
         let depots: Vec<_> = steam.depots.iter().map(ToString::to_string).collect();
         assert_eq!(depots, ["8", "9=10"]);
