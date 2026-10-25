@@ -65,7 +65,7 @@ The token is kept in `.respak/account.json`, exactly as `respak steam login` kee
 
 *Pick a game version* offers named versions (seasons, events, hotfixes) instead of manifest IDs. Picking one pins every selected depot to a concrete `ID=MANIFEST` and fills the depots field, so the CLI and the engine only ever see manifests.
 
-Catalogs are TOML. respak ships one (`crates/respak-web/catalog/shipped.toml`: the games and their depots, plus the format in comments). Your own files in **`.respak/catalog/*.toml`** next to your `respak.toml` add to it, or replace an entry that has the same `id`:
+Catalogs are TOML. respak ships one file per game (every `crates/respak-web/catalog/*.toml` is embedded, nothing to register: the game, its depots and versions; the format is in the comments of `apex.toml`). Your own files in **`.respak/catalog/*.toml`** next to your `respak.toml` add to it, or replace an entry that has the same `id`:
 
 ```toml
 [apex]

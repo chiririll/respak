@@ -6,8 +6,24 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// The catalog that ships with the program.
-const SHIPPED: &str = include_str!("../catalog/shipped.toml");
+/// The catalog that ships with the program: every `*.toml` of `catalog/`, one file per game.
+#[derive(rust_embed::RustEmbed)]
+#[folder = "catalog"]
+struct Shipped;
+
+/// The shipped files as (name, text), in file name order.
+fn shipped() -> Vec<(String, String)> {
+    let mut names: Vec<_> = Shipped::iter().filter(|n| n.ends_with(".toml")).collect();
+    names.sort();
+    names
+        .into_iter()
+        .filter_map(|n| {
+            let file = Shipped::get(&n)?;
+            let text = String::from_utf8_lossy(&file.data).into_owned();
+            Some((format!("shipped catalog {n}"), text))
+        })
+        .collect()
+}
 
 /// What kind of version this is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -148,12 +164,11 @@ impl Catalog {
     /// replaces a shipped one with the same id, a new id is added; depots the same by id.
     pub fn load(user_dir: Option<&Path>) -> Self {
         let mut catalog = Catalog::default();
-        match parse("the shipped catalog", SHIPPED) {
-            Ok(games) => catalog.merge(games),
-            Err(message) => catalog.problems.push(Problem {
-                file: "shipped".into(),
-                message,
-            }),
+        for (name, text) in shipped() {
+            match parse(&name, &text) {
+                Ok(games) => catalog.merge(games),
+                Err(message) => catalog.problems.push(Problem { file: name, message }),
+            }
         }
         let Some(dir) = user_dir else { return catalog };
         let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -416,7 +431,25 @@ mod tests {
 
     #[test]
     fn the_shipped_catalog_parses() {
-        parse("shipped", SHIPPED).unwrap();
+        let files = shipped();
+        assert!(files.len() >= 2, "{files:?}");
+        for (name, text) in files {
+            parse(&name, &text).unwrap();
+        }
+    }
+
+    #[test]
+    fn the_shipped_apex_versions_resolve() {
+        let apex = parse("apex", &shipped().iter().find(|f| f.0.ends_with("apex.toml")).unwrap().1).unwrap().remove("apex").unwrap();
+        // The Season 20 launch patch (seen 2024-02-13); the depots chosen are the first two.
+        let got = apex.resolve("s20-launch", Some(&[1172471, 1172472])).unwrap();
+        assert_eq!(got.depots, ["1172471=4691086100141750254", "1172472=146673051231967474"]);
+        // Depot 3893181 first appeared in 2025.
+        let got = apex.resolve("s20-launch", Some(&[3893181])).unwrap();
+        assert_eq!(got.left_out, [3893181]);
+        // An event that changed nothing takes the season's manifests.
+        let event = apex.resolve("s20e01-5th-anniversary", Some(&[1172471])).unwrap();
+        assert_eq!(event.depots, ["1172471=4691086100141750254"]);
     }
 
     #[test]

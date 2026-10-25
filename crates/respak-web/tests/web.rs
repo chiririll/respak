@@ -382,13 +382,13 @@ async fn the_catalog_merges_user_files_and_resolves_a_version() {
         [[apex.versions]]
         id = "a"
         name = "First"
-        date = 2024-01-01
+        date = 2099-01-01
         group = "season-1"
         manifests = [ { depot = 1172471, manifest = "111" } ]
         [[apex.versions]]
         id = "b"
         name = "Second"
-        date = 2024-02-01
+        date = 2099-02-01
         "#,
     )
     .unwrap();
@@ -401,7 +401,7 @@ async fn the_catalog_merges_user_files_and_resolves_a_version() {
         .iter()
         .find(|g| g["key"] == "apex")
         .unwrap();
-    // Newest first; the shipped depot is still there.
+    // Newest first (the dates are far ahead of the shipped versions); the shipped depot is still there.
     assert_eq!(apex["versions"][0]["id"], "b");
     assert_eq!(apex["depots"][0]["id"], 1172471);
     assert_eq!(catalog["problems"].as_array().unwrap().len(), 1);

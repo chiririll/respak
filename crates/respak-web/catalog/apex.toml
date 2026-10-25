@@ -1,0 +1,1024 @@
+# The versions that ship with respak-web: games, their depots, and named versions with the
+# Steam manifests they were (taken from SteamDB). Your own files in `<settings folder>/.respak/catalog/*.toml`
+# add to this or replace entries by `id`; this file is never edited by the program.
+#
+# A version lists only the depots that CHANGED. For a depot it does not list, the closest earlier
+# version (by `date`) that lists it gives the manifest. Manifest ids are strings (they are 64-bit).
+#
+#   [[apex.versions]]
+#   id = "s20-launch"                 # a slug; a user file replaces a version by this id
+#   name = "Season 20 launch"
+#   date = 2024-02-13                 # orders the versions
+#   type = "season"                   # season | event | hotfix
+#   group = "season-20"               # optional: versions of a group are shown together
+#   manifests = [ { depot = 1172471, manifest = "7843921000000000000" } ]
+
+[apex]
+name = "Apex Legends"
+app_id = 1172470
+
+[[apex.depots]]
+id = 1172471
+name = "Apex Legends Content"
+default = true
+
+# Languages stay opt-in, so none of these is selected by default.
+
+[[apex.depots]]
+id = 1172472
+name = "Apex Legends French"
+
+[[apex.depots]]
+id = 1172473
+name = "Apex Legends German"
+
+[[apex.depots]]
+id = 1172474
+name = "Apex Legends Italian"
+
+[[apex.depots]]
+id = 1172475
+name = "Apex Legends Japanese"
+
+[[apex.depots]]
+id = 1172476
+name = "Apex Legends Korean"
+
+[[apex.depots]]
+id = 1172477
+name = "Apex Legends Mandarin"
+
+[[apex.depots]]
+id = 1172478
+name = "Apex Legends Polish"
+
+[[apex.depots]]
+id = 1172479
+name = "Apex Legends Russian"
+
+[[apex.depots]]
+id = 1311105
+name = "Apex Legends Spanish"
+
+[[apex.depots]]
+id = 3893181
+name = "EA Anti-Cheat"
+
+# Versions: season launches (S7 on; the Steam release was 2020-11-03) and the event start dates of the wiki
+# (apexlegends.wiki.gg/wiki/Event), up to S20. Each lists the manifests of the depots that changed since the
+# previous version: the last one SteamDB saw before 20:00 UTC on `date` (the launch patch, not a later hotfix).
+# Seasons 22+ are not on that wiki page; their dates are the Tuesday launches that show up as a manifest of
+# depot 1172471 the same day. Events of S21+ have no dates on the wiki and are not listed. Seasons 1-6 and
+# the events before them predate the Steam release.
+
+[[apex.versions]]
+id = "s7-launch"
+name = "Season 7 launch"
+date = 2020-11-04
+type = "season"
+group = "season-7"
+manifests = [
+  { depot = 1172471, manifest = "765484546825959637" },
+  { depot = 1172472, manifest = "5265873087673712809" },
+  { depot = 1172473, manifest = "2615110188578456294" },
+  { depot = 1172474, manifest = "8842026012482794247" },
+  { depot = 1172475, manifest = "4936574346712284462" },
+  { depot = 1172476, manifest = "2566784869253534192" },
+  { depot = 1172477, manifest = "2864938218445123978" },
+  { depot = 1172478, manifest = "4036884655378871937" },
+  { depot = 1172479, manifest = "8381591343044174355" },
+  { depot = 1311105, manifest = "2726824569105299248" },
+]
+
+[[apex.versions]]
+id = "s07e01-holo-day-bash"
+name = "Holo-Day Bash (S07E01)"
+date = 2020-12-01
+type = "event"
+group = "season-7"
+manifests = [
+  { depot = 1172471, manifest = "8606446708886156290" },
+]
+
+[[apex.versions]]
+id = "s07e02-fight-night"
+name = "Fight Night (S07E02)"
+date = 2021-01-05
+type = "event"
+group = "season-7"
+manifests = [
+  { depot = 1172471, manifest = "6931566217373653624" },
+  { depot = 1172472, manifest = "7170469908043794356" },
+  { depot = 1172473, manifest = "9116360176747973829" },
+  { depot = 1172474, manifest = "1275782561570022452" },
+  { depot = 1172475, manifest = "3377542914440064863" },
+  { depot = 1172476, manifest = "8394718315463175203" },
+  { depot = 1172477, manifest = "3931441662251417239" },
+  { depot = 1172478, manifest = "7211655243011494057" },
+  { depot = 1172479, manifest = "7422220281709994816" },
+  { depot = 1311105, manifest = "1150360038459664150" },
+]
+
+[[apex.versions]]
+id = "s8-launch"
+name = "Season 8 launch"
+date = 2021-02-02
+type = "season"
+group = "season-8"
+manifests = [
+  { depot = 1172471, manifest = "2900150526049981496" },
+  { depot = 1172472, manifest = "985735647831366011" },
+  { depot = 1172473, manifest = "56252116038645142" },
+  { depot = 1172474, manifest = "3188616401602120965" },
+  { depot = 1172475, manifest = "6830377101324943602" },
+  { depot = 1172476, manifest = "8266312783554518540" },
+  { depot = 1172477, manifest = "2189781299241339328" },
+  { depot = 1172478, manifest = "5036485506521022578" },
+  { depot = 1172479, manifest = "6253426229842696612" },
+  { depot = 1311105, manifest = "6760116055227033113" },
+]
+
+[[apex.versions]]
+id = "s08ace-anniversary"
+name = "Anniversary (S08ACE)"
+date = 2021-02-09
+type = "event"
+group = "season-8"
+manifests = []
+
+[[apex.versions]]
+id = "s08e01-chaos-theory"
+name = "Chaos Theory (S08E01)"
+date = 2021-03-09
+type = "event"
+group = "season-8"
+manifests = [
+  { depot = 1172471, manifest = "8090380253981908784" },
+  { depot = 1172472, manifest = "1826146665607369134" },
+  { depot = 1172473, manifest = "2752570537220996405" },
+  { depot = 1172474, manifest = "8571916942559355851" },
+  { depot = 1172475, manifest = "661875207149450074" },
+  { depot = 1172476, manifest = "5545757257255217276" },
+  { depot = 1172477, manifest = "2508198343294896598" },
+  { depot = 1172478, manifest = "4626767849751737540" },
+  { depot = 1172479, manifest = "5713213434613725896" },
+  { depot = 1311105, manifest = "1190198422925094330" },
+]
+
+[[apex.versions]]
+id = "s08e02-war-games"
+name = "War Games (S08E02)"
+date = 2021-04-13
+type = "event"
+group = "season-8"
+manifests = [
+  { depot = 1172471, manifest = "3137914922591467940" },
+]
+
+[[apex.versions]]
+id = "s9-launch"
+name = "Season 9 launch"
+date = 2021-05-04
+type = "season"
+group = "season-9"
+manifests = [
+  { depot = 1172471, manifest = "4906277494067167828" },
+  { depot = 1172472, manifest = "7165944456977600226" },
+  { depot = 1172473, manifest = "7224915250157773778" },
+  { depot = 1172474, manifest = "3417036999449815778" },
+  { depot = 1172475, manifest = "7691185637672162777" },
+  { depot = 1172476, manifest = "5188540557655805131" },
+  { depot = 1172477, manifest = "1961788942397260825" },
+  { depot = 1172478, manifest = "7151664951199093133" },
+  { depot = 1172479, manifest = "8590191276016828526" },
+  { depot = 1311105, manifest = "9113282439173664584" },
+]
+
+[[apex.versions]]
+id = "s09e01-genesis"
+name = "Genesis (S09E01)"
+date = 2021-06-29
+type = "event"
+group = "season-9"
+manifests = [
+  { depot = 1172471, manifest = "2483066843334483190" },
+  { depot = 1172472, manifest = "9067171908570902733" },
+  { depot = 1172473, manifest = "9087918337805977579" },
+  { depot = 1172474, manifest = "5835574473137010598" },
+  { depot = 1172475, manifest = "8810970790601286186" },
+  { depot = 1172476, manifest = "2128956751203311736" },
+  { depot = 1172477, manifest = "1574635894667480883" },
+  { depot = 1172478, manifest = "6343454575673062066" },
+  { depot = 1172479, manifest = "1777618485372071095" },
+  { depot = 1311105, manifest = "6979202251656919977" },
+]
+
+[[apex.versions]]
+id = "s09e02-thrillseekers"
+name = "Thrillseekers (S09E02)"
+date = 2021-07-13
+type = "event"
+group = "season-9"
+manifests = []
+
+[[apex.versions]]
+id = "s10-launch"
+name = "Season 10 launch"
+date = 2021-08-03
+type = "season"
+group = "season-10"
+manifests = [
+  { depot = 1172471, manifest = "4324690141457453383" },
+  { depot = 1172472, manifest = "1917463269410005900" },
+  { depot = 1172473, manifest = "2224548688646679387" },
+  { depot = 1172474, manifest = "7795125550947354218" },
+  { depot = 1172475, manifest = "2395100293272641647" },
+  { depot = 1172476, manifest = "8814549095663395180" },
+  { depot = 1172477, manifest = "818429544954095216" },
+  { depot = 1172478, manifest = "2638364579678240401" },
+  { depot = 1172479, manifest = "5383133928215595208" },
+  { depot = 1311105, manifest = "8166059615979049632" },
+]
+
+[[apex.versions]]
+id = "s10e01-evolution"
+name = "Evolution (S10E01)"
+date = 2021-09-14
+type = "event"
+group = "season-10"
+manifests = [
+  { depot = 1172471, manifest = "933355236469742308" },
+  { depot = 1172472, manifest = "8882374764198686557" },
+  { depot = 1172473, manifest = "2058806122296866122" },
+  { depot = 1172474, manifest = "6237682045127561064" },
+  { depot = 1172475, manifest = "7208343676851916830" },
+  { depot = 1172476, manifest = "5539487660241429857" },
+  { depot = 1172477, manifest = "4214819448026140479" },
+  { depot = 1172478, manifest = "2007000024809931798" },
+  { depot = 1172479, manifest = "3472337739752996579" },
+  { depot = 1311105, manifest = "7877806565299333858" },
+]
+
+[[apex.versions]]
+id = "s10e02-monsters-within"
+name = "Monsters Within (S10E02)"
+date = 2021-10-12
+type = "event"
+group = "season-10"
+manifests = [
+  { depot = 1172471, manifest = "7323076494915464360" },
+]
+
+[[apex.versions]]
+id = "s11-launch"
+name = "Season 11 launch"
+date = 2021-11-02
+type = "season"
+group = "season-11"
+manifests = [
+  { depot = 1172471, manifest = "8265030777718421006" },
+  { depot = 1172472, manifest = "6208448575961039848" },
+  { depot = 1172473, manifest = "4783749386883237406" },
+  { depot = 1172474, manifest = "7021099615314583847" },
+  { depot = 1172475, manifest = "2586781083661961429" },
+  { depot = 1172476, manifest = "3522906924525275813" },
+  { depot = 1172477, manifest = "6140467915860488250" },
+  { depot = 1172478, manifest = "3041316182041438125" },
+  { depot = 1172479, manifest = "1387102272006460252" },
+  { depot = 1311105, manifest = "5003250661399433459" },
+]
+
+[[apex.versions]]
+id = "s11e01-raiders"
+name = "Raiders (S11E01)"
+date = 2021-12-07
+type = "event"
+group = "season-11"
+manifests = [
+  { depot = 1172471, manifest = "5060984163253966665" },
+  { depot = 1172472, manifest = "806931486301344036" },
+  { depot = 1172473, manifest = "4045620359335751456" },
+  { depot = 1172474, manifest = "8367960418683882042" },
+  { depot = 1172475, manifest = "3834667036436481671" },
+  { depot = 1172476, manifest = "390574013785059285" },
+  { depot = 1172477, manifest = "7315258139706326993" },
+  { depot = 1172478, manifest = "8432306709460380314" },
+  { depot = 1172479, manifest = "1331481794374843999" },
+  { depot = 1311105, manifest = "5567801077034968814" },
+]
+
+[[apex.versions]]
+id = "s11e02-dark-depths"
+name = "Dark Depths (S11E02)"
+date = 2022-01-11
+type = "event"
+group = "season-11"
+manifests = [
+  { depot = 1172471, manifest = "2021052372941175869" },
+]
+
+[[apex.versions]]
+id = "s12-launch"
+name = "Season 12 launch"
+date = 2022-02-08
+type = "season"
+group = "season-12"
+manifests = [
+  { depot = 1172471, manifest = "4909353578799486824" },
+  { depot = 1172472, manifest = "9138392986431127380" },
+  { depot = 1172473, manifest = "8210390345260147962" },
+  { depot = 1172474, manifest = "7882073560600957578" },
+  { depot = 1172475, manifest = "5320278595913382628" },
+  { depot = 1172476, manifest = "8738724354726567070" },
+  { depot = 1172477, manifest = "3150531537296976258" },
+  { depot = 1172478, manifest = "6858209465266368954" },
+  { depot = 1172479, manifest = "6925324719634943593" },
+  { depot = 1311105, manifest = "7715515341602145148" },
+]
+
+[[apex.versions]]
+id = "s12ace-3rd-anniversary"
+name = "3rd Anniversary (S12ACE)"
+date = 2022-02-15
+type = "event"
+group = "season-12"
+manifests = []
+
+[[apex.versions]]
+id = "s12e01-warriors"
+name = "Warriors (S12E01)"
+date = 2022-03-29
+type = "event"
+group = "season-12"
+manifests = [
+  { depot = 1172471, manifest = "4769481392903198029" },
+  { depot = 1172472, manifest = "4873241140797039362" },
+  { depot = 1172473, manifest = "7887898360341440381" },
+  { depot = 1172474, manifest = "2032395950278927183" },
+  { depot = 1172475, manifest = "2562507145058400665" },
+  { depot = 1172476, manifest = "4156563076330425160" },
+  { depot = 1172477, manifest = "8396928621968270074" },
+  { depot = 1172478, manifest = "8445147894257597458" },
+  { depot = 1172479, manifest = "8318298864796463484" },
+  { depot = 1311105, manifest = "3652327462795942070" },
+]
+
+[[apex.versions]]
+id = "s12e02-unshackled"
+name = "Unshackled (S12E02)"
+date = 2022-04-19
+type = "event"
+group = "season-12"
+manifests = [
+  { depot = 1172471, manifest = "6557907981365608643" },
+  { depot = 1172472, manifest = "7900218879564249119" },
+]
+
+[[apex.versions]]
+id = "s13-launch"
+name = "Season 13 launch"
+date = 2022-05-10
+type = "season"
+group = "season-13"
+manifests = [
+  { depot = 1172471, manifest = "8600075718708317009" },
+  { depot = 1172472, manifest = "3888356655330475150" },
+  { depot = 1172473, manifest = "7576764431622821882" },
+  { depot = 1172474, manifest = "5663382670103603225" },
+  { depot = 1172475, manifest = "3587266533724163058" },
+  { depot = 1172476, manifest = "143195474498740833" },
+  { depot = 1172477, manifest = "8788647525615223745" },
+  { depot = 1172478, manifest = "7612879939801804799" },
+  { depot = 1172479, manifest = "2097691236341538332" },
+  { depot = 1311105, manifest = "5345665329525983931" },
+]
+
+[[apex.versions]]
+id = "s13e01-awakening"
+name = "Awakening (S13E01)"
+date = 2022-06-21
+type = "event"
+group = "season-13"
+manifests = [
+  { depot = 1172471, manifest = "155167553916167104" },
+  { depot = 1172472, manifest = "5186233099294319449" },
+  { depot = 1172473, manifest = "7733925819668258464" },
+  { depot = 1172474, manifest = "842085917662012153" },
+  { depot = 1172475, manifest = "5274844712972491721" },
+  { depot = 1172476, manifest = "4501628025233477607" },
+  { depot = 1172477, manifest = "4454527204200053841" },
+  { depot = 1172478, manifest = "2784842311664239933" },
+  { depot = 1172479, manifest = "1394625591734562787" },
+  { depot = 1311105, manifest = "3295337461411044804" },
+]
+
+[[apex.versions]]
+id = "s13e02-gaiden"
+name = "Gaiden (S13E02)"
+date = 2022-07-19
+type = "event"
+group = "season-13"
+manifests = [
+  { depot = 1172471, manifest = "2081187010143541022" },
+]
+
+[[apex.versions]]
+id = "s14-launch"
+name = "Season 14 launch"
+date = 2022-08-09
+type = "season"
+group = "season-14"
+manifests = [
+  { depot = 1172471, manifest = "3473771808099916215" },
+  { depot = 1172472, manifest = "36939161135988846" },
+  { depot = 1172473, manifest = "2191674802592390329" },
+  { depot = 1172474, manifest = "3626436606773290757" },
+  { depot = 1172475, manifest = "1526570623823779399" },
+  { depot = 1172476, manifest = "4954196527904104418" },
+  { depot = 1172477, manifest = "8472343790057529864" },
+  { depot = 1172478, manifest = "521736353106255118" },
+  { depot = 1172479, manifest = "2100134216273062899" },
+  { depot = 1311105, manifest = "3931131066368443406" },
+]
+
+[[apex.versions]]
+id = "s14e01-beast-of-prey"
+name = "Beast of Prey (S14E01)"
+date = 2022-09-20
+type = "event"
+group = "season-14"
+manifests = [
+  { depot = 1172471, manifest = "5384834791296472044" },
+  { depot = 1172472, manifest = "6717995633933732046" },
+  { depot = 1172473, manifest = "1390914385313097408" },
+  { depot = 1172474, manifest = "8596398012394633112" },
+  { depot = 1172475, manifest = "3444670806704178645" },
+  { depot = 1172476, manifest = "2355827054800662199" },
+  { depot = 1172477, manifest = "1495883619494627943" },
+  { depot = 1172478, manifest = "801434375341322457" },
+  { depot = 1172479, manifest = "7674159725252464425" },
+  { depot = 1311105, manifest = "5822496524613383976" },
+]
+
+[[apex.versions]]
+id = "s15-launch"
+name = "Season 15 launch"
+date = 2022-11-01
+type = "season"
+group = "season-15"
+manifests = [
+  { depot = 1172471, manifest = "4875729813333814997" },
+  { depot = 1172472, manifest = "8180946199561253657" },
+  { depot = 1172473, manifest = "1815936136339595566" },
+  { depot = 1172474, manifest = "2383787285721688245" },
+  { depot = 1172475, manifest = "8247743492822545598" },
+  { depot = 1172476, manifest = "104524046295889736" },
+  { depot = 1172477, manifest = "6935919756222478938" },
+  { depot = 1172478, manifest = "1371636252901667198" },
+  { depot = 1172479, manifest = "5012920300652086587" },
+  { depot = 1311105, manifest = "5381419931819731631" },
+]
+
+[[apex.versions]]
+id = "s15e01-wintertide"
+name = "Wintertide (S15E01)"
+date = 2022-12-06
+type = "event"
+group = "season-15"
+manifests = [
+  { depot = 1172471, manifest = "8161075012263824356" },
+]
+
+[[apex.versions]]
+id = "s15e02-spellbound"
+name = "Spellbound (S15E02)"
+date = 2023-01-10
+type = "event"
+group = "season-15"
+manifests = [
+  { depot = 1172471, manifest = "2138059325711932356" },
+  { depot = 1172472, manifest = "7871362984491528852" },
+  { depot = 1172473, manifest = "7550355126912313627" },
+  { depot = 1172474, manifest = "9147068265799977801" },
+  { depot = 1172475, manifest = "6716041295688041940" },
+  { depot = 1172476, manifest = "2750022936613152469" },
+  { depot = 1172477, manifest = "5228028180537317095" },
+  { depot = 1172478, manifest = "8361193358634367795" },
+  { depot = 1172479, manifest = "660482885879925121" },
+  { depot = 1311105, manifest = "3687770910585295275" },
+]
+
+[[apex.versions]]
+id = "s15e03-celestial-sunrise"
+name = "Celestial Sunrise (S15E03)"
+date = 2023-01-24
+type = "event"
+group = "season-15"
+manifests = [
+  { depot = 1172471, manifest = "1899811008045783950" },
+  { depot = 1172472, manifest = "415922758071986921" },
+  { depot = 1172473, manifest = "4122609976572048694" },
+  { depot = 1172474, manifest = "1816725593309908459" },
+  { depot = 1172475, manifest = "9137085526812434343" },
+  { depot = 1172476, manifest = "4742624543932276579" },
+  { depot = 1172477, manifest = "4614425488405392381" },
+  { depot = 1172478, manifest = "613868404047737313" },
+  { depot = 1172479, manifest = "6638233517265324169" },
+  { depot = 1311105, manifest = "1273549459134463265" },
+]
+
+[[apex.versions]]
+id = "s16-launch"
+name = "Season 16 launch"
+date = 2023-02-14
+type = "season"
+group = "season-16"
+manifests = [
+  { depot = 1172471, manifest = "6041487181269002796" },
+  { depot = 1172472, manifest = "2290816673751020443" },
+  { depot = 1172473, manifest = "647838699901263769" },
+  { depot = 1172474, manifest = "7652728113167554830" },
+  { depot = 1172475, manifest = "5550038976173143428" },
+  { depot = 1172476, manifest = "4823708607478961834" },
+  { depot = 1172477, manifest = "7224229659878127046" },
+  { depot = 1172478, manifest = "4759608400469014798" },
+  { depot = 1172479, manifest = "665943433804901979" },
+  { depot = 1311105, manifest = "404635892118326581" },
+]
+
+[[apex.versions]]
+id = "s16ace-4th-anniversary"
+name = "4th Anniversary (S16ACE)"
+date = 2023-02-14
+type = "event"
+group = "season-16"
+manifests = []
+
+[[apex.versions]]
+id = "s16e01-imperial-guard"
+name = "Imperial Guard (S16E01)"
+date = 2023-03-07
+type = "event"
+group = "season-16"
+manifests = [
+  { depot = 1172471, manifest = "886624061345768268" },
+  { depot = 1172472, manifest = "374081800879269374" },
+  { depot = 1172473, manifest = "207541368004014894" },
+  { depot = 1172474, manifest = "7336011034918195784" },
+  { depot = 1172475, manifest = "1971075492729699686" },
+  { depot = 1172476, manifest = "5991522069586282119" },
+  { depot = 1172477, manifest = "108812331124519246" },
+  { depot = 1172478, manifest = "3829157615360740417" },
+  { depot = 1172479, manifest = "1229870090027226206" },
+  { depot = 1311105, manifest = "3963240261986448781" },
+]
+
+[[apex.versions]]
+id = "s16e02-sun-squad"
+name = "Sun Squad (S16E02)"
+date = 2023-03-28
+type = "event"
+group = "season-16"
+manifests = [
+  { depot = 1172471, manifest = "5742164331508062656" },
+  { depot = 1172472, manifest = "7677721872932962820" },
+  { depot = 1172473, manifest = "6368949223856262194" },
+  { depot = 1172474, manifest = "4724382316207280616" },
+  { depot = 1172475, manifest = "8183632696637684884" },
+  { depot = 1172476, manifest = "6933769033079187722" },
+  { depot = 1172477, manifest = "1243387025751490157" },
+  { depot = 1172478, manifest = "4131052146484107422" },
+  { depot = 1172479, manifest = "695642457273619961" },
+  { depot = 1311105, manifest = "408638361369634894" },
+]
+
+[[apex.versions]]
+id = "s16e03-veiled"
+name = "Veiled (S16E03)"
+date = 2023-04-25
+type = "event"
+group = "season-16"
+manifests = [
+  { depot = 1172471, manifest = "1779892101461759528" },
+]
+
+[[apex.versions]]
+id = "s17-launch"
+name = "Season 17 launch"
+date = 2023-05-09
+type = "season"
+group = "season-17"
+manifests = [
+  { depot = 1172471, manifest = "2586072968826408013" },
+  { depot = 1172472, manifest = "3665017327401224598" },
+  { depot = 1172473, manifest = "5975848921473362561" },
+  { depot = 1172474, manifest = "4315418643877388212" },
+  { depot = 1172475, manifest = "6925417010763248604" },
+  { depot = 1172476, manifest = "5609047306811333084" },
+  { depot = 1172477, manifest = "9198466906130522914" },
+  { depot = 1172478, manifest = "2568062669059357732" },
+  { depot = 1172479, manifest = "8762025802133980279" },
+  { depot = 1311105, manifest = "6134525417585449180" },
+]
+
+[[apex.versions]]
+id = "s17e01-threat-level"
+name = "Threat Level (S17E01)"
+date = 2023-05-23
+type = "event"
+group = "season-17"
+manifests = [
+  { depot = 1172471, manifest = "19648303324867378" },
+]
+
+[[apex.versions]]
+id = "s17e02-dressed-to-kill"
+name = "Dressed to Kill (S17E02)"
+date = 2023-06-20
+type = "event"
+group = "season-17"
+manifests = [
+  { depot = 1172471, manifest = "3177890036525264826" },
+  { depot = 1172472, manifest = "3374465285438469609" },
+  { depot = 1172473, manifest = "3993421188127538204" },
+  { depot = 1172474, manifest = "1477268530171949925" },
+  { depot = 1172475, manifest = "5855274180501465194" },
+  { depot = 1172476, manifest = "6487087271498427884" },
+  { depot = 1172477, manifest = "6341274933041264383" },
+  { depot = 1172478, manifest = "5372694023888733378" },
+  { depot = 1172479, manifest = "588200582426388925" },
+  { depot = 1311105, manifest = "2123176973887930245" },
+]
+
+[[apex.versions]]
+id = "s17e03-neon-network"
+name = "Neon Network (S17E03)"
+date = 2023-07-25
+type = "event"
+group = "season-17"
+manifests = [
+  { depot = 1172471, manifest = "1148318984428071746" },
+  { depot = 1172472, manifest = "8338357768716517088" },
+  { depot = 1172473, manifest = "7514310291184553471" },
+  { depot = 1172474, manifest = "472635236637405248" },
+  { depot = 1172475, manifest = "3430505240070756503" },
+  { depot = 1172476, manifest = "1543868244338945531" },
+  { depot = 1172477, manifest = "842393830266475720" },
+  { depot = 1172478, manifest = "8271204489201224322" },
+  { depot = 1172479, manifest = "2337296865173626080" },
+  { depot = 1311105, manifest = "1047968459311849891" },
+]
+
+[[apex.versions]]
+id = "s18-launch"
+name = "Season 18 launch"
+date = 2023-08-08
+type = "season"
+group = "season-18"
+manifests = [
+  { depot = 1172471, manifest = "5054039961159689405" },
+  { depot = 1172472, manifest = "567922810813758371" },
+  { depot = 1172473, manifest = "8459187678231425002" },
+  { depot = 1172474, manifest = "8632674192179890283" },
+  { depot = 1172475, manifest = "5260162476485693622" },
+  { depot = 1172476, manifest = "8805130611893020525" },
+  { depot = 1172477, manifest = "4842434559842388870" },
+  { depot = 1172478, manifest = "2725369733284511745" },
+  { depot = 1172479, manifest = "825210446091598850" },
+  { depot = 1311105, manifest = "619499122407593987" },
+]
+
+[[apex.versions]]
+id = "s18e01-death-dynasty"
+name = "Death Dynasty (S18E01)"
+date = 2023-08-08
+type = "event"
+group = "season-18"
+manifests = []
+
+[[apex.versions]]
+id = "s18e02-harbingers"
+name = "Harbingers (S18E02)"
+date = 2023-09-19
+type = "event"
+group = "season-18"
+manifests = [
+  { depot = 1172471, manifest = "5201855303660932642" },
+  { depot = 1172472, manifest = "1369213273857048432" },
+  { depot = 1172473, manifest = "7644034691380136359" },
+  { depot = 1172474, manifest = "450747757467751288" },
+  { depot = 1172475, manifest = "4747189741244149959" },
+  { depot = 1172476, manifest = "5089399053699147816" },
+  { depot = 1172477, manifest = "6129600748616860621" },
+  { depot = 1172478, manifest = "3124407972786777346" },
+  { depot = 1172479, manifest = "8318026815928926640" },
+  { depot = 1311105, manifest = "4277094786216714517" },
+]
+
+[[apex.versions]]
+id = "s18e03-doppelgangers"
+name = "Doppelgangers (S18E03)"
+date = 2023-10-17
+type = "event"
+group = "season-18"
+manifests = [
+  { depot = 1172471, manifest = "7163174433363917094" },
+  { depot = 1172472, manifest = "5447549927799046006" },
+  { depot = 1172473, manifest = "3101920122528015525" },
+  { depot = 1172474, manifest = "2636286170162944441" },
+  { depot = 1172475, manifest = "2657025022504158426" },
+  { depot = 1172476, manifest = "5682898434214774019" },
+  { depot = 1172477, manifest = "200473914349601611" },
+  { depot = 1172478, manifest = "8983376520514858772" },
+  { depot = 1172479, manifest = "5783152430340076036" },
+  { depot = 1311105, manifest = "2701076026241290547" },
+]
+
+[[apex.versions]]
+id = "s19-launch"
+name = "Season 19 launch"
+date = 2023-10-31
+type = "season"
+group = "season-19"
+manifests = [
+  { depot = 1172471, manifest = "1432701590102216120" },
+  { depot = 1172472, manifest = "435382555828189725" },
+  { depot = 1172473, manifest = "4284907314696086193" },
+  { depot = 1172474, manifest = "8663603107184563747" },
+  { depot = 1172475, manifest = "6240161597201136324" },
+  { depot = 1172476, manifest = "9091539172291941428" },
+  { depot = 1172477, manifest = "8536796141627428111" },
+  { depot = 1172478, manifest = "8967509000990222317" },
+  { depot = 1172479, manifest = "5776224365667367962" },
+  { depot = 1311105, manifest = "3346314844035192650" },
+]
+
+[[apex.versions]]
+id = "s19e01-post-malone"
+name = "Post Malone (S19E01)"
+date = 2023-11-07
+type = "event"
+group = "season-19"
+manifests = [
+  { depot = 1172471, manifest = "1110499751625395907" },
+]
+
+[[apex.versions]]
+id = "s19e02-uprising"
+name = "Uprising (S19E02)"
+date = 2023-12-05
+type = "event"
+group = "season-19"
+manifests = [
+  { depot = 1172471, manifest = "9144209955156950659" },
+  { depot = 1172472, manifest = "1844322935529892250" },
+  { depot = 1172473, manifest = "4188124657804537822" },
+  { depot = 1172474, manifest = "59060907670176423" },
+  { depot = 1172475, manifest = "6461846049587733249" },
+  { depot = 1172476, manifest = "1382191003568179964" },
+  { depot = 1172477, manifest = "2550253550354583362" },
+  { depot = 1172478, manifest = "1933792500615315217" },
+  { depot = 1172479, manifest = "3837740221708001710" },
+  { depot = 1311105, manifest = "8337188732171865000" },
+]
+
+[[apex.versions]]
+id = "s19e03-apex-legends-final-fantasy-vii-rebirth"
+name = "Apex Legends & FINAL FANTASY VII REBIRTH (S19E03)"
+date = 2024-01-09
+type = "event"
+group = "season-19"
+manifests = [
+  { depot = 1172471, manifest = "4907788150567503327" },
+  { depot = 1172472, manifest = "1005636364625052792" },
+  { depot = 1172473, manifest = "7809105786599482407" },
+  { depot = 1172474, manifest = "6813438543880130492" },
+  { depot = 1172475, manifest = "527870083891775990" },
+  { depot = 1172476, manifest = "3983133976824721398" },
+  { depot = 1172477, manifest = "1552850585689787806" },
+  { depot = 1172478, manifest = "5450376625166011952" },
+  { depot = 1172479, manifest = "6911098370667677345" },
+  { depot = 1311105, manifest = "4881342314968520076" },
+]
+
+[[apex.versions]]
+id = "s20-launch"
+name = "Season 20 launch"
+date = 2024-02-13
+type = "season"
+group = "season-20"
+manifests = [
+  { depot = 1172471, manifest = "4691086100141750254" },
+  { depot = 1172472, manifest = "146673051231967474" },
+  { depot = 1172473, manifest = "581035799132079385" },
+  { depot = 1172474, manifest = "610383237791308421" },
+  { depot = 1172475, manifest = "4128308284558673403" },
+  { depot = 1172476, manifest = "3099339013241357977" },
+  { depot = 1172477, manifest = "3922507642940979005" },
+  { depot = 1172478, manifest = "314263205016928607" },
+  { depot = 1172479, manifest = "8336990672746128386" },
+  { depot = 1311105, manifest = "6076725228017243721" },
+]
+
+[[apex.versions]]
+id = "s20e01-5th-anniversary"
+name = "5th Anniversary (S20E01)"
+date = 2024-02-13
+type = "event"
+group = "season-20"
+manifests = []
+
+[[apex.versions]]
+id = "s21-launch"
+name = "Season 21 launch"
+date = 2024-05-07
+type = "season"
+group = "season-21"
+manifests = [
+  { depot = 1172471, manifest = "3286480735627968408" },
+  { depot = 1172472, manifest = "700203263778940063" },
+  { depot = 1172473, manifest = "124414220386703687" },
+  { depot = 1172474, manifest = "8231558019641458052" },
+  { depot = 1172475, manifest = "450308416724650524" },
+  { depot = 1172476, manifest = "7767528556439062359" },
+  { depot = 1172477, manifest = "6073283353751140054" },
+  { depot = 1172478, manifest = "8542352639775815409" },
+  { depot = 1172479, manifest = "5466136751846990489" },
+  { depot = 1311105, manifest = "2282340158918508023" },
+]
+
+[[apex.versions]]
+id = "s22-launch"
+name = "Season 22 launch"
+date = 2024-08-06
+type = "season"
+group = "season-22"
+manifests = [
+  { depot = 1172471, manifest = "3765039510172047883" },
+  { depot = 1172472, manifest = "2035354408654611916" },
+  { depot = 1172473, manifest = "3548749067585600147" },
+  { depot = 1172474, manifest = "7627369703061304170" },
+  { depot = 1172475, manifest = "4751682950117038699" },
+  { depot = 1172476, manifest = "4534077948151836245" },
+  { depot = 1172477, manifest = "5335430386144669790" },
+  { depot = 1172478, manifest = "3947659334430426172" },
+  { depot = 1172479, manifest = "8682431619775164172" },
+  { depot = 1311105, manifest = "7605804269180556912" },
+]
+
+[[apex.versions]]
+id = "s23-launch"
+name = "Season 23 launch"
+date = 2024-11-05
+type = "season"
+group = "season-23"
+manifests = [
+  { depot = 1172471, manifest = "8200693519127015050" },
+  { depot = 1172472, manifest = "2146988998184485206" },
+  { depot = 1172473, manifest = "4982286395224717791" },
+  { depot = 1172474, manifest = "7799070565511292750" },
+  { depot = 1172475, manifest = "4835765690159785974" },
+  { depot = 1172476, manifest = "4543625530667324448" },
+  { depot = 1172477, manifest = "6909638982487930770" },
+  { depot = 1172478, manifest = "7766539593146409612" },
+  { depot = 1172479, manifest = "3773689042563473636" },
+  { depot = 1311105, manifest = "4593306861715061100" },
+]
+
+[[apex.versions]]
+id = "s24-launch"
+name = "Season 24 launch"
+date = 2025-02-11
+type = "season"
+group = "season-24"
+manifests = [
+  { depot = 1172471, manifest = "5613524951055654140" },
+  { depot = 1172472, manifest = "4278185211977313914" },
+  { depot = 1172473, manifest = "8690364854530999380" },
+  { depot = 1172474, manifest = "8540634044414720545" },
+  { depot = 1172475, manifest = "3746758642723797459" },
+  { depot = 1172476, manifest = "6479471654884546193" },
+  { depot = 1172477, manifest = "151883793224524429" },
+  { depot = 1172478, manifest = "5537248133478254403" },
+  { depot = 1172479, manifest = "4481117585073363075" },
+  { depot = 1311105, manifest = "7499610127176005250" },
+]
+
+[[apex.versions]]
+id = "s25-launch"
+name = "Season 25 launch"
+date = 2025-05-06
+type = "season"
+group = "season-25"
+manifests = [
+  { depot = 1172471, manifest = "6287592583013620762" },
+  { depot = 1172472, manifest = "8912097363571842606" },
+  { depot = 1172473, manifest = "5414546843530441044" },
+  { depot = 1172474, manifest = "6475869608006589699" },
+  { depot = 1172475, manifest = "4851264956923749894" },
+  { depot = 1172476, manifest = "4209922673991067459" },
+  { depot = 1172477, manifest = "5755061307946183606" },
+  { depot = 1172478, manifest = "9192383506000027363" },
+  { depot = 1172479, manifest = "8939466109139109068" },
+  { depot = 1311105, manifest = "2493422401651647940" },
+]
+
+[[apex.versions]]
+id = "s26-launch"
+name = "Season 26 launch"
+date = 2025-08-05
+type = "season"
+group = "season-26"
+manifests = [
+  { depot = 1172471, manifest = "8936684089228079174" },
+  { depot = 1172472, manifest = "1251117246039506486" },
+  { depot = 1172473, manifest = "4684502791319069464" },
+  { depot = 1172474, manifest = "2262144935141503912" },
+  { depot = 1172475, manifest = "7190765058915669892" },
+  { depot = 1172476, manifest = "2564635528989944444" },
+  { depot = 1172477, manifest = "3585136205628089868" },
+  { depot = 1172478, manifest = "6716830330844734985" },
+  { depot = 1172479, manifest = "2988000712973269275" },
+  { depot = 1311105, manifest = "9177755939908288277" },
+  { depot = 3893181, manifest = "8395058188196001684" },
+]
+
+[[apex.versions]]
+id = "s27-launch"
+name = "Season 27 launch"
+date = 2025-11-04
+type = "season"
+group = "season-27"
+manifests = [
+  { depot = 1172471, manifest = "3800976232141737690" },
+  { depot = 1172472, manifest = "776090649501518374" },
+  { depot = 1172473, manifest = "8969710595560526057" },
+  { depot = 1172474, manifest = "833849851994386346" },
+  { depot = 1172475, manifest = "6933433294990550718" },
+  { depot = 1172476, manifest = "8370833461677771715" },
+  { depot = 1172477, manifest = "7604043779704247158" },
+  { depot = 1172478, manifest = "6396758973797316177" },
+  { depot = 1172479, manifest = "2103920443167190647" },
+  { depot = 1311105, manifest = "6048415564646653751" },
+  { depot = 3893181, manifest = "2251845482280711091" },
+]
+
+[[apex.versions]]
+id = "s28-launch"
+name = "Season 28 launch"
+date = 2026-02-10
+type = "season"
+group = "season-28"
+manifests = [
+  { depot = 1172471, manifest = "6051781691993665899" },
+  { depot = 1172472, manifest = "6406905238355710121" },
+  { depot = 1172473, manifest = "2079985590204340401" },
+  { depot = 1172474, manifest = "6474347717957619090" },
+  { depot = 1172475, manifest = "1328197923364363014" },
+  { depot = 1172476, manifest = "6003598614224660547" },
+  { depot = 1172477, manifest = "2482787505813249471" },
+  { depot = 1172478, manifest = "108602548699184932" },
+  { depot = 1172479, manifest = "4881999427654014103" },
+  { depot = 1311105, manifest = "1548090059201952865" },
+  { depot = 3893181, manifest = "8263745888519756120" },
+]
+
+[[apex.versions]]
+id = "s29-launch"
+name = "Season 29 launch"
+date = 2026-05-05
+type = "season"
+group = "season-29"
+manifests = [
+  { depot = 1172471, manifest = "4683457128691488723" },
+  { depot = 1172472, manifest = "539793635026496082" },
+  { depot = 1172473, manifest = "971228375867334713" },
+  { depot = 1172474, manifest = "8974773506118232081" },
+  { depot = 1172475, manifest = "286193224064839562" },
+  { depot = 1172476, manifest = "7945201646417346803" },
+  { depot = 1172477, manifest = "2001432073405629226" },
+  { depot = 1172478, manifest = "1219954328132966349" },
+  { depot = 1172479, manifest = "7665135435373170057" },
+  { depot = 1311105, manifest = "8096714442171528302" },
+  { depot = 3893181, manifest = "6526419712295796375" },
+]
+
+[[apex.versions]]
+id = "s30-launch"
+name = "Season 30 launch"
+date = 2026-08-04
+type = "season"
+group = "season-30"
+manifests = [
+  { depot = 1172471, manifest = "2178888620948831960" },
+  { depot = 1172472, manifest = "1825075696599384390" },
+  { depot = 1172473, manifest = "259472203630909368" },
+  { depot = 1172474, manifest = "2800987194831631" },
+  { depot = 1172475, manifest = "1536936524379201334" },
+  { depot = 1172476, manifest = "1827612008658000320" },
+  { depot = 1172477, manifest = "2382288226121856288" },
+  { depot = 1172478, manifest = "1296687876971481410" },
+  { depot = 1172479, manifest = "8047098960164582024" },
+  { depot = 1311105, manifest = "7219009962661680419" },
+  { depot = 3893181, manifest = "1558442456104985494" },
+]

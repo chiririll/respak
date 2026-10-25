@@ -1,0 +1,5 @@
+# Titanfall 2 for respak-web: the game and its depots, no versions yet. The format is described at the top of apex.toml.
+
+[titanfall2]
+name = "Titanfall 2"
+app_id = 1237970
