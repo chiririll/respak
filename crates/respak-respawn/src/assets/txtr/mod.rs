@@ -41,7 +41,7 @@ use respak_core::{
 };
 
 use crate::rpak::{detect_kind, rpak_asset, MEM};
-use crate::{oodle, rtech};
+use crate::{oodle, rtech, snowflake};
 
 fn unsupported(version: impl Into<String>) -> Error {
     Error::unsupported("txtr", version)
@@ -370,7 +370,11 @@ impl Bitmap for TxtrAsset {
                     .map_err(|e| Error::custom("rtech", e))?;
                 Ok(Bytes::from(decoded))
             }
-            2 => Err(unsupported("Snowflake-compressed streamed mips")),
+            2 => {
+                let decoded =
+                    snowflake::decompress(&block).map_err(|e| Error::custom("snowflake", e))?;
+                Ok(Bytes::from(decoded))
+            }
             3 => {
                 // The padded block holds the stream and zeros after it.
                 let decoded =
