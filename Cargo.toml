@@ -31,7 +31,7 @@ respak-rad = { path = "crates/respak-rad" }
 respak-host = { path = "crates/respak-host", default-features = false }
 
 # Pre-1.0: exact pin (see docs/design/project.md §3).
-opendal = { version = "=0.59.4", default-features = false, features = ["services-fs", "executors-tokio"] }
+opendal = { version = "=0.59.5", default-features = false, features = ["services-fs", "executors-tokio"] }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "signal", "time"] }
 tokio-util = "0.7"
