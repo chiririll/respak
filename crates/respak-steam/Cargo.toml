@@ -9,7 +9,7 @@ publish.workspace = true
 # Pinned to a git rev: the "mobile confirmation alongside Steam Guard codes" auth fix is not in 0.3.0 (docs/design/steam.md §2).
 steamroom = { git = "https://github.com/landaire/steamroom", rev = "4dd310cb98d94f2acb99ea62d5996284bd080bca" }
 prost = "0.14"
-base64 = "0.22"
+base64 = "0.23"
 qrcode = "0.14"
 rpassword = "7"
 respak-core.workspace = true
