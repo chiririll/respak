@@ -3,6 +3,7 @@
 mod bc;
 mod cast;
 mod dds;
+mod ffmpeg;
 mod frames;
 mod png;
 mod table;
@@ -21,6 +22,7 @@ pub use cast::{
     LodSelect, RootFixup,
 };
 pub use dds::{DdsEncode, DdsImage, DdsOptions, DdsRead};
+pub use ffmpeg::FfmpegPlugin;
 pub use frames::{FramesEncode, FramesOptions};
 pub use png::{Mips, PngEncode, PngImage, PngOptions, PngRead};
 pub use table::{to_csv as table_csv, to_json as table_json, TableCsvEncode, TableJsonEncode};

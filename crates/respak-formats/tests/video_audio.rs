@@ -18,7 +18,7 @@ use respak_core::{
     CancellationToken, Cx, Data, Error, ErrorKind, Event, FormatId, Plugin, Registry, Target,
     Value, ValueKey,
 };
-use respak_formats::FormatsPlugin;
+use respak_formats::{FfmpegPlugin, FormatsPlugin};
 
 /// A video and audio source with scripted content that records how it was used.
 struct Stub {
@@ -575,4 +575,81 @@ async fn a_video_without_frames_is_corrupt_and_unknown_options_are_rejected() {
         matches!(err.kind(), ErrorKind::InvalidOptions { .. }),
         "{err}"
     );
+}
+
+// ---------------------------------------------------------------- ffmpeg
+
+fn ffmpeg_cx(ffmpeg: FfmpegPlugin) -> Cx {
+    let mut r = Registry::new();
+    r.add(&FormatsPlugin);
+    r.add(&ffmpeg);
+    r.add(&StubPlugin);
+    r.check().unwrap();
+    let mem = || Operator::new(Memory::default()).unwrap();
+    respak_core::testing::cx(r, mem(), mem())
+}
+
+/// The first `len` bytes of a lazy blob.
+async fn head(value: &Value, len: u64, cx: &Cx) -> Bytes {
+    value.as_blob().unwrap().read(0..len, cx).await.unwrap()
+}
+
+#[tokio::test]
+async fn without_ffmpeg_there_are_no_ffmpeg_formats() {
+    let cx = ffmpeg_cx(FfmpegPlugin::at(None));
+    for format in ["mp4", "mkv", "webm", "gif", "mp3", "flac", "ogg"] {
+        let (_, value_) = value(Stub::video(&[RED]));
+        let result = cx
+            .mediator
+            .convert(value_, target(format, serde_json::json!({})), &cx)
+            .await;
+        assert!(result.is_err(), "`{format}` exists without ffmpeg");
+    }
+}
+
+#[tokio::test]
+async fn ffmpeg_writes_an_mp4_with_sound_and_a_flac() {
+    let plugin = FfmpegPlugin::new();
+    if plugin.exe().is_none() {
+        eprintln!("skipped: no ffmpeg on PATH");
+        return;
+    }
+    let cx = ffmpeg_cx(plugin);
+
+    let mut stub = Stub::video(&[RED, GREEN, BLUE, RED, GREEN]);
+    stub.tracks = vec![(stereo(), vec![vec![0.25; 9_600]])];
+    let (_, value_) = value(stub);
+    let out = cx
+        .mediator
+        .convert(value_, target("mp4", serde_json::json!({})), &cx)
+        .await
+        .unwrap();
+    assert_eq!(out.format().name(), "mp4");
+    assert_eq!(&head(&out, 12, &cx).await[4..8], b"ftyp");
+
+    let (_, value_) = value(Stub::audio(vec![(mono(), vec![vec![0.1; 4_410]])]));
+    let out = cx
+        .mediator
+        .convert(value_, target("flac", serde_json::json!({})), &cx)
+        .await
+        .unwrap();
+    assert_eq!(&head(&out, 4, &cx).await[..], b"fLaC");
+}
+
+#[tokio::test]
+async fn a_failing_ffmpeg_reports_what_it_printed() {
+    let plugin = FfmpegPlugin::new();
+    if plugin.exe().is_none() {
+        return;
+    }
+    let cx = ffmpeg_cx(plugin);
+    let (_, value_) = value(Stub::video(&[RED, GREEN]));
+    let options = serde_json::json!({ "codec": "no_such_codec" });
+    let out = cx
+        .mediator
+        .convert(value_, target("mp4", options), &cx)
+        .await
+        .unwrap();
+    let err = out.as_blob().unwrap().read(0..4, &cx).await.unwrap_err();
+    assert!(err.to_string().contains("ffmpeg"), "{err}");
 }

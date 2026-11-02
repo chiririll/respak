@@ -4,7 +4,7 @@ use std::path::Path;
 
 use opendal::{services::Fs, Operator};
 use respak_core::{CancellationToken, Engine, Events};
-use respak_formats::FormatsPlugin;
+use respak_formats::{FfmpegPlugin, FormatsPlugin};
 use respak_nihav::NihavPlugin;
 use respak_rad::RadPlugin;
 use respak_respawn::RespawnPlugin;
@@ -95,6 +95,7 @@ pub fn build_engine_with(
         .output(output)
         .plugin(FormatsPlugin)
         .plugin(NihavPlugin)
+        .plugin(FfmpegPlugin::new())
         .plugin(RadPlugin)
         .plugin(
             RespawnPlugin::new()

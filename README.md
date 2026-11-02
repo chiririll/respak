@@ -68,7 +68,7 @@ respak-web
 |---|---|
 | `respak-core` | engine: format graph, containers, caching, events |
 | `respak-respawn` | Respawn formats (rpak, starpak, txtr, matl, uiia, uimg) |
-| `respak-formats` | PNG, DDS, WAV and frame output |
+| `respak-formats` | PNG, DDS, WAV and frame output; MP4/MKV/WebM/GIF and MP3/FLAC/OGG when `ffmpeg` is on `PATH` |
 | `respak-rad` | RAD Game Tools formats: Miles banks and Bink 2 video |
 | `respak-nihav` | AVI/MOV/Y4M encoding |
 | `respak-steam` | Steam login and depot access |
