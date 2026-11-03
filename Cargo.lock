@@ -1732,7 +1732,7 @@ name = "nihav_codec_support"
 version = "0.1.0"
 source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 dependencies = [
- "nihav_core",
+ "nihav_core 0.1.0 (git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef)",
 ]
 
 [[package]]
@@ -1741,7 +1741,7 @@ version = "0.1.0"
 source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 dependencies = [
  "nihav_codec_support",
- "nihav_core",
+ "nihav_core 0.1.0 (git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef)",
  "nihav_registry",
 ]
 
@@ -1751,12 +1751,17 @@ version = "0.1.0"
 source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 
 [[package]]
+name = "nihav_core"
+version = "0.1.0"
+source = "git+https://github.com/chiririll/nihav?rev=eda2fb2ffb58391a4a7b0bd24d97b260e0401309#eda2fb2ffb58391a4a7b0bd24d97b260e0401309"
+
+[[package]]
 name = "nihav_rad"
 version = "0.1.0"
 source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 dependencies = [
  "nihav_codec_support",
- "nihav_core",
+ "nihav_core 0.1.0 (git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef)",
 ]
 
 [[package]]
@@ -1764,7 +1769,7 @@ name = "nihav_registry"
 version = "0.1.0"
 source = "git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef#c91ea6294c92f6716d1fac69949b3920f62c50ef"
 dependencies = [
- "nihav_core",
+ "nihav_core 0.1.0 (git+https://github.com/chiririll/nihav?rev=c91ea6294c92f6716d1fac69949b3920f62c50ef)",
 ]
 
 [[package]]
@@ -2479,7 +2484,7 @@ dependencies = [
  "bytes",
  "futures",
  "nihav_commonfmt",
- "nihav_core",
+ "nihav_core 0.1.0 (git+https://github.com/chiririll/nihav?rev=eda2fb2ffb58391a4a7b0bd24d97b260e0401309)",
  "opendal",
  "respak-core",
  "respak-formats",
@@ -2494,7 +2499,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "nihav_core",
+ "nihav_core 0.1.0 (git+https://github.com/chiririll/nihav?rev=eda2fb2ffb58391a4a7b0bd24d97b260e0401309)",
  "nihav_rad",
  "opendal",
  "respak-core",
